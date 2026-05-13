@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#2a6080"/>
+      <stop offset="100%" stop-color="#0d2a3a"/>
+    </radialGradient>
+    <filter id="soft-shadow">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="rgba(0,0,0,0.4)"/>
+    </filter>
+  </defs>
+
+  <circle cx="540" cy="540" r="540" fill="url(#bg)"/>
+
+  <circle cx="180" cy="220" r="5" fill="rgba(255,255,255,0.07)"/>
+  <circle cx="860" cy="200" r="4" fill="rgba(255,255,255,0.07)"/>
+  <circle cx="140" cy="860" r="7" fill="rgba(255,255,255,0.05)"/>
+  <circle cx="920" cy="880" r="5" fill="rgba(255,255,255,0.07)"/>
+
+  <circle cx="540" cy="540" r="420" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+
+  <!-- Map pin icon -->
+  <g filter="url(#soft-shadow)" transform="translate(540,430)">
+    <!-- Pin body -->
+    <path d="M 0 -180 C -100 -180 -160 -110 -160 -40 C -160 60 0 200 0 200 C 0 200 160 60 160 -40 C 160 -110 100 -180 0 -180 Z"
+          fill="rgba(255,255,255,0.25)"/>
+    <!-- Pin inner circle -->
+    <circle cx="0" cy="-40" r="70" fill="rgba(255,255,255,0.35)"/>
+    <!-- Road lines inside -->
+    <rect x="-8" y="-90" width="16" height="100" rx="4" fill="rgba(255,255,255,0.6)"/>
+    <rect x="-8" y="-90" width="16" height="20" rx="4" fill="rgba(255,255,255,0.6)"/>
+    <rect x="-8" y="-55" width="16" height="20" rx="4" fill="rgba(255,255,255,0.6)"/>
+    <rect x="-8" y="-20" width="16" height="20" rx="4" fill="rgba(255,255,255,0.6)"/>
+  </g>
+
+  <!-- Distance labels -->
+  <text x="540" y="720" font-family="Arial, sans-serif" font-size="28"
+        fill="rgba(255,255,255,0.7)" text-anchor="middle">1.5 hrs from Chennai &amp; Bengaluru</text>
+
+  <text x="540" y="780" font-family="Georgia, serif" font-size="72" font-weight="700"
+        fill="white" text-anchor="middle" letter-spacing="2">Getting Here</text>
+
+  <text x="540" y="840" font-family="Arial, sans-serif" font-size="32"
+        fill="rgba(255,255,255,0.75)" text-anchor="middle" letter-spacing="1">Directions &amp; Route</text>
+
+  <text x="540" y="940" font-family="Arial, sans-serif" font-size="26"
+        fill="rgba(255,255,255,0.5)" text-anchor="middle" letter-spacing="3">KANCHI FARM STAY</text>
+</svg>

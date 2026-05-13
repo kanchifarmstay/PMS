@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gallery | Kanchi Farm Stay</title>
+    <meta name="description" content="Explore photos of Kanchi Farm Stay — lush surroundings, rustic villas, farm animals, dining, camping and more. A nature retreat near Kanchipuram, Tamil Nadu.">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.ico">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- Navbar Placeholder -->
+    <div id="navbar-placeholder"></div>
+
+    <div class="gallery-page">
+        <section class="section bg-light text-center">
+            <div class="container">
+                <h1>Photo Gallery</h1>
+                <p>A glimpse into the serene life at Kanchi Farm Stay</p>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="container">
+                <!-- Filter Buttons -->
+                <div class="gallery-filters">
+                    <button class="gallery-filter-btn active" data-filter="all" onclick="renderGalleryGrid('all')">All</button>
+                    <button class="gallery-filter-btn" data-filter="accommodations" onclick="renderGalleryGrid('accommodations')">Accommodations</button>
+                    <button class="gallery-filter-btn" data-filter="animals" onclick="renderGalleryGrid('animals')">Farm Animals</button>
+                    <button class="gallery-filter-btn" data-filter="farm-life" onclick="renderGalleryGrid('farm-life')">Farm Life</button>
+                    <button class="gallery-filter-btn" data-filter="facilities" onclick="renderGalleryGrid('facilities')">Facilities</button>
+                </div>
+
+                <!-- Gallery Grid (populated by JS) -->
+                <div class="gallery-grid-page" id="gallery-grid"></div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Footer Placeholder -->
+    <div id="footer-placeholder"></div>
+
+    <!-- Scripts -->
+    <script src="script.js?v=5"></script>
+</body>
+
+</html>

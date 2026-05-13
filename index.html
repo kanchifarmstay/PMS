@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanchi Farm Stay | Nature Retreat in Kanchipuram</title>
+    <meta name="description" content="Escape to Kanchi Farm Stay — a 5-acre nature retreat near Kanchipuram. Rustic villas, farm animals, campfires, and authentic South Indian dining. Book direct from ₹2,000/night.">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.ico">
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4a7c59">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Kanchi Farm">
+    <!-- Preconnect for speed -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preload" as="image" href="assets/images/farm-hero.jpg">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="mobile.css">
+</head>
+
+<body>
+
+    <!-- Navbar Placeholder -->
+    <div id="navbar-placeholder"></div>
+
+    <div class="home-page">
+        <!-- Hero Section -->
+        <section id="home" class="hero-section">
+            <video autoplay loop muted playsinline class="hero-video" poster="assets/images/farm-hero.jpg">
+                <source src="assets/videos/hero-video.MP4" type="video/mp4">
+            </video>
+            <div class="hero-overlay"></div>
+            <div class="hero-content container">
+                <h1>More than a stay, It's a getaway</h1>
+                <p>Experience the tranquility of farm life near Kanchipuram. Relax, reconnect with nature, and enjoy a
+                    peaceful getaway.</p>
+                <div class="hero-buttons">
+                    <a href="accommodations.html" class="btn btn-primary btn-lg">Book Direct</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- About Section -->
+        <section id="about" class="section about-section">
+            <div class="container">
+                <div class="about-layout">
+                    <div class="about-image-wrapper">
+                        <img src="assets/images/about-farm.jpg" alt="Kanchi Farm Stay Cottage">
+                        <div class="image-accent-border"></div>
+                    </div>
+                    <div class="about-content-card">
+                        <span class="overline">Discover Kanchi Farm Stay</span>
+                        <h2>A Sanctuary for the Soul</h2>
+                        <p>
+                            Escape to a 5-acre farm retreat where rustic charm meets modern comfort. Whether for a
+                            peaceful family gathering or a quiet solo getaway, find your rhythm in nature’s embrace.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Rooms Teaser Section -->
+        <section id="rooms" class="section">
+            <div class="container">
+                <div class="text-center mb-lg">
+                    <h2>Our Accommodations</h2>
+                    <p>Rustic comfort meets modern amenities.</p>
+                </div>
+                <div class="rooms-grid">
+                    <!-- Static Preview Cards for Home Page -->
+                    <div class="room-card-preview">
+                        <a href="room-details.html?id=wooden-villa" class="room-image-container" style="display:block">
+                            <img src="assets/images/gallery-room-swing.jpg" alt="Wooden Villa" class="room-image">
+                        </a>
+                        <div class="room-preview-content">
+                            <h3>Wooden Villa</h3>
+                            <p>Unique rooftop villa with panoramic views.</p>
+                            <a href="room-details.html?id=wooden-villa" class="btn-link">View Details</a>
+                        </div>
+                    </div>
+
+                    <div class="room-card-preview">
+                        <a href="room-details.html?id=wooden-cottage" class="room-image-container"
+                            style="display:block">
+                            <img src="assets/images/wooden-cottage-1.jpg" alt="Wooden Cottage" class="room-image">
+                        </a>
+                        <div class="room-preview-content">
+                            <h3>Wooden Cottage</h3>
+                            <p>Get away from it all when you stay under the stars.</p>
+                            <a href="room-details.html?id=wooden-cottage" class="btn-link">View Details</a>
+                        </div>
+                    </div>
+
+                    <div class="room-card-preview">
+                        <a href="room-details.html?id=white-villa" class="room-image-container" style="display:block">
+                            <img src="assets/images/white-villa-main-hero.jpg" alt="White Villa — Room 1" class="room-image">
+                        </a>
+                        <div class="room-preview-content">
+                            <h3>White Villa — Room 1</h3>
+                            <p>A luxurious white-themed villa offering elegance.</p>
+                            <a href="room-details.html?id=white-villa" class="btn-link">View Details</a>
+                        </div>
+                    </div>
+
+                    <div class="room-card-preview">
+                        <a href="room-details.html?id=white-villa-room-2" class="room-image-container" style="display:block">
+                            <img src="assets/images/white-villa-main-hero.jpg" alt="White Villa — Room 2" class="room-image">
+                        </a>
+                        <div class="room-preview-content">
+                            <h3>White Villa — Room 2</h3>
+                            <p>A cozy and affordable room in the White Villa.</p>
+                            <a href="room-details.html?id=white-villa-room-2" class="btn-link">View Details</a>
+                        </div>
+                    </div>
+
+                    <div class="room-card-preview">
+                        <a href="room-details.html?id=white-villa-full-floor" class="room-image-container" style="display:block">
+                            <img src="assets/images/white-villa-main-hero.jpg" alt="White Villa — Full 1st Floor" class="room-image">
+                        </a>
+                        <div class="room-preview-content">
+                            <h3>White Villa — Full 1st Floor</h3>
+                            <p>Entire first floor with 2 rooms, hall, balcony & terrace access.</p>
+                            <a href="room-details.html?id=white-villa-full-floor" class="btn-link">View Details</a>
+                        </div>
+                    </div>
+
+                    <div class="room-card-preview">
+                        <a href="room-details.html?id=natures-nest" class="room-image-container" style="display:block">
+                            <img src="assets/images/natures-nest-main.jpg" alt="Nature's Nest" class="room-image">
+                        </a>
+                        <div class="room-preview-content">
+                            <h3>Nature's Nest</h3>
+                            <p>A cozy retreat offering a blend of rustic charm.</p>
+                            <a href="room-details.html?id=natures-nest" class="btn-link">View Details</a>
+                        </div>
+                    </div>
+
+                    <div class="room-card-preview">
+                        <a href="room-details.html?id=tranquil-retreat" class="room-image-container" style="display:block">
+                            <img src="assets/images/tranquil-retreat-main.jpg" alt="Tranquil Retreat" class="room-image">
+                        </a>
+                        <div class="room-preview-content">
+                            <h3>Tranquil Retreat</h3>
+                            <p>Spacious suite in the main farmhouse with veranda access.</p>
+                            <a href="room-details.html?id=tranquil-retreat" class="btn-link">View Details</a>
+                        </div>
+                    </div>
+
+                    <div class="room-card-preview">
+                        <a href="room-details.html?id=tent" class="room-image-container" style="display:block">
+                            <img src="assets/images/tent-new-1.jpg" alt="Tent House" class="room-image">
+                        </a>
+                        <div class="room-preview-content">
+                            <h3>Tent House</h3>
+                            <p>Sleep under the stars in our shaded tent nestled within the farm.</p>
+                            <a href="room-details.html?id=tent" class="btn-link">View Details</a>
+                        </div>
+                    </div>
+
+                    <div class="room-card-preview">
+                        <a href="room-details.html?id=tree-house" class="room-image-container" style="display:block">
+                            <img src="assets/images/treehouse-1.jpg" alt="Tree House" class="room-image">
+                        </a>
+                        <div class="room-preview-content">
+                            <h3>Tree House</h3>
+                            <p>A unique treetop experience — climb up and sleep among the branches.</p>
+                            <a href="room-details.html?id=tree-house" class="btn-link">View Details</a>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="text-center" style="margin-top: 3rem;">
+                    <a href="accommodations.html" class="btn btn-secondary">View All Accommodations</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="section features-section">
+            <div class="container">
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">🌿</div>
+                        <h3>Lush Garden</h3>
+                        <p>Immerse yourself in greenery and breathe in the fresh air of our maintained gardens.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🐾</div>
+                        <h3>Pet Friendly</h3>
+                        <p>We welcome well-behaved pets. Your furry friends deserve a vacation too!</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🔥</div>
+                        <h3>Campfire</h3>
+                        <p>Enjoy cozy evenings under the stars with a warm campfire setup.</p>
+                    </div>
+                    <div class="feature-card">
+                        <img src="assets/images/pool.jpg" alt="Swimming Pool" style="width:100%;border-radius:12px;margin-bottom:1rem;object-fit:cover;height:160px;">
+                        <h3>Swimming Pool</h3>
+                        <p>Take a refreshing dip in our serene outdoor pool, surrounded by nature.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🍛</div>
+                        <h3>Home Cooked Food</h3>
+                        <p>Savour authentic home-cooked meals made with fresh farm ingredients and traditional recipes.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🐟</div>
+                        <h3>Fish Pond</h3>
+                        <p>Relax by our serene fish pond and enjoy a tranquil connection with nature.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Activities Section -->
+        <section id="activities" class="section activities-section">
+            <div class="container">
+                <div class="text-center mb-lg">
+                    <span class="overline">Things To Do</span>
+                    <h2>Experiences & Activities</h2>
+                    <p>25+ activities for every age — from toddlers chasing ducks to adults unwinding by the campfire.</p>
+                </div>
+
+                <!-- Category tabs -->
+                <div class="act-tabs">
+                    <button class="act-tab active" data-filter="all">🌿 All Activities</button>
+                    <button class="act-tab" data-filter="kids">🧒 For Kids</button>
+                    <button class="act-tab" data-filter="adults">🧑 For Adults</button>
+                    <button class="act-tab" data-filter="family">👨‍👩‍👧 Family</button>
+                </div>
+
+                <div class="activities-grid" id="activitiesGrid">
+
+                    <!-- KIDS -->
+                    <div class="activity-card" data-cat="kids">
+                        <div class="activity-icon">🐇</div>
+                        <span class="act-badge kids">Kids</span>
+                        <h3>Animal Feeding</h3>
+                        <p>Feed and pet our friendly rabbits, goats, chickens, ducks, and turkeys. Little ones absolutely love it.</p>
+                    </div>
+                    <div class="activity-card" data-cat="kids">
+                        <div class="activity-icon">🥛</div>
+                        <span class="act-badge kids">Kids</span>
+                        <h3>Cow Milking</h3>
+                        <p>Try milking our cow — a rare and unforgettable experience that teaches kids where their milk comes from.</p>
+                    </div>
+                    <div class="activity-card" data-cat="kids">
+                        <div class="activity-icon">🥚</div>
+                        <span class="act-badge kids">Kids</span>
+                        <h3>Egg Collection</h3>
+                        <p>Collect fresh eggs from the chicken coop each morning — a simple joy that kids treasure long after.</p>
+                    </div>
+                    <div class="activity-card" data-cat="kids">
+                        <div class="activity-icon">💦</div>
+                        <span class="act-badge kids">Kids</span>
+                        <h3>Pump Set Water Play</h3>
+                        <p>Splash and play at our traditional pump set. A classic farm experience kids can enjoy on hot days.</p>
+                    </div>
+                    <div class="activity-card" data-cat="kids">
+                        <div class="activity-icon">🔍</div>
+                        <span class="act-badge kids">Kids</span>
+                        <h3>Nature Scavenger Hunt</h3>
+                        <p>Explore the farm hunting for leaves, insects, feathers, and seeds in our guided scavenger hunt.</p>
+                    </div>
+                    <div class="activity-card" data-cat="kids">
+                        <div class="activity-icon">🦋</div>
+                        <span class="act-badge kids">Kids</span>
+                        <h3>Butterfly & Bug Spotting</h3>
+                        <p>Discover the colourful butterflies, beetles, and bugs that call our 5-acre farm home.</p>
+                    </div>
+                    <div class="activity-card" data-cat="kids">
+                        <div class="activity-icon">🪁</div>
+                        <span class="act-badge kids">Kids</span>
+                        <h3>Kite Flying</h3>
+                        <p>Run through our open fields flying kites with the wind. Pure, screen-free fun for every child.</p>
+                    </div>
+                    <div class="activity-card" data-cat="kids">
+                        <div class="activity-icon">🌱</div>
+                        <span class="act-badge kids">Kids</span>
+                        <h3>Mud Play & Planting</h3>
+                        <p>Get hands in the soil — plant seeds, water saplings, and learn where food really comes from.</p>
+                    </div>
+                    <div class="activity-card" data-cat="kids">
+                        <div class="activity-icon">🐟</div>
+                        <span class="act-badge kids">Kids</span>
+                        <h3>Fish Pond Fishing</h3>
+                        <p>Try catching fish at our serene pond — great for patience and a wonderful outdoor moment.</p>
+                    </div>
+
+                    <!-- ADULTS -->
+                    <div class="activity-card" data-cat="adults">
+                        <div class="activity-icon">🧘</div>
+                        <span class="act-badge adults">Adults</span>
+                        <h3>Sunrise Yoga & Meditation</h3>
+                        <p>Start your morning with yoga amid the sounds of nature. The farm at dawn is pure therapy.</p>
+                    </div>
+                    <div class="activity-card" data-cat="adults">
+                        <div class="activity-icon">🍳</div>
+                        <span class="act-badge adults">Adults</span>
+                        <h3>Farm Cooking Class</h3>
+                        <p>Learn to cook authentic Tamil Nadu recipes using ingredients harvested fresh from our farm that morning.</p>
+                    </div>
+                    <div class="activity-card" data-cat="adults">
+                        <div class="activity-icon">📸</div>
+                        <span class="act-badge adults">Adults</span>
+                        <h3>Nature Photography Walk</h3>
+                        <p>Golden-hour light, lush greenery, and farm animals — a photographer's dream in every direction.</p>
+                    </div>
+                    <div class="activity-card" data-cat="adults">
+                        <div class="activity-icon">🚴</div>
+                        <span class="act-badge adults">Adults</span>
+                        <h3>Farm Cycling</h3>
+                        <p>Cycle around the property and surrounding village paths. Discover rural Kanchipuram at your own pace.</p>
+                    </div>
+                    <div class="activity-card" data-cat="adults">
+                        <div class="activity-icon">🌾</div>
+                        <span class="act-badge adults">Adults</span>
+                        <h3>Organic Farming Experience</h3>
+                        <p>Try ploughing, sowing, or harvesting — hands-on traditional farming alongside our farmers.</p>
+                    </div>
+                    <div class="activity-card" data-cat="adults">
+                        <div class="activity-icon">🎣</div>
+                        <span class="act-badge adults">Adults</span>
+                        <h3>Pond Fishing & Relaxation</h3>
+                        <p>Cast a line at the fish pond and let time slow down. Peaceful, meditative, and deeply relaxing.</p>
+                    </div>
+                    <div class="activity-card" data-cat="adults">
+                        <div class="activity-icon">🍺</div>
+                        <span class="act-badge adults">Adults</span>
+                        <h3>BBQ & Bonfire Evenings</h3>
+                        <p>Fire up the grill, crack open a drink, and enjoy an open-air BBQ under the stars.</p>
+                    </div>
+                    <div class="activity-card" data-cat="adults">
+                        <div class="activity-icon">🛕</div>
+                        <span class="act-badge adults">Adults</span>
+                        <h3>Kanchipuram Temple Tour</h3>
+                        <p>Day trip to the city of 1,000 temples — Ekambareswarar, Kamakshi Amman, and Varadharaja Perumal.</p>
+                    </div>
+
+                    <!-- FAMILY -->
+                    <div class="activity-card" data-cat="family">
+                        <div class="activity-icon">🔥</div>
+                        <span class="act-badge family">Family</span>
+                        <h3>Campfire Nights</h3>
+                        <p>Gather the whole family around the fire. Roast snacks, share stories, and stargaze together.</p>
+                    </div>
+                    <div class="activity-card" data-cat="family">
+                        <div class="activity-icon">🏊</div>
+                        <span class="act-badge family">Family</span>
+                        <h3>Swimming Pool</h3>
+                        <p>Cool off in our outdoor pool surrounded by trees and open skies — fun for all ages.</p>
+                    </div>
+                    <div class="activity-card" data-cat="family">
+                        <div class="activity-icon">🌿</div>
+                        <span class="act-badge family">Family</span>
+                        <h3>Guided Farm Walk</h3>
+                        <p>Walk the entire 5-acre property with our host — learn about each crop, tree, and animal.</p>
+                    </div>
+                    <div class="activity-card" data-cat="family">
+                        <div class="activity-icon">🏏</div>
+                        <span class="act-badge family">Family</span>
+                        <h3>Outdoor Games</h3>
+                        <p>Cricket, badminton, and team games in our open grounds. Perfect for groups and family bonding.</p>
+                    </div>
+                    <div class="activity-card" data-cat="family">
+                        <div class="activity-icon">🍽️</div>
+                        <span class="act-badge family">Family</span>
+                        <h3>Farm-to-Table Dining</h3>
+                        <p>Sit together for a homemade South Indian meal cooked with love and fresh farm ingredients.</p>
+                    </div>
+                    <div class="activity-card" data-cat="family">
+                        <div class="activity-icon">🌙</div>
+                        <span class="act-badge family">Family</span>
+                        <h3>Stargazing Night</h3>
+                        <p>Far from city lights, our farm offers a stunning clear sky — spot constellations as a family.</p>
+                    </div>
+                    <div class="activity-card" data-cat="family">
+                        <div class="activity-icon">⛺</div>
+                        <span class="act-badge family">Family</span>
+                        <h3>Camping</h3>
+                        <p>Pitch a tent under the open sky and experience the magic of sleeping on the farm together.</p>
+                    </div>
+                    <div class="activity-card" data-cat="family">
+                        <div class="activity-icon">🌅</div>
+                        <span class="act-badge family">Family</span>
+                        <h3>Sunrise Farm Walk</h3>
+                        <p>Wake up early and walk the farm as it comes alive — birdsong, dew, and golden light all around.</p>
+                    </div>
+
+                </div><!-- /activities-grid -->
+            </div>
+        </section>
+
+        <style>
+        .act-tabs { display:flex; flex-wrap:wrap; gap:.6rem; justify-content:center; margin-bottom:2rem; }
+        .act-tab {
+            padding:.55rem 1.2rem; border-radius:30px; border:2px solid var(--color-primary,#4a7c59);
+            background:#fff; color:var(--color-primary,#4a7c59); font-size:.85rem; font-weight:600;
+            cursor:pointer; transition:all .2s; min-height:44px;
+        }
+        .act-tab.active, .act-tab:hover { background:var(--color-primary,#4a7c59); color:#fff; }
+        .activity-card { position:relative; }
+        .act-badge {
+            display:inline-block; font-size:.68rem; font-weight:700; padding:3px 10px;
+            border-radius:20px; margin-bottom:.5rem; letter-spacing:.03em; text-transform:uppercase;
+        }
+        .act-badge.kids   { background:#fff0f7; color:#b83280; }
+        .act-badge.adults { background:#ebf8ff; color:#2b6cb0; }
+        .act-badge.family { background:#f0fff4; color:#276749; }
+        .activity-card.hidden { display:none; }
+        </style>
+
+        <script>
+        (function(){
+            const tabs = document.querySelectorAll('.act-tab');
+            const cards = document.querySelectorAll('#activitiesGrid .activity-card');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', function(){
+                    tabs.forEach(t => t.classList.remove('active'));
+                    this.classList.add('active');
+                    const filter = this.dataset.filter;
+                    cards.forEach(card => {
+                        const match = filter === 'all' || card.dataset.cat === filter;
+                        card.classList.toggle('hidden', !match);
+                    });
+                });
+            });
+        })();
+        </script>
+
+        <!-- Contact Section -->
+        <section id="contact" class="section">
+            <div class="container">
+                <div class="text-center mb-lg">
+                    <h2>Contact Us</h2>
+                    <p>Plan your getaway today.</p>
+                </div>
+                <div class="contact-grid">
+                    <!-- Contact Info Side -->
+                    <div class="contact-info">
+                        <h3>Get in Touch</h3>
+                        <p class="contact-intro">
+                            Reach out to us directly or use the form to send a booking inquiry.
+                        </p>
+
+                        <div class="info-item">
+                            <div class="icon">📍</div>
+                            <div>
+                                <h4>Address</h4>
+                                <a href="https://maps.app.goo.gl/cV2gsfgTa6bsDpaW9" target="_blank"
+                                    rel="noopener noreferrer"
+                                    style="color: var(--color-primary); font-weight: 500; margin-top: 0.25rem; display: inline-block;">View
+                                    on Google Maps</a>
+                            </div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="icon">📞</div>
+                            <div>
+                                <h4>Whatsapp & Phone</h4>
+                                <p>
+                                    <a href="tel:+916383726094">+91 6383726094</a><br>
+                                    <a href="tel:+918825775747">+91 8825775747</a>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="icon">✉️</div>
+                            <div>
+                                <h4>Email</h4>
+                                <p><a href="mailto:ops@kanchifarmstay.com">ops@kanchifarmstay.com</a></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Inquiry Form Side -->
+                    <div class="contact-form-container">
+                        <!-- Booking Form Replicated Structure -->
+                        <form class="w2p-form form-card" data-web2phone="form"
+                            data-public-key="ygkAN8tl7U7WjuxLQLjhFTJX"
+                            data-endpoint="https://web2phone.co.uk/api/v1/submit/"
+                            style="padding: 2rem; background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-md);">
+                            <h2 style="margin-bottom:1.5rem;">Send Inquiry</h2>
+
+                            <div class="form-group">
+                                <label for="your_name">Name</label>
+                                <input name="your_name" type="text" id="your_name" placeholder="Jane Doe" required
+                                    class="form-input">
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="email">Email</label>
+                                    <input name="email" type="email" id="email" placeholder="you@example.com" required
+                                        class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label for="phone">Whatsapp & Phone</label>
+                                    <input name="phone" type="tel" id="phone" placeholder="+91" required
+                                        class="form-input">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="checkin">Check-in</label>
+                                    <input type="date" name="field" id="checkin" required class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label for="checkout">Check-out</label>
+                                    <input type="date" name="field_3" id="checkout" required class="form-input">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="guests">Guests</label>
+                                <select name="field_2" id="guests" class="form-input">
+                                    <option value="1">1 Guest</option>
+                                    <option value="2" selected>2 Guests</option>
+                                    <option value="3">3 Guests</option>
+                                    <option value="4">4 Guests</option>
+                                    <option value="5">5 Guests</option>
+                                    <option value="6">6 Guests</option>
+                                    <option value="7">7 Guests</option>
+                                    <option value="8">8 Guests</option>
+                                    <option value="9">9 Guests</option>
+                                    <option value="10+">10+ Guests</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="message">Message</label>
+                                <textarea name="message" id="message" rows="4" placeholder="How can we help?" required
+                                    class="form-textarea"></textarea>
+                            </div>
+
+                            <button type="submit" class="btn btn-block">Send</button>
+                            <p data-w2p-output class="w2p-output" aria-live="polite"
+                                style="margin-top: 1rem; font-weight: 500;"></p>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Reviews Section -->
+        <section class="section bg-light">
+            <div class="container">
+                <div class="text-center mb-lg">
+                    <h2>What Our Guests Say</h2>
+                    <p>Read customer reviews from our happy guests</p>
+                </div>
+                <div class="home-reviews-grid">
+                    <div class="review-card-home">
+                        <div class="review-stars">★★★★★</div>
+                        <p class="review-text-home">
+                            "Recently, I went to Kanchi Farm Stay with my family, and we had a very nice experience
+                            there. Their hospitality, politeness, and the way they welcomed us were excellent. They
+                            cooked delicious food for us..."
+                        </p>
+                        <div class="review-author">
+                            <strong>Dipesh Shaw</strong>
+                            <span class="review-platform">Google</span>
+                        </div>
+                    </div>
+                    <div class="review-card-home">
+                        <div class="review-stars">★★★★★</div>
+                        <p class="review-text-home">
+                            "This is a beautiful place, surrounded by trees and countryside. We were well looked after
+                            in this beautiful place. I was sorry to leave."
+                        </p>
+                        <div class="review-author">
+                            <strong>Angela</strong>
+                            <span class="review-platform">Booking.com</span>
+                        </div>
+                    </div>
+                    <div class="review-card-home">
+                        <div class="review-stars">★★★★★</div>
+                        <p class="review-text-home">
+                            "Amazing home stay with super food. Highly recommend for family to spend quality time here."
+                        </p>
+                        <div class="review-author">
+                            <strong>Jayanthi Gurureddy</strong>
+                            <span class="review-platform">Google</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-center" style="margin-top: 3rem;">
+                    <a href="reviews.html" class="btn btn-outline-dark">View All Customer Reviews</a>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Instagram CTA Section -->
+    <section class="instagram-cta-section">
+        <div class="container">
+            <div class="instagram-cta-inner">
+                <div class="instagram-cta-icon">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                </div>
+                <div class="instagram-cta-text">
+                    <p class="instagram-cta-handle">@kanchifarmstay</p>
+                    <p class="instagram-cta-sub">Follow our journey — farm mornings, happy guests & hidden moments from the stay</p>
+                </div>
+                <a href="https://www.instagram.com/kanchifarmstay" target="_blank" rel="noopener noreferrer" class="instagram-cta-btn">
+                    Follow on Instagram
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer Placeholder -->
+    <div id="footer-placeholder"></div>
+
+    <!-- Mobile sticky "Book Direct" bar -->
+    <div id="mobile-book-bar" aria-label="Quick booking">
+        <div class="mbb-info">
+            <span class="mbb-from">from</span>
+            <span class="mbb-price">₹2,000<small>/night</small></span>
+            <span class="mbb-sub">Book direct — best price</span>
+        </div>
+        <a href="https://wa.me/916383726094?text=Hi%2C%20I'd%20like%20to%20book%20at%20Kanchi%20Farm%20Stay"
+           class="mbb-whatsapp" aria-label="WhatsApp us" target="_blank" rel="noopener">💬</a>
+        <a href="accommodations.html" class="mbb-btn">Book Direct →</a>
+    </div>
+
+    <!-- Scripts -->
+    <script src="script.js?v=5"></script>
+    <script src="https://web2phone.co.uk/static/formsapp/js/embed.js?v=5" async></script>
+
+    <script>
+    // ── PWA service worker registration ────────────────────────
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
+    // ── +/− Guest counter (replaces <select> on mobile) ────────
+    function initGuestCounter() {
+        const sel = document.getElementById('guests');
+        if (!sel) return;
+        const wrap = sel.parentElement;
+        wrap.classList.add('guest-counter-wrap');
+
+        let val = 2;
+        const counter = document.createElement('div');
+        counter.className = 'guest-counter';
+        counter.innerHTML = `
+            <button type="button" aria-label="Fewer guests" id="gc-minus">−</button>
+            <span class="gc-val" id="gc-display">${val} Guest${val > 1 ? 's' : ''}</span>
+            <button type="button" aria-label="More guests" id="gc-plus">+</button>
+        `;
+        wrap.insertBefore(counter, sel);
+
+        function update(n) {
+            val = Math.min(20, Math.max(1, n));
+            document.getElementById('gc-display').textContent = val + (val === 1 ? ' Guest' : ' Guests');
+            // keep the real select in sync so the form submits correctly
+            let opt = sel.querySelector(`option[value="${val}"]`);
+            if (!opt) { opt = sel.querySelector('option[value="10+"]'); }
+            if (opt) opt.selected = true;
+            sel.value = val <= 10 ? String(val) : '10+';
+        }
+
+        document.getElementById('gc-minus').addEventListener('click', () => update(val - 1));
+        document.getElementById('gc-plus').addEventListener('click',  () => update(val + 1));
+    }
+
+    // ── Hide sticky bar when user scrolls to contact section ───
+    function initStickyBarBehavior() {
+        const bar = document.getElementById('mobile-book-bar');
+        if (!bar) return;
+        const contact = document.getElementById('contact');
+        if (!contact) return;
+        const io = new IntersectionObserver(([entry]) => {
+            bar.style.transform = entry.isIntersecting ? 'translateY(100%)' : '';
+            bar.style.transition = 'transform .25s ease';
+        }, { threshold: 0.1 });
+        io.observe(contact);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initGuestCounter();
+        initStickyBarBehavior();
+    });
+    </script>
+</body>
+
+</html>

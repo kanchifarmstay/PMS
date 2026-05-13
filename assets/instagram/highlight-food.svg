@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#b85c20"/>
+      <stop offset="100%" stop-color="#6a2e0a"/>
+    </radialGradient>
+    <filter id="soft-shadow">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="rgba(0,0,0,0.4)"/>
+    </filter>
+  </defs>
+
+  <circle cx="540" cy="540" r="540" fill="url(#bg)"/>
+
+  <circle cx="180" cy="220" r="5" fill="rgba(255,255,255,0.07)"/>
+  <circle cx="860" cy="200" r="4" fill="rgba(255,255,255,0.07)"/>
+  <circle cx="140" cy="860" r="7" fill="rgba(255,255,255,0.05)"/>
+  <circle cx="920" cy="880" r="5" fill="rgba(255,255,255,0.07)"/>
+
+  <circle cx="540" cy="540" r="420" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+
+  <!-- Plate -->
+  <g filter="url(#soft-shadow)" transform="translate(540,480)">
+    <circle cx="0" cy="0" r="170" fill="rgba(255,255,255,0.18)"/>
+    <circle cx="0" cy="0" r="148" fill="rgba(255,255,255,0.12)"/>
+    <!-- Rice mound -->
+    <ellipse cx="0" cy="10" rx="100" ry="60" fill="rgba(255,255,255,0.3)"/>
+    <!-- Curry dollops -->
+    <circle cx="-60" cy="-40" r="38" fill="rgba(220,80,20,0.5)"/>
+    <circle cx="60" cy="-40" r="32" fill="rgba(180,120,20,0.5)"/>
+    <circle cx="0" cy="-70" r="28" fill="rgba(80,160,60,0.5)"/>
+    <!-- Spoon -->
+    <ellipse cx="155" cy="-60" rx="22" ry="14" fill="rgba(255,255,255,0.35)"/>
+    <rect x="148" y="-46" width="14" height="80" rx="7" fill="rgba(255,255,255,0.3)"/>
+    <!-- Fork -->
+    <rect x="-165" y="-90" width="10" height="90" rx="5" fill="rgba(255,255,255,0.3)"/>
+    <rect x="-172" y="-90" width="6" height="40" rx="3" fill="rgba(255,255,255,0.25)"/>
+    <rect x="-158" y="-90" width="6" height="40" rx="3" fill="rgba(255,255,255,0.25)"/>
+    <!-- Steam lines -->
+    <path d="M -30 -130 Q -20 -160 -30 -190" stroke="rgba(255,255,255,0.3)" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M 0 -140 Q 10 -170 0 -200" stroke="rgba(255,255,255,0.3)" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M 30 -130 Q 40 -160 30 -190" stroke="rgba(255,255,255,0.3)" stroke-width="5" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <text x="540" y="740" font-family="Georgia, serif" font-size="72" font-weight="700"
+        fill="white" text-anchor="middle" letter-spacing="2">Food</text>
+
+  <text x="540" y="800" font-family="Arial, sans-serif" font-size="32"
+        fill="rgba(255,255,255,0.75)" text-anchor="middle" letter-spacing="1">Farm-to-Table Meals</text>
+
+  <text x="540" y="920" font-family="Arial, sans-serif" font-size="26"
+        fill="rgba(255,255,255,0.5)" text-anchor="middle" letter-spacing="3">KANCHI FARM STAY</text>
+</svg>

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Menu | Kanchi Farm Stay</title>
+    <meta name="description" content="Explore our home-cooked food menu at Kanchi Farm Stay. Authentic South Indian meals, snacks, and beverages made with fresh farm ingredients.">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.ico">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        .food-menu-page { padding-top: 80px; min-height: 100vh; background: #f5f0e8; }
+
+        /* HERO */
+        .menu-hero {
+            background: linear-gradient(160deg, #1a3a0a 0%, #2d5016 60%, #3d6b20 100%);
+            color: white; text-align: center; padding: 4rem 1rem 5rem;
+            position: relative; overflow: hidden;
+        }
+        .menu-hero::before {
+            content: ""; position: absolute; inset: 0;
+            background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+        .menu-hero-inner { position: relative; }
+        .menu-hero .brand { font-family: 'Lato', sans-serif; font-size: 0.8rem; letter-spacing: 4px; text-transform: uppercase; color: #a8d878; margin-bottom: 0.75rem; }
+        .menu-hero h1 { font-family: 'Playfair Display', serif; font-size: 3.5rem; font-weight: 700; margin: 0 0 1rem; line-height: 1.1; }
+        .menu-hero p { font-family: 'Lato', sans-serif; font-size: 1rem; color: rgba(255,255,255,0.8); max-width: 500px; margin: 0 auto 0; line-height: 1.7; }
+        .menu-hero-divider { display: flex; align-items: center; justify-content: center; gap: 1rem; margin: 1.25rem auto 0; max-width: 300px; }
+        .menu-hero-divider span { height: 1px; flex: 1; background: rgba(168,216,120,0.4); }
+        .menu-hero-divider i { color: #a8d878; font-size: 1.1rem; }
+
+        /* NOTICE */
+        .menu-notice-wrap { background: #2d5016; padding: 0.85rem 1rem; text-align: center; }
+        .menu-notice-wrap p { color: #d4edaa; font-family: 'Lato', sans-serif; font-size: 0.9rem; margin: 0; }
+        .menu-notice-wrap strong { color: #fff; }
+
+        /* MAIN CONTENT */
+        .menu-body { max-width: 1100px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
+
+        /* LEGEND */
+        .menu-legend { display: flex; gap: 1.5rem; margin-bottom: 2.5rem; }
+        .legend-pill { display: flex; align-items: center; gap: 8px; background: white; border-radius: 30px; padding: 6px 14px; font-family: 'Lato', sans-serif; font-size: 0.82rem; color: #444; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+        .dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+        .dot.veg { background: #2d8a2d; border: 2px solid #1a6b1a; }
+        .dot.nonveg { background: #c0392b; border: 2px solid #9b2d22; }
+
+        /* CATEGORY */
+        .menu-cat { margin-bottom: 3.5rem; }
+        .menu-cat-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+        .menu-cat-icon { width: 46px; height: 46px; border-radius: 12px; background: #2d5016; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; flex-shrink: 0; }
+        .menu-cat-title { font-family: 'Playfair Display', serif; font-size: 1.6rem; font-weight: 600; color: #1a3a0a; }
+        .menu-cat-line { flex: 1; height: 1px; background: linear-gradient(to right, #a8c878, transparent); }
+
+        /* ITEMS GRID */
+        .menu-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.85rem; }
+
+        .menu-card {
+            background: white; border-radius: 14px; padding: 1rem 1.25rem;
+            display: flex; align-items: flex-start; gap: 0.75rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border: 1px solid rgba(0,0,0,0.05);
+            transition: transform 0.18s, box-shadow 0.18s;
+        }
+        .menu-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+        .menu-card-dot { margin-top: 5px; flex-shrink: 0; }
+        .menu-card-body { flex: 1; min-width: 0; }
+        .menu-card-name { font-family: 'Lato', sans-serif; font-weight: 600; font-size: 0.97rem; color: #1a1a1a; }
+        .menu-card-desc { font-family: 'Lato', sans-serif; font-size: 0.78rem; color: #888; margin-top: 2px; line-height: 1.45; }
+        .menu-card-price { font-family: 'Playfair Display', serif; font-weight: 700; font-size: 1.05rem; color: #2d5016; white-space: nowrap; margin-left: auto; padding-left: 0.75rem; padding-top: 2px; flex-shrink: 0; }
+
+        /* SPECIAL HIGHLIGHT for meals */
+        .menu-card.highlight { border-left: 3px solid #2d5016; }
+
+        @media (max-width: 640px) {
+            .menu-hero h1 { font-size: 2.4rem; }
+            .menu-items { grid-template-columns: 1fr; }
+            .menu-cat-title { font-size: 1.3rem; }
+        }
+    </style>
+</head>
+<body>
+    <div id="navbar-placeholder"></div>
+    <div class="food-menu-page">
+
+        <div class="menu-hero">
+            <div class="menu-hero-inner container">
+                <div class="brand">Kanchi Farm Stay</div>
+                <h1>Food Menu</h1>
+                <p>Authentic home-cooked South Indian meals prepared fresh with farm ingredients and traditional recipes.</p>
+                <div class="menu-hero-divider"><span></span><span>&#x1F33F;</span><span></span></div>
+            </div>
+        </div>
+
+        <div class="menu-notice-wrap">
+            <p>&#x23F0; All food is freshly cooked to order &mdash; please place your order <strong>2&ndash;3 hours in advance</strong> to allow us time to prepare. We appreciate your patience!</p>
+        </div>
+
+        <div class="menu-body">
+
+            <div class="menu-legend">
+                <div class="legend-pill"><span class="dot veg"></span> Vegetarian</div>
+                <div class="legend-pill"><span class="dot nonveg"></span> Non-Vegetarian</div>
+            </div>
+
+            <!-- BREAKFAST AND SNACKS -->
+            <div class="menu-cat">
+                <div class="menu-cat-header">
+                    <div class="menu-cat-icon">&#x1F373;</div>
+                    <div class="menu-cat-title">Breakfast &amp; Snacks</div>
+                    <div class="menu-cat-line"></div>
+                </div>
+                <div class="menu-items">
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Idly</div><div class="menu-card-desc">1 piece</div></div><div class="menu-card-price">&#8377;20</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Vada</div><div class="menu-card-desc">1 piece</div></div><div class="menu-card-price">&#8377;25</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Dosa</div><div class="menu-card-desc">2 pieces</div></div><div class="menu-card-price">&#8377;60</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Pongal</div></div><div class="menu-card-price">&#8377;50</div></div>
+                    <div class="menu-card highlight"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Idly Vada Combo</div><div class="menu-card-desc">Idly 3 pcs, 1 Vada, Chutney &amp; Sambar</div></div><div class="menu-card-price">&#8377;60</div></div>
+                    <div class="menu-card highlight"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Poori</div><div class="menu-card-desc">2 pcs with Bhaji</div></div><div class="menu-card-price">&#8377;50</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="menu-card-name">Omelette</div><div class="menu-card-desc">1 piece</div></div><div class="menu-card-price">&#8377;30</div></div>
+                        <div class="menu-card"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="menu-card-name">Boiled Eggs</div><div class="menu-card-desc">1 piece</div></div><div class="menu-card-price">&#8377;25</div></div>
+                </div>
+            </div>
+
+            <!-- RICE AND MEALS -->
+            <div class="menu-cat">
+                <div class="menu-cat-header">
+                    <div class="menu-cat-icon">&#x1F35A;</div>
+                    <div class="menu-cat-title">Veg Specials</div>
+                    <div class="menu-cat-line"></div>
+                </div>
+                <div class="menu-items">
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Rice</div></div><div class="menu-card-price">&#8377;60</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Chappathi</div><div class="menu-card-desc">1 piece</div></div><div class="menu-card-price">&#8377;30</div></div>
+                    <div class="menu-card highlight"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Meal Veg</div><div class="menu-card-desc">Rice, 2 Sabji, 2 Chapati, 1 Papad, Curd, Rasam, Dal</div></div><div class="menu-card-price">&#8377;250</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Dal</div></div><div class="menu-card-price">&#8377;150</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Vegetable Poriyal</div></div><div class="menu-card-price">&#8377;200</div></div>
+                </div>
+            </div>
+
+            <!-- NON-VEG SPECIALS -->
+            <div class="menu-cat">
+                <div class="menu-cat-header">
+                    <div class="menu-cat-icon">&#x1F357;</div>
+                    <div class="menu-cat-title">Non-Veg Specials</div>
+                    <div class="menu-cat-line"></div>
+                </div>
+                <div class="menu-items">
+${MEAL_NONVEG}
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="<div class="menu-card highlight"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="menu-card-name">Meal Non-Veg</div><div class="menu-card-desc">Rice, 1 Sabji, 2 Chapati, 1 Papad, Curd, Rasam, Dal - Chicken 4 Pcs Fry, Chicken Curry 2 pcs</div></div><div class="menu-card-price">&#8377;350</div></div>
+                    <div class=menu-card-name">Mutton Dry</div><div class="menu-card-desc">8 pieces</div></div><div class="menu-card-price">&#8377;400</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="menu-card-name">Mutton Gravy</div></div><div class="menu-card-price">&#8377;400</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="menu-card-name">Mutton Rasam</div></div><div class="menu-card-price">&#8377;400</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="menu-card-name">Chicken Dry</div></div><div class="menu-card-price">&#8377;300</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="menu-card-name">Chicken Gravy</div></div><div class="menu-card-price">&#8377;300</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="menu-card-name">Chicken 65</div></div><div class="menu-card-price">&#8377;300</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot nonveg"></span></span><div class="menu-card-body"><div class="menu-card-name">Egg Curry</div></div><div class="menu-card-price">&#8377;200</div></div>
+                </div>
+            </div>
+
+            <!-- BEVERAGES -->
+            <div class="menu-cat">
+                <div class="menu-cat-header">
+                    <div class="menu-cat-icon">&#x2615;</div>
+                    <div class="menu-cat-title">Beverages</div>
+                    <div class="menu-cat-line"></div>
+                </div>
+                <div class="menu-items">
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Tea</div></div><div class="menu-card-price">&#8377;25</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Ginger Tea</div></div><div class="menu-card-price">&#8377;30</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Coffee</div></div><div class="menu-card-price">&#8377;40</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Butter Milk</div></div><div class="menu-card-price">&#8377;40</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Tender Coconut</div></div><div class="menu-card-price">&#8377;60</div></div>
+                    <div class="menu-card"><span class="menu-card-dot"><span class="dot veg"></span></span><div class="menu-card-body"><div class="menu-card-name">Packaged Water Bottle</div></div><div class="menu-card-price">&#8377;30</div></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <div id="footer-placeholder"></div>
+    <script src="script.js?v=5"></script>
+</body>
+</html>

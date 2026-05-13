@@ -1,0 +1,19 @@
+{
+  "name": "KFS Property Manager",
+  "short_name": "KFS Admin",
+  "description": "Kanchi Farm Stay — internal property management dashboard",
+  "start_url": "/channel-manager/admin.php",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a2e1a",
+  "theme_color": "#4a7c59",
+  "icons": [
+    { "src": "../assets/images/logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "../assets/images/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Today",    "url": "/channel-manager/admin.php?section=day",      "description": "Day view" },
+    { "name": "Bookings", "url": "/channel-manager/admin.php?section=bookings", "description": "All bookings" },
+    { "name": "Sync",     "url": "/channel-manager/admin.php?section=channels", "description": "OTA channels" }
+  ]
+}

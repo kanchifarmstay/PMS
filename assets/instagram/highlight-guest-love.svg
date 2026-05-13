@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#8a2a5a"/>
+      <stop offset="100%" stop-color="#3a0a2a"/>
+    </radialGradient>
+    <filter id="soft-shadow">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="rgba(0,0,0,0.4)"/>
+    </filter>
+  </defs>
+
+  <circle cx="540" cy="540" r="540" fill="url(#bg)"/>
+
+  <circle cx="180" cy="220" r="5" fill="rgba(255,255,255,0.07)"/>
+  <circle cx="860" cy="200" r="4" fill="rgba(255,255,255,0.07)"/>
+  <circle cx="140" cy="860" r="7" fill="rgba(255,255,255,0.05)"/>
+  <circle cx="920" cy="880" r="5" fill="rgba(255,255,255,0.07)"/>
+
+  <circle cx="540" cy="540" r="420" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+
+  <!-- Heart icon -->
+  <g filter="url(#soft-shadow)" transform="translate(540,440)">
+    <path d="M 0 160 C 0 160 -200 60 -200 -60 C -200 -150 -130 -200 -60 -200 C -20 -200 20 -180 0 -150 C 20 -180 60 -200 100 -200 C 170 -200 240 -150 240 -60 C 240 60 0 160 0 160 Z"
+          transform="translate(-20, 0)"
+          fill="rgba(255,255,255,0.3)"/>
+    <!-- Stars inside heart area -->
+    <text x="-30" y="-60" font-size="60" fill="rgba(255,220,80,0.8)" text-anchor="middle">★★★★★</text>
+  </g>
+
+  <!-- Quote marks -->
+  <text x="300" y="380" font-family="Georgia, serif" font-size="160"
+        fill="rgba(255,255,255,0.1)" text-anchor="middle">"</text>
+  <text x="780" y="600" font-family="Georgia, serif" font-size="160"
+        fill="rgba(255,255,255,0.1)" text-anchor="middle">"</text>
+
+  <text x="540" y="740" font-family="Georgia, serif" font-size="72" font-weight="700"
+        fill="white" text-anchor="middle" letter-spacing="2">Guest Love</text>
+
+  <text x="540" y="800" font-family="Arial, sans-serif" font-size="32"
+        fill="rgba(255,255,255,0.75)" text-anchor="middle" letter-spacing="1">Reviews &amp; Stories</text>
+
+  <text x="540" y="920" font-family="Arial, sans-serif" font-size="26"
+        fill="rgba(255,255,255,0.5)" text-anchor="middle" letter-spacing="3">KANCHI FARM STAY</text>
+</svg>

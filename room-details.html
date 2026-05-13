@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room Details | Kanchi Farm Stay</title>
+    <meta name="description" content="View room details, amenities, availability and book your stay at Kanchi Farm Stay. Multiple booking options including direct payment, Airbnb and Booking.com.">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.ico">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- Navbar Placeholder -->
+    <div id="navbar-placeholder"></div>
+
+    <div class="room-details-page">
+        <!-- Room Hero -->
+        <div class="room-hero">
+            <img id="room-hero-img" src="" alt="Room Hero" class="room-hero-img">
+            <div class="room-hero-overlay">
+                <div class="container">
+                    <h1 id="room-title">Room Name</h1>
+                </div>
+            </div>
+        </div>
+
+        <section class="section">
+            <div class="container">
+                <div class="details-grid">
+                    <!-- Left: Details -->
+                    <div class="details-content">
+                        <p id="room-full-desc" class="full-desc">
+                            Description goes here...
+                        </p>
+
+                        <h3>Amenities</h3>
+                        <ul id="room-amenities" class="amenities-list">
+                            <!-- Injected by script -->
+                        </ul>
+
+                        <!-- Availability Calendar -->
+                        <div id="availability-calendar" style="margin-top:2rem;"></div>
+
+                        <div class="room-gallery">
+                            <h3>Gallery</h3>
+                            <div id="room-gallery-grid" class="gallery-grid">
+                                <!-- Injected by script -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Booking Card -->
+                    <div class="booking-sidebar">
+                        <div class="booking-card">
+                            <h3>Book Your Stay</h3>
+                            <div id="room-price" class="price-tag">₹0 / night</div>
+
+                            <div class="info-row">
+                                <span>Capacity:</span>
+                                <span id="room-capacity">2 Adults</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Size:</span>
+                                <span id="room-size">300 sqft</span>
+                            </div>
+
+                            <div class="form-row date-pickers" style="display: flex; gap: 1rem; margin-top: 1rem;">
+                                <div class="form-group" style="flex: 1;">
+                                    <label for="room-checkin"
+                                        style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Check-in</label>
+                                    <input type="date" id="room-checkin" class="form-input"
+                                        style="width: 100%; box-sizing: border-box;">
+                                </div>
+                                <div class="form-group" style="flex: 1;">
+                                    <label for="room-checkout"
+                                        style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Check-out</label>
+                                    <input type="date" id="room-checkout" class="form-input"
+                                        style="width: 100%; box-sizing: border-box;">
+                                </div>
+                            </div>
+
+                            <div class="info-row total-price-row"
+                                style="margin-top: 1rem; font-weight: bold; font-size: 1.2rem; border-top: 1px solid #eee; padding-top: 1rem;">
+                                <span>Total Price:</span>
+                                <span id="room-total-price">₹0</span>
+                            </div>
+
+                            <div class="guest-details-form"
+                                style="margin-top: 1rem; border-top: 1px solid #eee; padding-top: 1rem;">
+                                <div class="form-group" style="margin-bottom: 0.75rem;">
+                                    <label for="guest-name"
+                                        style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Full
+                                        Name</label>
+                                    <input type="text" id="guest-name" class="form-input" placeholder="e.g. Jane Doe"
+                                        style="width: 100%; box-sizing: border-box;" required>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0.75rem;">
+                                    <label for="guest-email"
+                                        style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Email
+                                        Address</label>
+                                    <input type="email" id="guest-email" class="form-input"
+                                        placeholder="e.g. you@example.com" style="width: 100%; box-sizing: border-box;"
+                                        required>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0.75rem;">
+                                    <label for="guest-phone"
+                                        style="font-size: 0.8rem; display: block; margin-bottom: 0.25rem;">Phone
+                                        Number</label>
+                                    <input type="tel" id="guest-phone" class="form-input"
+                                        placeholder="e.g. +91 9876543210" style="width: 100%; box-sizing: border-box;"
+                                        required>
+                                </div>
+                            </div>
+
+                            <!-- Availability error message -->
+                            <div id="availability-message" style="display:none; background:#fdecea; color:#c62828; border:1px solid #f5c6cb; border-radius:8px; padding:0.6rem 0.9rem; font-size:0.85rem; margin-top:0.75rem;"></div>
+
+                            <div style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
+                                <button id="razorpay-btn" class="btn btn-block"
+                                    style="background-color: #3395FF; color: white; border: none; cursor: pointer;">Pay
+                                    with Razorpay</button>
+
+                                <div class="text-center" style="margin: 0.5rem 0; color: #666; font-size: 0.9rem;">OR
+                                </div>
+
+                                <a id="airbnb-btn" href="#" target="_blank" rel="noopener noreferrer"
+                                    class="btn btn-airbnb btn-block">Book on Airbnb</a>
+                                <a id="booking-btn" href="#" target="_blank" rel="noopener noreferrer"
+                                    class="btn btn-booking btn-block">Book on Booking.com</a>
+                                <div class="text-center" style="margin: 0.5rem 0; color: #666; font-size: 0.9rem;">OR
+                                </div>
+                                <a href="contact.html" class="btn btn-block">Direct Inquiry</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Footer Placeholder -->
+    <div id="footer-placeholder"></div>
+
+    <!-- Scripts -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script src="script.js?v=5"></script>
+</body>
+
+</html>

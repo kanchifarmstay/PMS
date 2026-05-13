@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nearby Attractions | Kanchi Farm Stay</title>
+<meta name="description" content="Explore nearby attractions from Kanchi Farm Stay - Kanchipuram temples, silk saree shopping, Tamil Nadu cuisine, Madurantakam Lake, Vedanthangal Bird Sanctuary and more.">
+<link rel="icon" type="image/svg+xml" href="assets/images/favicon.ico">
+<link rel="stylesheet" href="style.css">
+<style>
+.attractions-page{padding-top:80px;min-height:100vh;background:#f5f0e8}
+.attr-hero{background:linear-gradient(160deg,#1a3a0a 0%,#2d5016 60%,#3d6b20 100%);color:white;text-align:center;padding:4rem 1rem 3rem;position:relative;overflow:hidden}
+.attr-hero .overline{font-size:.75rem;letter-spacing:4px;text-transform:uppercase;color:#a8d878;margin-bottom:.75rem;display:block;position:relative}
+.attr-hero h1{font-size:2.8rem;font-weight:700;margin:0 0 1rem;position:relative}
+.attr-hero p{color:rgba(255,255,255,.85);max-width:600px;margin:0 auto;font-size:1rem;line-height:1.7;position:relative}
+.quick-bar{background:#2d5016;padding:.75rem 1rem}
+.dist-pills{display:flex;flex-wrap:wrap;justify-content:center;gap:.5rem;max-width:1000px;margin:0 auto}
+.dist-pill{background:rgba(255,255,255,.12);color:#d4edaa;border-radius:30px;padding:.3rem .9rem;font-size:.75rem;white-space:nowrap}
+.dist-pill b{color:white}
+.attr-body{max-width:1100px;margin:0 auto;padding:3rem 1.5rem 4rem}
+.attr-section{margin-bottom:4rem}
+.sec-hdr{display:flex;align-items:center;gap:1rem;margin-bottom:1.75rem;padding-bottom:1rem;border-bottom:2px solid #2d5016}
+.sec-icon{width:52px;height:52px;border-radius:14px;background:#2d5016;display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0}
+.sec-title{font-size:1.7rem;font-weight:700;color:#1a3a0a}
+.sec-sub{font-size:.85rem;color:#5a8a3a;margin-top:.2rem}
+.sec-intro{font-size:.88rem;color:#555;line-height:1.7;margin-bottom:1.5rem;background:white;border-radius:12px;padding:1rem 1.25rem;border-left:4px solid #2d5016}
+.cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1.25rem}
+.attr-card{background:white;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.07);border:1px solid rgba(0,0,0,.05);transition:transform .2s,box-shadow .2s}
+.attr-card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.card-hdr{background:linear-gradient(135deg,#2d5016,#4a7c2f);color:white;padding:1rem 1.25rem .85rem}
+.card-hdr h3{font-size:1.05rem;font-weight:700;margin:0 0 .2rem}
+.card-hdr .sub{font-size:.72rem;color:#c8e6a0;letter-spacing:.5px}
+.card-body{padding:1rem 1.25rem}
+.card-body p{font-size:.82rem;color:#555;line-height:1.6;margin-bottom:.75rem}
+.tags{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
+.tag{display:inline-flex;align-items:center;gap:4px;background:#f0f7e8;border:1px solid #c8e6a0;border-radius:20px;padding:.2rem .65rem;font-size:.7rem;color:#2d5016;font-weight:600}
+.tag.or{background:#fff7e6;border-color:#ffd08a;color:#8a5a00}
+.tag.bl{background:#e8f4ff;border-color:#9bcdf0;color:#0a5a8a}
+.shops-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem}
+.shop-card{background:white;border-radius:14px;padding:1.1rem 1.25rem;box-shadow:0 2px 10px rgba(0,0,0,.07);border-left:4px solid #c8a000;display:flex;flex-direction:column;gap:.5rem}
+.shop-name{font-size:1rem;font-weight:700;color:#1a1a1a}
+.shop-desc{font-size:.78rem;color:#666;line-height:1.5;flex:1}
+.rest-card{background:white;border-radius:14px;padding:1.1rem 1.25rem;box-shadow:0 2px 10px rgba(0,0,0,.07);border-left:4px solid #c0392b;display:flex;flex-direction:column;gap:.5rem}
+.rest-type{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#c0392b}
+.nat-card{background:white;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.07)}
+.nat-accent{height:5px}
+.nat-body{padding:1.1rem 1.25rem}
+.nat-body h3{font-size:1.05rem;font-weight:700;color:#1a3a0a;margin-bottom:.5rem}
+.nat-body p{font-size:.82rem;color:#555;line-height:1.6;margin-bottom:.75rem}
+.tip{background:#fff8e7;border:1px solid #f0c060;border-radius:10px;padding:.85rem 1.1rem;margin-top:1.25rem;font-size:.8rem;color:#7a5c00;line-height:1.6}
+.tip strong{color:#5a3a00}
+.dist-table{width:100%;border-collapse:collapse;background:white;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.07)}
+.dist-table th{background:#2d5016;color:white;padding:.75rem 1rem;text-align:left;font-size:.82rem;font-weight:600}
+.dist-table td{padding:.65rem 1rem;font-size:.82rem;border-bottom:1px solid #f0ebe0;color:#333}
+.dist-table tr:last-child td{border-bottom:none}
+.dist-table tr:nth-child(even) td{background:#fafaf5}
+.dbadge{display:inline-block;background:#e8f5e0;color:#2d5016;border-radius:20px;padding:.15rem .6rem;font-size:.72rem;font-weight:700}
+@media(max-width:640px){.attr-hero h1{font-size:2rem}.cards-grid,.shops-grid{grid-template-columns:1fr}.sec-title{font-size:1.4rem}}
+</style>
+</head>
+<body>
+<div id="navbar-placeholder"></div>
+<div class="attractions-page">
+<div class="attr-hero">
+  <div class="container">
+    <span class="overline">Kanchi Farm Stay</span>
+    <h1>Nearby Attractions</h1>
+    <p>Discover the rich heritage, spirituality, nature, and culture surrounding our farm. From ancient temples to scenic lakes, there is so much to explore.</p>
+  </div>
+</div>
+<div class="quick-bar">
+  <div class="dist-pills">
+    <div class="dist-pill">Kanchipuram City <b>~14 km</b></div>
+    <div class="dist-pill">Madurantakam Lake <b>~13 km</b></div>
+    <div class="dist-pill">Mamandur Caves <b>~25 km</b></div>
+    <div class="dist-pill">Vedanthangal Sanctuary <b>~43 km</b></div>
+    <div class="dist-pill">Mahabalipuram <b>~65 km</b></div>
+    <div class="dist-pill">Tiruvannamalai <b>~96 km</b></div>
+  </div>
+</div>
+<div class="attr-body">
+<div style="background:#fff3cd;border:1px solid #ffc107;border-left:4px solid #ff9800;border-radius:10px;padding:.75rem 1.25rem;margin-bottom:2rem;font-size:.72rem;color:#5a4000;line-height:1.6;"><strong>Please Note:</strong> The information on this page (temple timings, distances, shop details, and restaurant listings) has been researched and compiled with the help of AI. While we have tried our best to be accurate, details may have changed. We recommend verifying timings, entry fees, and other details before your visit.</div>
+
+<!-- KANCHIPURAM TEMPLES -->
+<div class="attr-section">
+  <div class="sec-hdr"><div class="sec-icon">&#x26EA;</div><div><div class="sec-title">Kanchipuram Temples</div><div class="sec-sub">One of India's seven sacred cities (Sapta Puri) &mdash; just ~14 km away</div></div></div>
+  <div class="sec-intro">Kanchipuram is known as the "City of a Thousand Temples" and one of India's holiest pilgrimage cities. The city's temples were built over 1,500 years by Pallava, Chola, and Vijayanagara kings and represent the finest examples of Dravidian temple architecture. Most temples close at midday (12&ndash;4 PM) &mdash; plan morning visits or arrive after 4 PM.</div>
+  <div class="cards-grid">
+    <div class="attr-card"><div class="card-hdr"><h3>Kanchi Kamakshi Amman Temple</h3><div class="sub">Goddess Kamakshi &mdash; One of the 51 Shakti Peethas</div></div><div class="card-body"><p>One of the 51 Shakti Peethas, believed to be where the navel of Goddess Sati fell. Founded between the 5th&ndash;8th centuries CE and expanded by Chola and Vijayanagara kings. Adi Shankaracharya installed the Sri Yantra here. Draws over 1.5 million pilgrims annually and is the most important Shakti shrine in Tamil Nadu.</p><div class="tags"><span class="tag">&#x1F554; 5:30 AM &ndash; 12:30 PM | 4:00 PM &ndash; 8:30 PM</span><span class="tag bl">&#x1F4CD; ~14 km</span><span class="tag or">&#x1F455; Dress code enforced</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Ekambareswarar Temple</h3><div class="sub">Lord Shiva &mdash; Pancha Bhoota Stalam (Earth element)</div></div><div class="card-body"><p>One of the Pancha Bhoota Stalams representing the earth element. Built by Pallavas (~600 CE), with a 57-metre, 11-storied gopuram built by Krishnadevaraya &mdash; one of the tallest in India. Houses a sacred mango tree believed to be over 3,500 years old, with four branches representing the four Vedas. Spread over 23 acres.</p><div class="tags"><span class="tag">&#x1F554; 6:00 AM &ndash; 12:30 PM | 4:00 PM &ndash; 8:30 PM</span><span class="tag bl">&#x1F4CD; ~14 km</span><span class="tag or">&#x23F1; Allow 1 hour+</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Varadaraja Perumal Temple</h3><div class="sub">Lord Vishnu &mdash; 108 Divya Desams</div></div><div class="card-body"><p>One of the 108 Divya Desams, spread over 23 acres with 32 shrines. The famous "Athi Varadar" &mdash; a sacred fig-wood idol &mdash; is submerged in the temple tank and brought out once every 40 years (next ~2059). The Vaishnava philosopher Ramanuja resided here. The main idol is positioned so sunrays fall on it 15 days after Chitra Pournami.</p><div class="tags"><span class="tag">&#x1F554; 6:00 AM &ndash; 12:00 PM | 4:00 PM &ndash; 9:30 PM</span><span class="tag bl">&#x1F4CD; ~14 km</span><span class="tag or">&#x23F1; Allow 1.5&ndash;2 hrs</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Kailasanathar Temple</h3><div class="sub">Lord Shiva &mdash; Oldest Temple in Kanchipuram (700 CE)</div></div><div class="card-body"><p>The oldest surviving structural temple in Kanchipuram (~700 CE), built by Pallava king Narasimhavarman II. The first non-rock-cut temple by the Pallavas &mdash; it set the architectural template for all South Indian temples. An ASI-protected monument on the banks of the Vegavathi river. Photography is permitted. Pure heritage visit &mdash; no active puja.</p><div class="tags"><span class="tag">&#x1F554; 6:30 AM &ndash; 12:30 PM | 4:00 PM &ndash; 7:30 PM</span><span class="tag bl">&#x1F4CD; ~14 km</span><span class="tag or">&#x1F4F7; Photography allowed</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Vaikunta Perumal Temple</h3><div class="sub">Lord Vishnu &mdash; Unique Three-Level Sanctum</div></div><div class="card-body"><p>Built by Pallava king Nandivarman II (~690 CE). Vishnu is worshipped in standing, seated, and reclining postures on three different floors &mdash; a rarity in South Indian temples. Its outer wall panels contain some of the earliest Pallava narrative sculptures depicting battles and court scenes. ASI-protected and combines active worship with heritage value.</p><div class="tags"><span class="tag">&#x1F554; 7:30 AM &ndash; 12:00 PM | 5:00 PM &ndash; 8:00 PM</span><span class="tag bl">&#x1F4CD; ~15 km</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Chitragupta Temple</h3><div class="sub">Chitragupta &mdash; One of the Rarest Temples in the World</div></div><div class="card-body"><p>Built in the 9th century CE by the Cholas. One of the very few standalone temples dedicated to Chitragupta, the divine record-keeper of Yama, anywhere in the world. The deity holds a pen in his right hand and scripts in his left. The Chitra Pournami festival (April full moon) draws enormous crowds. A short but truly unique visit.</p><div class="tags"><span class="tag">&#x1F554; 5:00 AM &ndash; 12:00 PM | 5:00 PM &ndash; 11:00 PM</span><span class="tag bl">&#x1F4CD; ~14 km</span><span class="tag or">&#x2728; One of a kind</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Vedagiriswarar Temple</h3><div class="sub">Lord Shiva &mdash; Hilltop Temple, Thirukazhukundram</div></div><div class="card-body"><p>A stunning hilltop Shiva temple requiring a climb of 565 steps. Famous for the legendary Egyptian vultures that visited daily at noon for centuries to receive prasadam from priests &mdash; last seen in 1998. A lower temple at the foot is dedicated to Parvati. All four Nayanmar saints have sung praises of this temple. Combine with a Mahabalipuram trip.</p><div class="tags"><span class="tag">&#x1F554; 6:00 AM &ndash; 12:30 PM | 4:00 PM &ndash; 8:00 PM</span><span class="tag bl">&#x1F4CD; ~40 km</span><span class="tag or">&#x1F45F; 565 steps &mdash; wear good shoes</span></div></div></div>
+  </div>
+  <div class="tip">&#x1F4A1; <strong>Tip:</strong> Wear traditional attire where possible &mdash; dhoti or saree. Shorts and sleeveless tops are not allowed inside most temple sanctums. Most temples have a break from 12 PM to 4 PM, so plan accordingly.</div>
+</div>
+
+<!-- TIRUVANNAMALAI -->
+<div class="attr-section">
+  <div class="sec-hdr"><div class="sec-icon">&#x1F525;</div><div><div class="sec-title">Tiruvannamalai &mdash; Full Day Trip</div><div class="sec-sub">~96 km from the farm &mdash; a deeply spiritual experience</div></div></div>
+  <div class="cards-grid">
+    <div class="attr-card"><div class="card-hdr"><h3>Arunachaleswarar Temple</h3><div class="sub">Lord Shiva &mdash; Pancha Bhoota Stalam (Fire element)</div></div><div class="card-body"><p>One of the five Pancha Bhoota Stalams, representing fire (Agni). One of the largest Hindu temples in the world, spread over 25 acres. The 66-metre eastern gopuram is among the tallest temple towers in India. The sacred Arunachala hill behind the temple is itself considered a form of Shiva. Sri Ramana Maharshi attained enlightenment at its foot and lived here for 54 years.</p><div class="tags"><span class="tag">&#x1F554; 5:30 AM &ndash; 12:30 PM | 3:30 PM &ndash; 9:30 PM</span><span class="tag bl">&#x1F4CD; ~96 km</span><span class="tag or">&#x23F1; Allow half a day</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Girivalam &mdash; Arunachala Hill Circuit</h3><div class="sub">Sacred 14 km barefoot walk around the hill</div></div><div class="card-body"><p>On every full moon, hundreds of thousands of devotees barefoot-circumambulate the 14 km path around Arunachala hill &mdash; one of the largest monthly pilgrimages in India. The walk passes through 8 sacred Shiva lingam shrines, springs, and meditation spots. Even on regular days, the girivalam path is peaceful and beautiful. Start early morning to avoid the heat.</p><div class="tags"><span class="tag">&#x1F31D; Best on full moon nights</span><span class="tag bl">&#x1F4CD; ~96 km from farm</span><span class="tag or">&#x1F45F; 14 km barefoot walk</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Sri Ramana Ashram</h3><div class="sub">Ashram of Sri Ramana Maharshi &mdash; Free Entry</div></div><div class="card-body"><p>A serene ashram at the base of Arunachala hill, built around the residence of Sri Ramana Maharshi who lived here from 1896 until 1950. One of the most peaceful spiritual destinations in South India, open to all visitors. The meditation hall, library, and Maharshi's samadhi shrine are open to all. About 2 km from the main temple. Free entry.</p><div class="tags"><span class="tag">&#x1F554; 5:30 AM &ndash; 12:30 PM | 2:30 PM &ndash; 8:30 PM</span><span class="tag bl">&#x1F4CD; ~96 km from farm</span><span class="tag or">&#x1F194; Free entry</span></div></div></div>
+  </div>
+</div>
+
+<!-- SILK SAREES -->
+<div class="attr-section">
+  <div class="sec-hdr"><div class="sec-icon">&#x1F9E3;</div><div><div class="sec-title">Silk Saree Shopping in Kanchipuram</div><div class="sec-sub">World-famous Kanjivaram silk &mdash; all shops ~14 km from farm</div></div></div>
+  <div class="sec-intro">Kanchipuram produces the world's finest pure silk sarees, woven by over 45,000 master weavers. Authentic Kanjivaram silk has interlocked (not stitched) body and border &mdash; hold the saree up to light to verify. Most shops are concentrated on <strong>Gandhi Road</strong> and <strong>Nellukara Street</strong>. Always look for the <strong>Silk Mark</strong> certification label for guaranteed authenticity.</div>
+  <div class="shops-grid">
+    <div class="shop-card"><div class="shop-name">Nalli Silks</div><div class="shop-desc">Founded in 1928 &mdash; one of the oldest and most trusted names in India for Kanjivaram silk. Wide range from classic wedding collections to festive and everyday sarees. Reliable quality and authentic weaves.</div><div class="tags"><span class="tag">Gandhi Road</span><span class="tag bl">~14 km</span><span class="tag or">Est. 1928</span></div></div>
+    <div class="shop-card"><div class="shop-name">Kumaran Silks</div><div class="shop-desc">Generations-old reputation for dense textures, rich colours, and intricately detailed borders. Both traditional and contemporary designs. A popular choice for bridal and wedding sarees.</div><div class="tags"><span class="tag">Central Kanchipuram</span><span class="tag bl">~14 km</span></div></div>
+    <div class="shop-card"><div class="shop-name">Pothys</div><div class="shop-desc">Huge variety from traditional Kanchipuram silk to bridal and contemporary styles. Known for transparent pricing and a wide selection. Accessible for all budgets. Clean, organised store.</div><div class="tags"><span class="tag">Central Kanchipuram</span><span class="tag bl">~14 km</span></div></div>
+    <div class="shop-card"><div class="shop-name">AS Babu Sah &amp; Sons</div><div class="shop-desc">Established 1974. One of the largest silk retail brands in Kanchipuram. Focused on bridal and wedding sarees with deep collections of traditional handwoven designs.</div><div class="tags"><span class="tag">Multiple locations</span><span class="tag bl">~14 km</span><span class="tag or">Est. 1974</span></div></div>
+    <div class="shop-card"><div class="shop-name">Sri Sarvalakshmi Silks</div><div class="shop-desc">Award-winning shop for handloom Kanjeevaram at near-wholesale prices. Winner of Radio City FM Business Champions 2026. Great for genuine sarees at great value.</div><div class="tags"><span class="tag">East Kanchipuram</span><span class="tag bl">~14 km</span></div></div>
+    <div class="shop-card"><div class="shop-name">Weavers' Cooperative Society</div><div class="shop-desc">Government cooperative selling directly from weavers. Silk Mark certified, no middlemen &mdash; best place for genuine prices without heavy retail markup. The most authentic shopping experience in Kanchipuram.</div><div class="tags"><span class="tag">Gandhi Road</span><span class="tag bl">~14 km</span><span class="tag or">&#x2705; Silk Mark certified</span></div></div>
+  </div>
+  <div class="tip">&#x1F4A1; <strong>How to spot authentic Kanchipuram silk:</strong> Authentic Kanjivaram has contrasting colours in the body and border that are interlocked &mdash; not just stitched. Hold the saree up to light; if the body and border separate cleanly, it is genuine. Price range: &#x20B9;3,000 (plain cotton-silk) to &#x20B9;1,00,000+ (pure silk heavy zari bridal). Always insist on the Silk Mark label.</div>
+</div>
+
+<!-- RESTAURANTS -->
+<div class="attr-section">
+  <div class="sec-hdr"><div class="sec-icon">&#x1F372;</div><div><div class="sec-title">Tamil Nadu Cuisine &mdash; Best Restaurants</div><div class="sec-sub">Authentic South Indian dining near Kanchipuram (~14 km)</div></div></div>
+  <div class="sec-intro">Kanchipuram is a temple town with predominantly vegetarian cuisine. The famous <strong>Kanchipuram Idli</strong> &mdash; large, spiced with cumin, black pepper, and ginger, steamed in banana leaf &mdash; is a must-try specialty. Pair it with freshly ground coconut chutney and piping hot filter coffee.</div>
+  <div class="shops-grid">
+    <div class="rest-card"><div class="shop-name">Nithya Amirtham</div><div class="rest-type">Traditional Vegetarian</div><div class="shop-desc">Most popular local choice. Serves authentic South Indian breakfast &mdash; idli, vada, pongal, dosa, and the famous Kanchipuram Idli. Excellent filter coffee. Near Chitragupta Temple.</div><div class="tags"><span class="tag">Near Chitragupta Temple</span><span class="tag bl">~14 km</span><span class="tag or">&#x20B9; Budget-friendly</span></div></div>
+    <div class="rest-card"><div class="shop-name">Saravana Bhavan</div><div class="rest-type">South Indian Vegetarian Chain</div><div class="shop-desc">Consistent quality, air-conditioned comfort. Renowned dosas, idlis, Tamil thali meals, and sweets. Reliable for families and those who prefer a clean, well-organised dining experience.</div><div class="tags"><span class="tag">Gandhi Road</span><span class="tag bl">~14 km</span><span class="tag or">&#x20B9;&#x20B9; Moderate</span></div></div>
+    <div class="rest-card"><div class="shop-name">Vasanta Bhavan</div><div class="rest-type">Multi-cuisine Vegetarian</div><div class="shop-desc">Part of the Veedu Vasanta Bhavan chain. Vegetarian menu spanning South Indian, North Indian, and Chinese options. Air-conditioned. Good for families wanting variety.</div><div class="tags"><span class="tag">Gandhi Road</span><span class="tag bl">~14 km</span><span class="tag or">&#x20B9;&#x20B9; Moderate</span></div></div>
+    <div class="rest-card"><div class="shop-name">Sai Sangeet Fine Dine</div><div class="rest-type">Upscale Vegetarian Fine Dining</div><div class="shop-desc">The best option for a special meal in Kanchipuram. Upscale vegetarian fine dining with tastefully presented Tamil Nadu cuisine. Perfect for celebrations and anniversaries.</div><div class="tags"><span class="tag">Nellukara Street</span><span class="tag bl">~14 km</span><span class="tag or">&#x20B9;&#x20B9;&#x20B9; Premium</span></div></div>
+    <div class="rest-card"><div class="shop-name">Thahira Hotel</div><div class="rest-type">Non-Vegetarian Specialists</div><div class="shop-desc">The go-to spot for non-vegetarian Tamil cuisine &mdash; chicken, mutton, and fish curries made with traditional spice blends. Excellent biryani and Chettinad-style preparations.</div><div class="tags"><span class="tag">Gandhi Road</span><span class="tag bl">~14 km</span><span class="tag or">&#x1F356; Non-Veg specialists</span></div></div>
+  </div>
+</div>
+
+<!-- NATURE & LAKES -->
+<div class="attr-section">
+  <div class="sec-hdr"><div class="sec-icon">&#x1F30A;</div><div><div class="sec-title">Nature, Lakes &amp; Wildlife</div><div class="sec-sub">Beautiful natural attractions within easy reach of the farm</div></div></div>
+  <div class="cards-grid">
+    <div class="nat-card"><div class="nat-accent" style="background:linear-gradient(90deg,#1a5a7a,#2d8aaa)"></div><div class="nat-body"><h3>&#x1F30A; Madurantakam Lake</h3><p>The second-largest lake in Tamil Nadu, spread over 2,400 acres. This ancient irrigation tank is tied to a beautiful legend &mdash; Lord Rama is believed to have saved it from a catastrophic flood, and the Eri Katha Ramar Temple on its bund commemorates this event. A haven for waterbirds including herons, egrets, cormorants, and anhingas. The scenic bund road is perfect for an early morning or evening walk.</p><div class="tags"><span class="tag bl">&#x1F4CD; ~13 km</span><span class="tag">&#x1F6B6; Bund walk &amp; birdwatching</span><span class="tag or">&#x1F31F; Best: Nov &ndash; Mar</span></div></div></div>
+    <div class="nat-card"><div class="nat-accent" style="background:linear-gradient(90deg,#1a7a3a,#2d9a5a)"></div><div class="nat-body"><h3>&#x1F985; Vedanthangal Bird Sanctuary</h3><p>India's oldest water bird sanctuary with over 250 years of recorded history, spread over 30 hectares. Home to 40,000+ birds of 40+ species &mdash; painted storks, open-billed storks, night herons, darters, spoonbills, and migratory waterfowl from Siberia and Europe. Located next to Madurantakam Lake, making a combined visit ideal. Best visited at 6&ndash;8 AM when birds are most active and nesting.</p><div class="tags"><span class="tag">&#x1F554; 6:00 AM &ndash; 6:00 PM</span><span class="tag bl">&#x1F4CD; ~43 km</span><span class="tag or">&#x1F194; Entry: &#x20B9;25</span><span class="tag">&#x1F31F; Best: Oct &ndash; Mar</span></div></div></div>
+    <div class="nat-card"><div class="nat-accent" style="background:linear-gradient(90deg,#5a6a1a,#7a8a2a)"></div><div class="nat-body"><h3>&#x1FAA8; Mamandur Pallava Cave Temples</h3><p>A group of four 7th-century rock-cut caves built by Pallava king Mahendravarman I, on the Kanchipuram&ndash;Vandavasi road. Two caves contain Shiva lingam carvings with rare sculptures of Nandi and Bringi. Tamil Brahmi inscriptions found here are important to historians. An ASI-protected Monument of National Importance &mdash; peaceful, uncrowded, and a true hidden gem. The adjacent ancient irrigation tank supports rich birdlife.</p><div class="tags"><span class="tag">&#x1F554; 9:00 AM &ndash; 5:00 PM</span><span class="tag bl">&#x1F4CD; ~25 km</span><span class="tag or">&#x1F194; Free entry</span><span class="tag">&#x1F4F7; Photography allowed</span></div></div></div>
+  </div>
+</div>
+
+<!-- MORE ATTRACTIONS -->
+<div class="attr-section">
+  <div class="sec-hdr"><div class="sec-icon">&#x1F3DB;</div><div><div class="sec-title">More Day Trip Attractions</div><div class="sec-sub">Heritage, history &amp; coast within a day trip distance</div></div></div>
+  <div class="cards-grid">
+    <div class="attr-card"><div class="card-hdr"><h3>Mahabalipuram (UNESCO World Heritage)</h3><div class="sub">7th-century Pallava port city &mdash; ~65 km</div></div><div class="card-body"><p>One of Tamil Nadu's greatest treasures. Highlights: the Shore Temple (725 CE) overlooking the Bay of Bengal; Arjuna's Penance &mdash; the largest open-air rock relief in the world; and the Five Rathas &mdash; monolithic rock-cut chariot temples. The annual Mamallapuram Dance Festival (Dec&ndash;Jan) showcases Bharatanatyam, Kuchipudi, and Kathakali. Beautiful beach for a relaxing end to the day.</p><div class="tags"><span class="tag">&#x1F554; Shore Temple: 6:00 AM &ndash; 6:00 PM</span><span class="tag bl">&#x1F4CD; ~65 km</span><span class="tag or">&#x1F194; Entry: &#x20B9;10</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Uthiramerur &mdash; Ancient Democracy</h3><div class="sub">9th-century Chola self-governance inscriptions &mdash; ~40 km</div></div><div class="card-body"><p>A truly remarkable living history site. Stone inscriptions in the Vaikunda Perumal Temple here describe a sophisticated 9th-century CE democratic governance system &mdash; written eligibility criteria for representatives, voting procedures, and anti-corruption rules. Former PM Rajiv Gandhi visited and was inspired to reform India's Panchayati Raj. One of the most undervisited but historically significant sites in Tamil Nadu.</p><div class="tags"><span class="tag bl">&#x1F4CD; ~40 km</span><span class="tag or">&#x1F194; Free</span><span class="tag">&#x1F4DA; History lovers' must-visit</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Kanchi Kudil &mdash; Heritage Museum</h3><div class="sub">100-year-old traditional Tamil home &mdash; ~14 km</div></div><div class="card-body"><p>A beautifully preserved 100-year-old traditional Brahmin house in Kanchipuram converted into a living heritage museum. Displays traditional Tamil cooking utensils, furniture, jewellery, musical instruments, and everyday objects that bring early 20th-century Kanchipuram life to life. Guided tours are available, and cultural programs are held in the evenings.</p><div class="tags"><span class="tag">&#x1F554; 9:00 AM &ndash; 5:00 PM</span><span class="tag bl">&#x1F4CD; ~14 km</span><span class="tag or">&#x1F194; Entry: &#x20B9;10&ndash;20</span></div></div></div>
+    <div class="attr-card"><div class="card-hdr"><h3>Gingee Fort (Senji Fort)</h3><div class="sub">"Troy of the East" &mdash; ~130 km (combine with Tiruvannamalai)</div></div><div class="card-body"><p>One of Tamil Nadu's mightiest medieval forts, spanning three hills. Chhatrapati Shivaji called it "the most impregnable fortress in India"; the British called it "Troy of the East." Contains ancient temples, royal palace ruins (Kalyana Mahal), and the Ranganatha temple. Best combined as a full-day trip with Tiruvannamalai &mdash; both are in the same direction from the farm.</p><div class="tags"><span class="tag">&#x1F554; 9:00 AM &ndash; 5:30 PM</span><span class="tag bl">&#x1F4CD; ~130 km</span><span class="tag or">&#x1F194; &#x20B9;25 (Indian)</span></div></div></div>
+  </div>
+</div>
+
+<!-- DISTANCE TABLE -->
+<div class="attr-section">
+  <div class="sec-hdr"><div class="sec-icon">&#x1F5FA;</div><div><div class="sec-title">Quick Distance Guide</div><div class="sec-sub">All distances from Kanchi Farm Stay, Chithathur</div></div></div>
+  <table class="dist-table">
+    <tr><th>Attraction</th><th>Distance</th><th>Suggested Time</th></tr>
+    <tr><td>Madurantakam Lake &amp; Eri Katha Ramar Temple</td><td><span class="dbadge">~13 km</span></td><td>2&ndash;3 hours</td></tr>
+    <tr><td>Kanchipuram &mdash; Temples, Silk Sarees &amp; Restaurants</td><td><span class="dbadge">~14 km</span></td><td>Full day</td></tr>
+    <tr><td>Kanchi Kudil Heritage Museum</td><td><span class="dbadge">~14 km</span></td><td>1&ndash;2 hours</td></tr>
+    <tr><td>Mamandur Pallava Cave Temples</td><td><span class="dbadge">~25 km</span></td><td>1&ndash;2 hours</td></tr>
+    <tr><td>Uthiramerur &mdash; Ancient Democratic Village</td><td><span class="dbadge">~40 km</span></td><td>2 hours</td></tr>
+    <tr><td>Vedagiriswarar Temple, Thirukazhukundram</td><td><span class="dbadge">~40 km</span></td><td>2&ndash;3 hours</td></tr>
+    <tr><td>Vedanthangal Bird Sanctuary</td><td><span class="dbadge">~43 km</span></td><td>Half day</td></tr>
+    <tr><td>Mahabalipuram (UNESCO) &amp; Beach</td><td><span class="dbadge">~65 km</span></td><td>Full day</td></tr>
+    <tr><td>Tiruvannamalai &mdash; Arunachaleswarar &amp; Ramana Ashram</td><td><span class="dbadge">~96 km</span></td><td>Full day</td></tr>
+    <tr><td>Gingee Fort (best combined with Tiruvannamalai)</td><td><span class="dbadge">~130 km</span></td><td>Full day</td></tr>
+  </table>
+</div>
+
+</div><!-- /attr-body -->
+</div><!-- /attractions-page -->
+<div id="footer-placeholder"></div>
+<script src="script.js?v=5"></script>
+</body>
+</html>

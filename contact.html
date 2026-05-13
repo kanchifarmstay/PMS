@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Us | Kanchi Farm Stay</title>
+    <meta name="description" content="Contact Kanchi Farm Stay for bookings, availability and inquiries. Reach us by phone, WhatsApp or email. Located near Kanchipuram, Tamil Nadu.">
+    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.ico">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- Navbar Placeholder -->
+    <div id="navbar-placeholder"></div>
+
+    <div class="contact-page">
+        <section class="section bg-light text-center">
+            <div class="container">
+                <h1>Contact Us</h1>
+                <p>We'd love to hear from you. Plan your getaway today.</p>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="container">
+                <div class="contact-grid">
+
+                    <!-- Contact Info Side -->
+                    <div class="contact-info">
+                        <h2>Get in Touch</h2>
+                        <p class="contact-intro">
+                            Have questions about availability, amenities, or special requests?
+                            Reach out to us directly or use the form to send a booking inquiry.
+                        </p>
+
+                        <div class="info-item">
+                            <div class="icon">📍</div>
+                            <div>
+                                <h3>Address</h3>
+                                <a href="https://maps.app.goo.gl/cV2gsfgTa6bsDpaW9" target="_blank"
+                                    rel="noopener noreferrer" class="map-link">View on Google Maps</a>
+                            </div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="icon">📞</div>
+                            <div>
+                                <h3>Whatsapp & Phone</h3>
+                                <p>
+                                    <a href="tel:+916383726094">+91 6383726094</a><br>
+                                    <a href="tel:+918825775747">+91 8825775747</a>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="icon">✉️</div>
+                            <div>
+                                <h3>Email</h3>
+                                <p><a href="mailto:ops@kanchifarmstay.com">ops@kanchifarmstay.com</a></p>
+                            </div>
+                        </div>
+
+                        <div class="external-booking">
+                            <h3>Book via Partners</h3>
+                            <div class="partner-buttons">
+                                <a href="https://www.booking.com/hotel/in/kanchi-farm-stay.en-gb.html" target="_blank"
+                                    rel="noopener noreferrer" class="btn btn-outline-partner">Booking.com</a>
+                                <a href="https://airbnb.co.in/h/kanchifarmstay" target="_blank" rel="noopener noreferrer" class="btn btn-outline-partner">Airbnb</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Inquiry Form Side -->
+                    <div class="contact-form-container">
+                        <!-- Booking Form Copy -->
+                        <form class="w2p-form form-card" data-web2phone="form"
+                            data-public-key="ygkAN8tl7U7WjuxLQLjhFTJX"
+                            data-endpoint="https://web2phone.co.uk/api/v1/submit/"
+                            style="padding: 2rem; background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-md);">
+                            <h2 style="margin-bottom:1.5rem;">Send Inquiry</h2>
+
+                            <div class="form-group">
+                                <label for="your_name">Name</label>
+                                <input name="your_name" type="text" id="your_name" placeholder="Jane Doe" required
+                                    class="form-input">
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="email">Email</label>
+                                    <input name="email" type="email" id="email" placeholder="you@example.com" required
+                                        class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label for="phone">Whatsapp & Phone</label>
+                                    <input name="phone" type="tel" id="phone_contact" placeholder="+91" required
+                                        class="form-input">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="checkin">Check-in</label>
+                                    <input type="date" name="field" id="checkin_contact" required class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label for="checkout">Check-out</label>
+                                    <input type="date" name="field_3" id="checkout_contact" required class="form-input">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="guests">Guests</label>
+                                <select name="field_2" id="guests_contact" class="form-input">
+                                    <option value="1">1 Guest</option>
+                                    <option value="2" selected>2 Guests</option>
+                                    <option value="3">3 Guests</option>
+                                    <option value="4">4 Guests</option>
+                                    <option value="5">5 Guests</option>
+                                    <option value="6">6 Guests</option>
+                                    <option value="7">7 Guests</option>
+                                    <option value="8">8 Guests</option>
+                                    <option value="9">9 Guests</option>
+                                    <option value="10+">10+ Guests</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="message">Message</label>
+                                <textarea name="message" id="message_contact" rows="4" placeholder="How can we help?"
+                                    required class="form-textarea"></textarea>
+                            </div>
+
+                            <button type="submit" class="btn btn-block">Send</button>
+                            <p data-w2p-output class="w2p-output" aria-live="polite"
+                                style="margin-top: 1rem; font-weight: 500;"></p>
+                        </form>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Footer Placeholder -->
+    <div id="footer-placeholder"></div>
+
+    <!-- Scripts -->
+    <script src="script.js?v=5"></script>
+    <script src="https://web2phone.co.uk/static/formsapp/js/embed.js?v=5" async></script>
+</body>
+
+</html>

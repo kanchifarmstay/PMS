@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#5a8a3a"/>
+      <stop offset="100%" stop-color="#2a4a1a"/>
+    </radialGradient>
+    <filter id="soft-shadow">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="rgba(0,0,0,0.4)"/>
+    </filter>
+  </defs>
+
+  <circle cx="540" cy="540" r="540" fill="url(#bg)"/>
+
+  <!-- Grass texture dots -->
+  <circle cx="180" cy="220" r="5" fill="rgba(255,255,255,0.07)"/>
+  <circle cx="860" cy="200" r="4" fill="rgba(255,255,255,0.07)"/>
+  <circle cx="140" cy="860" r="7" fill="rgba(255,255,255,0.05)"/>
+  <circle cx="920" cy="880" r="5" fill="rgba(255,255,255,0.07)"/>
+
+  <circle cx="540" cy="540" r="420" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+
+  <!-- Sun -->
+  <circle cx="540" cy="300" r="70" fill="rgba(255,220,80,0.35)"/>
+  <circle cx="540" cy="300" r="50" fill="rgba(255,220,80,0.5)"/>
+
+  <!-- Cow silhouette (simple) -->
+  <g filter="url(#soft-shadow)" transform="translate(540,500)">
+    <!-- Body -->
+    <ellipse cx="0" cy="0" rx="130" ry="80" fill="rgba(255,255,255,0.25)"/>
+    <!-- Head -->
+    <ellipse cx="145" cy="-30" rx="55" ry="45" fill="rgba(255,255,255,0.25)"/>
+    <!-- Ears -->
+    <ellipse cx="165" cy="-68" rx="18" ry="12" fill="rgba(255,255,255,0.2)" transform="rotate(-20,165,-68)"/>
+    <ellipse cx="125" cy="-70" rx="18" ry="12" fill="rgba(255,255,255,0.2)" transform="rotate(20,125,-70)"/>
+    <!-- Snout -->
+    <ellipse cx="195" cy="-20" rx="25" ry="18" fill="rgba(255,255,255,0.15)"/>
+    <!-- Legs -->
+    <rect x="-90" y="75" width="28" height="70" rx="8" fill="rgba(255,255,255,0.2)"/>
+    <rect x="-40" y="75" width="28" height="70" rx="8" fill="rgba(255,255,255,0.2)"/>
+    <rect x="40" y="75" width="28" height="70" rx="8" fill="rgba(255,255,255,0.2)"/>
+    <rect x="90" y="75" width="28" height="70" rx="8" fill="rgba(255,255,255,0.2)"/>
+    <!-- Tail -->
+    <path d="M -130 -10 Q -180 -60 -160 -100" stroke="rgba(255,255,255,0.3)" stroke-width="8" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Ground line -->
+  <path d="M 200 680 Q 540 650 880 680" stroke="rgba(255,255,255,0.15)" stroke-width="3" fill="none"/>
+
+  <text x="540" y="760" font-family="Georgia, serif" font-size="72" font-weight="700"
+        fill="white" text-anchor="middle" letter-spacing="2">Farm Life</text>
+
+  <text x="540" y="820" font-family="Arial, sans-serif" font-size="32"
+        fill="rgba(255,255,255,0.75)" text-anchor="middle" letter-spacing="1">Animals &amp; Nature</text>
+
+  <text x="540" y="920" font-family="Arial, sans-serif" font-size="26"
+        fill="rgba(255,255,255,0.5)" text-anchor="middle" letter-spacing="3">KANCHI FARM STAY</text>
+</svg>

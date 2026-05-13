@@ -1,0 +1,58 @@
+﻿<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Food Menu Card | Kanchi Farm Stay</title>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;600;700&display=swap" rel="stylesheet">
+<style>"+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Lato,Arial,sans-serif;background:#e8e0d0;display:flex;justify-content:center;padding:1.5rem;min-height:100vh}
+.page{width:210mm;background:#fffef9;box-shadow:0 8px 40px rgba(0,0,0,.2);position:relative;overflow:hidden}
+.border-outer{position:absolute;inset:7px;border:2px solid #2d5016;pointer-events:none;z-index:10}
+.border-inner{position:absolute;inset:12px;border:1px solid #a8c878;pointer-events:none;z-index:10}
+.content{padding:22px 30px 20px}
+.menu-header{text-align:center;padding-bottom:12px;border-bottom:1.5px solid #2d5016;margin-bottom:14px}
+.logo-area{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px}
+.logo-area img{width:54px;height:54px;object-fit:contain}
+.logo-text h1{font-size:2rem;font-weight:900;color:#1a3a0a;letter-spacing:4px;line-height:1;text-transform:uppercase}
+.logo-text p{font-size:.65rem;letter-spacing:3px;text-transform:uppercase;color:#5a8a3a;margin-top:2px}
+.header-tagline{font-size:.72rem;color:#666;font-style:italic;margin-top:4px}
+.divider{display:flex;align-items:center;justify-content:center;gap:8px;margin:6px 0 0}
+.divider span{height:1px;width:70px;background:#a8c878}
+.notice{background:#f0f7e8;border:1px solid #a8c878;border-radius:5px;padding:5px 12px;text-align:center;margin-bottom:12px;font-size:.7rem;color:#3a6020;line-height:1.5}
+.notice strong{color:#1a3a0a}
+.legend{display:flex;justify-content:center;gap:16px;margin-bottom:12px}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:.68rem;color:#555}
+.vdot{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block}
+.vdot.v{background:#2d8a2d;border:1.5px solid #1a6b1a}
+.vdot.n{background:#c0392b;border:1.5px solid #9b2d22}
+.menu-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
+.menu-section{margin-bottom:12px;break-inside:avoid}
+.section-title{font-size:.82rem;font-weight:700;color:#1a3a0a;text-transform:uppercase;letter-spacing:1px;padding:2px 0 4px;border-bottom:1.5px solid #2d5016;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.menu-row{display:flex;justify-content:space-between;align-items:baseline;padding:2.5px 0;border-bottom:1px dotted #d8d0c0}
+.menu-row:last-child{border-bottom:none}
+.row-left{display:flex;align-items:flex-start;gap:5px;flex:1;min-width:0}
+.item-name{font-size:.76rem;color:#1a1a1a;font-weight:600}
+.item-sub{font-size:.62rem;color:#888;display:block;line-height:1.3;margin-top:1px}
+.item-price{font-size:.8rem;font-weight:700;color:#2d5016;white-space:nowrap;margin-left:8px;flex-shrink:0}
+.menu-footer{text-align:center;margin-top:12px;padding-top:10px;border-top:1.5px solid #2d5016}
+.footer-contact{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin-bottom:4px}
+.footer-contact span{font-size:.68rem;color:#444}
+.footer-contact span b{color:#1a3a0a}
+.footer-note{font-size:.62rem;color:#888;font-style:italic}
+.print-btn{position:fixed;bottom:1.5rem;right:1.5rem;background:#2d5016;color:white;border:none;border-radius:50px;padding:10px 22px;font-size:.85rem;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);font-family:Lato,sans-serif}
+.print-btn:hover{background:#1a3a0a}
+@media print{body{background:white;padding:0}.page{box-shadow:none;width:210mm}.no-print{display:none!important}}+@"</style></head><body>
+<button class="print-btn no-print" onclick="window.print()">Print / Save PDF</button>
+<div class="page"><div class="border-outer"></div><div class="border-inner"></div><div class="content">
+<div class="menu-header">
+  <div class="logo-area"><img src="assets/images/logo.png" alt="logo" onerror="this.style.display='none'">
+  <div class="logo-text"><h1>FOOD MENU</h1><p>Kanchi Farm Stay</p></div></div>
+  <div class="header-tagline">Home-cooked meals made with love &amp; fresh farm ingredients</div>
+  <div class="divider"><span></span><span>*</span><span></span></div>
+</div>
+<div class="notice">All food is freshly prepared to order -- please place your order <strong>2-3 hours in advance</strong> to allow us time to cook.</div>
+<div class="legend"><div class="legend-item"><span class="vdot v"></span> Vegetarian</div><div class="legend-item"><span class="vdot n"></span> Non-Vegetarian</div></div>
+<div class="menu-cols"><div>"+<div class="menu-section"><div class="section-title"><span class="s-icon">&#x1F373;</span> Breakfast &amp; Snacks</div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Idly</span><span class="item-sub">1 piece</span></div></div><span class="item-price">Rs.20</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Vada</span><span class="item-sub">1 piece</span></div></div><span class="item-price">Rs.25</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Dosa</span><span class="item-sub">2 pieces</span></div></div><span class="item-price">Rs.60</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Pongal</span></div></div><span class="item-price">Rs.50</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Idly Vada Combo</span><span class="item-sub">Idly 3 pcs, 1 Vada, Chutney and Sambar</span></div></div><span class="item-price">Rs.60</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Poori</span><span class="item-sub">2 pcs with Bhaji</span></div></div><span class="item-price">Rs.50</span></div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Omelette</span><span class="item-sub">1 piece</span></div></div><span class="item-price">Rs.30</span></div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Boiled Eggs</span><span class="item-sub">1 piece</span></div></div><span class="item-price">Rs.25</span></div></div>+<div class="menu-section"><div class="section-title"><span class="s-icon">&#x1F35A;</span> Veg Specials</div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Rice</span></div></div><span class="item-price">Rs.60</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Chappathi</span><span class="item-sub">1 piece</span></div></div><span class="item-price">Rs.30</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Meal Veg</span><span class="item-sub">Rice, 2 Sabji, 2 Chapati, 1 Papad, Curd, Rasam, Dal</span></div></div><span class="item-price">Rs.250</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Dal</span></div></div><span class="item-price">Rs.150</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Vegetable Poriyal</span></div></div><span class="item-price">Rs.200</span></div></div>+<div class="menu-section"><div class="section-title"><span class="s-icon">&#x2615;</span> Beverages</div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Tea</span></div></div><span class="item-price">Rs.25</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Ginger Tea</span></div></div><span class="item-price">Rs.30</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Coffee</span></div></div><span class="item-price">Rs.40</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Butter Milk</span></div></div><span class="item-price">Rs.40</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Tender Coconut</span></div></div><span class="item-price">Rs.60</span></div><div class="menu-row"><div class="row-left"><span class="vdot v"></span><div><span class="item-name">Packaged Water Bottle</span></div></div><span class="item-price">Rs.30</span></div></div>+@"</div><div>"+<div class="menu-section"><div class="section-title"><span class="s-icon">&#x1F357;</span> Non-Veg Specials</div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Meal Non-Veg</span><span class="item-sub">Rice, Sabji, Chapati, Papad, Curd, Rasam, Dal - Chicken 4 Pcs Fry, Chicken Curry 2 pcs</span></div></div><span class="item-price">Rs.350</span></div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Mutton Dry</span><span class="item-sub">8 pieces</span></div></div><span class="item-price">Rs.400</span></div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Mutton Gravy</span></div></div><span class="item-price">Rs.400</span></div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Mutton Rasam</span></div></div><span class="item-price">Rs.400</span></div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Chicken Dry</span></div></div><span class="item-price">Rs.300</span></div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Chicken Gravy</span></div></div><span class="item-price">Rs.300</span></div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Chicken 65</span></div></div><span class="item-price">Rs.300</span></div><div class="menu-row"><div class="row-left"><span class="vdot n"></span><div><span class="item-name">Egg Curry</span></div></div><span class="item-price">Rs.200</span></div></div>+@"</div></div>
+<div class="menu-footer">
+  <div class="footer-contact"><span><b>+91 63837 26094</b></span><span><b>+91 90280 01639</b></span><span><b>+91 88257 75747</b></span></div>
+  <div class="footer-note">Place your order with reception or call us -- we will be happy to serve you!</div>
+</div>
+</div></div></body></html>

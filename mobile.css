@@ -1,0 +1,209 @@
+/*
+ * Kanchi Farm Stay — Mobile-First CSS
+ * Loaded after style.css to override/enhance for touch devices.
+ * Breakpoints: 480px (phone), 768px (tablet)
+ */
+
+/* ── Touch target baseline ─────────────────────────────────── */
+a, button, input, select, textarea, label {
+  -webkit-tap-highlight-color: rgba(74,124,89,.15);
+}
+button, .btn, .btn-link, .btn-primary, .btn-secondary,
+[role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+}
+
+/* ── Tel & geo quick-tap styling ───────────────────────────── */
+a[href^="tel:"],
+a[href^="mailto:"],
+a[href^="https://maps"] {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .3rem 0;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--color-primary, #4a7c59);
+}
+a[href^="tel:"]:hover,
+a[href^="mailto:"]:hover {
+  text-decoration: underline;
+}
+
+/* ── Sticky bottom "Book Direct" bar (mobile only) ─────────── */
+#mobile-book-bar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Show sticky bar */
+  #mobile-book-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 9999;
+    background: #fff;
+    border-top: 1px solid #e2e8e2;
+    padding: 10px 16px 10px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    gap: 10px;
+    box-shadow: 0 -4px 20px rgba(0,0,0,.12);
+    align-items: center;
+  }
+  #mobile-book-bar .mbb-info {
+    flex: 1;
+    min-width: 0;
+  }
+  #mobile-book-bar .mbb-from {
+    font-size: .7rem;
+    color: #718096;
+    display: block;
+    line-height: 1;
+  }
+  #mobile-book-bar .mbb-price {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #1a2e1a;
+    display: block;
+    line-height: 1.2;
+  }
+  #mobile-book-bar .mbb-sub {
+    font-size: .68rem;
+    color: #a0aec0;
+  }
+  #mobile-book-bar .mbb-btn {
+    background: #4a7c59;
+    color: #fff;
+    font-size: .95rem;
+    font-weight: 700;
+    padding: 13px 24px;
+    border-radius: 12px;
+    text-decoration: none;
+    white-space: nowrap;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 4px 12px rgba(74,124,89,.4);
+  }
+  #mobile-book-bar .mbb-whatsapp {
+    background: #25d366;
+    color: #fff;
+    font-size: 1.3rem;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    text-decoration: none;
+    box-shadow: 0 4px 12px rgba(37,211,102,.35);
+  }
+
+  /* Push page content above the sticky bar */
+  body { padding-bottom: 80px; }
+
+  /* ── Hero ─────────────────────────────────────────────────── */
+  .hero-section { min-height: 85vh; }
+  .hero-content h1 {
+    font-size: clamp(1.6rem, 7vw, 2.4rem);
+    line-height: 1.2;
+  }
+  .hero-content p { font-size: .95rem; }
+  .hero-buttons { margin-top: 1.25rem; }
+  .hero-buttons .btn {
+    padding: 14px 32px;
+    font-size: 1rem;
+    width: 100%;
+    max-width: 280px;
+  }
+
+  /* ── Accommodations grid ──────────────────────────────────── */
+  .rooms-grid {
+    grid-template-columns: 1fr !important;
+    gap: 1.25rem;
+  }
+  .room-card-preview { border-radius: 14px; overflow: hidden; }
+  .room-image { height: 200px; object-fit: cover; width: 100%; }
+
+  /* ── Features & activities ────────────────────────────────── */
+  .features-grid { grid-template-columns: 1fr 1fr !important; gap: 1rem; }
+  .activities-grid { grid-template-columns: 1fr !important; }
+
+  /* ── Contact form ─────────────────────────────────────────── */
+  .contact-grid { grid-template-columns: 1fr !important; gap: 1.5rem; }
+  .form-row { grid-template-columns: 1fr !important; gap: 0; }
+
+  /* +/- guest counter */
+  .guest-counter {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+    height: 48px;
+  }
+  .guest-counter button {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    border: none;
+    background: #f7fafc;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #4a7c59;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .guest-counter button:active { background: #e2e8f0; }
+  .guest-counter .gc-val {
+    flex: 1;
+    text-align: center;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1a202c;
+  }
+  /* hide the native select on mobile */
+  .guest-counter-wrap select { display: none !important; }
+  .guest-counter-wrap { position: relative; }
+
+  /* date inputs — make them full-height touch-friendly */
+  input[type="date"], input[type="text"], input[type="email"],
+  input[type="tel"], select, textarea {
+    min-height: 48px;
+    font-size: 16px !important; /* prevents iOS zoom on focus */
+    border-radius: 10px;
+  }
+
+  /* ── Reviews grid ─────────────────────────────────────────── */
+  .home-reviews-grid { grid-template-columns: 1fr !important; gap: 1rem; }
+
+  /* ── Section spacing ──────────────────────────────────────── */
+  .section { padding: 2.5rem 0 !important; }
+  .mb-lg { margin-bottom: 1.5rem !important; }
+  h2 { font-size: clamp(1.4rem, 5vw, 2rem); }
+}
+
+/* ── Very small screens (≤380px) ───────────────────────────── */
+@media (max-width: 380px) {
+  .features-grid { grid-template-columns: 1fr !important; }
+  #mobile-book-bar .mbb-btn { padding: 12px 16px; font-size: .85rem; }
+}
+
+/* ── Tablet (481–768px) ─────────────────────────────────────── */
+@media (min-width: 481px) and (max-width: 768px) {
+  .rooms-grid { grid-template-columns: 1fr 1fr !important; }
+  .activities-grid { grid-template-columns: 1fr 1fr !important; }
+}
+
+/* ── Performance: lazy-load hints ───────────────────────────── */
+img {
+  loading: lazy;
+  content-visibility: auto;
+}
