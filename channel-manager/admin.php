@@ -105,7 +105,7 @@ if (!empty($_SESSION['admin_logged_in'])) {
             'amount'    => 0,
         ];
         addBooking($data);
-        header('Location: admin.php?section=calendar&flash=Date+blocked+across+all+channels'); exit;
+        header('Location: admin.php?section=calendar&view=month&flash=Date+blocked+across+all+channels'); exit;
     }
 
     if ($act === 'delete_booking')  { deleteBooking((int)$_POST['id']);  header('Location: admin.php?section=bookings&flash=Deleted');   exit; }
@@ -135,7 +135,44 @@ if (!empty($_SESSION['admin_logged_in'])) {
         foreach ($_POST['rates'] as $rid => $price) {
             upsertRoomRate($rid, (float)$price);
         }
-        header('Location: admin.php?section=pricing&flash=Base+rates+updated'); exit;
+        // Also save platform rates if submitted together
+        foreach ($_POST['platform_rates'] ?? [] as $rid => $platforms) {
+            foreach ($platforms as $platform => $rate) {
+                if ($rate !== '') upsertPlatformRate($rid, $platform, (float)$rate);
+            }
+        }
+        header('Location: admin.php?section=pricing&flash=Rates+updated'); exit;
+    }
+
+    if ($act === 'update_platform_rates') {
+        foreach ($_POST['platform_rates'] ?? [] as $rid => $platforms) {
+            foreach ($platforms as $platform => $rate) {
+                if ($rate !== '') upsertPlatformRate($rid, $platform, (float)$rate);
+            }
+        }
+        header('Location: admin.php?section=pricing&flash=Platform+rates+saved'); exit;
+    }
+
+    if ($act === 'save_discount_rules') {
+        $types    = $_POST['rule_type']   ?? [];
+        $labels   = $_POST['rule_label']  ?? [];
+        $values   = $_POST['rule_value']  ?? [];
+        $units    = $_POST['rule_unit']   ?? [];
+        $mins     = $_POST['rule_min']    ?? [];
+        $aheads   = $_POST['rule_ahead']  ?? [];
+        $enableds = $_POST['rule_enabled'] ?? [];
+        foreach ($types as $i => $rtype) {
+            upsertDiscountRule(
+                '__all__', $rtype,
+                $labels[$i]   ?? $rtype,
+                (float)($values[$i] ?? 0),
+                $units[$i]    ?? 'pct',
+                (int)($mins[$i]   ?? 1),
+                (int)($aheads[$i] ?? 0),
+                isset($enableds[$i]) ? 1 : 0
+            );
+        }
+        header('Location: admin.php?section=pricing&flash=Discount+rules+saved'); exit;
     }
 
     if ($act === 'approve_suggestion') {
@@ -175,6 +212,12 @@ $rooms   = ROOM_IDS;
 // Day-view date (defaults to today)
 $dayDate = $_GET['date'] ?? date('Y-m-d');
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dayDate)) $dayDate = date('Y-m-d');
+
+// Unified calendar view tab (day | week | month | year)
+if ($section === 'day')     $calView = 'day';
+elseif ($section === 'week') $calView = 'week';
+elseif ($section === 'overview') $calView = 'month';
+else $calView = $_GET['view'] ?? 'day';
 
 if (!empty($_SESSION['admin_logged_in'])) {
     $allBookings  = getAllBookings();
@@ -255,6 +298,12 @@ if (!empty($_SESSION['admin_logged_in'])) {
     // Room rates map
     $ratesMap = [];
     foreach (getRoomRates() as $r) $ratesMap[$r['room_id']] = $r['base_price'];
+
+    // Platform rates map  [room_id][platform] => rate
+    $platformRates  = getPlatformRates();
+    // Discount rules
+    $discountRules  = [];
+    foreach (getDiscountRules() as $dr) $discountRules[$dr['rule_type']] = $dr;
 
     // Revenue data
     $revenueMonthly = getRevenueByPeriod('monthly');
@@ -960,6 +1009,111 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
     .wa-thread.wa-active { display: flex; height: calc(100vh - 160px); }
     .wa-sidebar { height: 50vh; }
 }
+
+/* ── Calendar view tabs ─────────────────────────────────── */
+.cal-view-tabs {
+  display: flex;
+  gap: .35rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .35rem;
+  margin-bottom: 1.25rem;
+  width: fit-content;
+}
+.cvt-btn {
+  padding: .45rem 1.1rem;
+  border-radius: 7px;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  border: none;
+  background: transparent;
+  transition: all .15s;
+}
+.cvt-btn:hover { background: var(--bg); color: var(--text); }
+.cvt-btn.active {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(46,125,50,.3);
+}
+
+/* ── Year view grid ─────────────────────────────────────── */
+.year-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+.year-month-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ymc-hd {
+  background: var(--primary);
+  color: #fff;
+  font-size: .8rem;
+  font-weight: 700;
+  padding: .45rem .75rem;
+  text-align: center;
+}
+.ymc-body { padding: .4rem .5rem .5rem; }
+.ymc-cal { width: 100%; border-collapse: collapse; }
+.ymc-cal th {
+  font-size: .6rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: .15rem 0;
+  font-weight: 600;
+}
+.ydc {
+  width: 100%;
+  aspect-ratio: 1;
+  font-size: .62rem;
+  text-align: center;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .1s;
+}
+.ydc:hover { background: var(--primary-light); }
+.ydc.ydc-today { background: var(--primary); color: #fff; font-weight: 700; border-radius: 50%; }
+.ydc.ydc-booked { background: #bbf7d0; color: #14532d; font-weight: 600; }
+.ydc.ydc-blocked { background: #fecaca; color: #7f1d1d; font-weight: 600; }
+.ydc.ydc-past { opacity: .4; cursor: default; }
+.ydc.ydc-demand { outline: 2px solid #f59e0b; outline-offset: -2px; }
+.year-legend {
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 1rem;
+  font-size: .78rem;
+  color: var(--text-muted);
+}
+.yl-dot {
+  width: 12px; height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+  margin-right: .3rem;
+}
+@media (max-width: 900px) {
+  .year-grid { grid-template-columns: repeat(2, 1fr); }
+  .cal-view-tabs { width: 100%; justify-content: space-between; }
+  .cvt-btn { padding: .4rem .7rem; font-size: .75rem; }
+}
+@media (max-width: 520px) {
+  .year-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
@@ -997,11 +1151,8 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
     <?php
     $navItems = [
       'dashboard' => ['📊', 'Dashboard',        0],
-      'day'       => ['🔍', 'Day View',          0],
-      'week'      => ['📅', 'Week View',         0],
-      'calendar'  => ['🗓️', 'Calendar (60d)',   0],
+      'calendar'  => ['📅', 'Calendar',         0],
       'bookings'  => ['📋', 'Bookings',          0],
-      'overview'  => ['📊', 'Overview',          0],
       'blocked'   => ['🚫', 'Blocked Dates',     0],
       'demand'    => ['🥇', 'High-Demand Dates', 0],
       'wa_inbox'  => ['💬', 'WA Inbox',          $waUnread],
@@ -1012,7 +1163,8 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
     ];
     foreach ($navItems as $key => [$icon, $label, $cnt]):
     ?>
-      <div class="nav-item <?= $section===$key?'active':'' ?>" onclick="goTo('<?= $key ?>')">
+      <?php $navActive = in_array($section,['day','week','overview']) ? 'calendar' : $section; ?>
+      <div class="nav-item <?= $navActive===$key?'active':'' ?>" onclick="goTo('<?= $key ?>')">
         <span class="nav-icon"><?= $icon ?></span>
         <?= $label ?>
         <?php if ($cnt > 0): ?><span class="nav-badge"><?= $cnt ?></span><?php endif; ?>
@@ -1028,22 +1180,30 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
 <!-- Main -->
 <div class="main">
   <div class="topbar">
-    <div class="topbar-title"><?= match($section) {
-      'dashboard' => '📊 Dashboard',
-      'day'       => '🔍 Day View — ' . date('D, d M Y', strtotime($dayDate)),
-      'week'      => '📅 Week at a Glance',
-      'calendar'  => '🗓️ Availability Calendar',
-      'bookings'  => '📋 Bookings',
-      'overview'  => '📊 Overview',
-      'blocked'   => '🚫 Blocked Dates',
-      'demand'    => '🥇 High-Demand Dates',
-      'wa_inbox'  => '💬 WhatsApp Inbox',
-      'pricing'   => '💡 Pricing & Suggestions',
-      'analytics' => '📈 Analytics & Forecasting',
-      'channels'  => '🔗 Channel Sync',
-      'export'    => '📤 iCal Export',
-      default     => 'Dashboard'
-    } ?></div>
+    <div class="topbar-title"><?php
+      $calView = $_GET['view'] ?? 'day';
+      echo match($section) {
+        'dashboard' => '📊 Dashboard',
+        'day'       => '📅 Calendar — Day View · ' . date('D, d M Y', strtotime($dayDate)),
+        'week'      => '📅 Calendar — Week View',
+        'calendar'  => match($calView) {
+          'week'  => '📅 Calendar — Week View',
+          'month' => '📅 Calendar — Month View',
+          'year'  => '📅 Calendar — Year View',
+          default => '📅 Calendar — Day View · ' . date('D, d M Y', strtotime($dayDate)),
+        },
+        'bookings'  => '📋 Bookings',
+        'overview'  => '📊 Overview',
+        'blocked'   => '🚫 Blocked Dates',
+        'demand'    => '🥇 High-Demand Dates',
+        'wa_inbox'  => '💬 WhatsApp Inbox',
+        'pricing'   => '💡 Pricing & Suggestions',
+        'analytics' => '📈 Analytics & Forecasting',
+        'channels'  => '🔗 Channel Sync',
+        'export'    => '📤 iCal Export',
+        default     => 'Dashboard',
+      };
+    ?></div>
     <div class="topbar-right">
       <a href="channel-dashboard.php" style="padding:6px 12px;background:#7c3aed;color:#fff;border-radius:7px;font-size:.78rem;font-weight:700;text-decoration:none;margin-right:6px">📅 Channel View</a>
       <span><?= date('D, d M Y') ?></span>
@@ -1088,7 +1248,7 @@ $weekRev = array_sum(array_column(
   </div>
   <div class="stat-card">
     <div class="stat-icon">✈️</div>
-    <a class="stat-link" href="admin.php?section=day&date=<?= date('Y-m-d') ?>" title="View today's day view">
+    <a class="stat-link" href="admin.php?section=calendar&view=day&date=<?= date('Y-m-d') ?>" title="View today's day view">
       <div class="stat-val"><?= count($arrivals) ?><span class="stat-arrow">→</span></div>
     </a>
     <div class="stat-lbl">Check-ins Next 7 Days</div>
@@ -1102,7 +1262,7 @@ $weekRev = array_sum(array_column(
   </div>
   <div class="stat-card">
     <div class="stat-icon">📈</div>
-    <a class="stat-link" href="admin.php?section=overview" title="View occupancy details">
+    <a class="stat-link" href="admin.php?section=calendar&view=month" title="View occupancy details">
       <div class="stat-val"><?= $occupancy ?>%<span class="stat-arrow">→</span></div>
     </a>
     <div class="stat-lbl">Avg Occupancy (30 days)</div>
@@ -1146,7 +1306,7 @@ $totalOccupied = count($propStatus) - $totalFree;
       <h3>🏠 Property Status — Today</h3>
       <div class="sub"><?= date('l, d M Y') ?> &nbsp;·&nbsp; <?= $totalOccupied ?> occupied &nbsp;·&nbsp; <?= $totalFree ?> available</div>
     </div>
-    <a href="admin.php?section=calendar" class="btn btn-grey btn-sm">📅 Full Calendar →</a>
+    <a href="admin.php?section=calendar&view=month" class="btn btn-grey btn-sm">📅 Full Calendar →</a>
   </div>
   <div class="panel-bd" style="padding:.75rem">
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.65rem">
@@ -1170,7 +1330,7 @@ $totalOccupied = count($propStatus) - $totalFree;
             $bgColor     = '#fff';
         }
       ?>
-      <div onclick="goTo('calendar')" style="border:2px solid <?= $active ? $bgColor : '#d1fae5' ?>;border-radius:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,.12)'" onmouseout="this.style.boxShadow='none'">
+      <div onclick="window.location.href='admin.php?section=calendar&view=month'" style="border:2px solid <?= $active ? $bgColor : '#d1fae5' ?>;border-radius:10px;overflow:hidden;cursor:pointer;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,.12)'" onmouseout="this.style.boxShadow='none'">
         <!-- Room name header -->
         <div style="background:<?= $active ? $bgColor : '#f0fdf4' ?>;padding:.45rem .75rem;font-weight:700;font-size:.78rem;color:<?= $active ? $textColor : '#166534' ?>;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
           <?= htmlspecialchars($ps['name']) ?>
@@ -1347,32 +1507,54 @@ $totalOccupied = count($propStatus) - $totalFree;
 </div>
 
 <!-- ══════════════════════════════════════════════
-     DAY VIEW
+     UNIFIED CALENDAR (Day / Week / Month / Year)
 ════════════════════════════════════════════════ -->
-<?php elseif ($section === 'day'):
+<?php elseif (in_array($section, ['calendar','day','week','overview'])):
+  // ── shared date params ──────────────────────
+  $calBase  = 'admin.php?section=calendar';
+  $calMonth = (int)($_GET['cm'] ?? date('n'));
+  $calYear  = (int)($_GET['cy'] ?? date('Y'));
+  if ($calMonth < 1)  { $calMonth = 12; $calYear--; }
+  if ($calMonth > 12) { $calMonth = 1;  $calYear++; }
+  $calYearView = (int)($_GET['cy'] ?? date('Y'));
+
+  // Week start: default to Monday of current week
+  $wsRaw = $_GET['ws'] ?? date('Y-m-d', strtotime('monday this week'));
+  if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $wsRaw)) $wsRaw = date('Y-m-d', strtotime('monday this week'));
+  $weekStartTs  = strtotime($wsRaw);
+  $weekStartStr = date('Y-m-d', $weekStartTs);
+  $weekEndStr   = date('Y-m-d', strtotime('+6 days', $weekStartTs));
+  $prevWeekStr  = date('Y-m-d', strtotime('-7 days', $weekStartTs));
+  $nextWeekStr  = date('Y-m-d', strtotime('+7 days', $weekStartTs));
+
+  // Day-view data
   $prevDay = date('Y-m-d', strtotime($dayDate . ' -1 day'));
   $nextDay = date('Y-m-d', strtotime($dayDate . ' +1 day'));
   $isToday = $dayDate === date('Y-m-d');
-
-  // All confirmed bookings touching this day
   $dayCheckins  = array_values(array_filter($confirmed, fn($b) => $b['check_in']  === $dayDate));
   $dayCheckouts = array_values(array_filter($confirmed, fn($b) => $b['check_out'] === $dayDate));
   $dayStays     = array_values(array_filter($confirmed, fn($b) => $dayDate > $b['check_in'] && $dayDate < $b['check_out']));
-
-  // All unique bookings touching this day (for revenue)
-  $dayAllBks = array_unique(array_merge($dayCheckins, $dayStays), SORT_REGULAR);
-  $dayRevenue = array_sum(array_column($dayCheckins, 'amount')); // count check-in revenue for that day
-  $dayOccupied = count($dayCheckins) + count($dayStays);
-  $dayDemand = $demandByDate[$dayDate] ?? [];
+  $dayRevenue   = array_sum(array_column($dayCheckins, 'amount'));
+  $dayDemand    = $demandByDate[$dayDate] ?? [];
 ?>
+
+<!-- ── View tab bar ───────────────────────────────────────── -->
+<div class="cal-view-tabs">
+  <a class="cvt-btn <?= $calView==='day'   ? 'active' : '' ?>" href="<?= $calBase ?>&view=day&date=<?= $dayDate ?>">📅 Day</a>
+  <a class="cvt-btn <?= $calView==='week'  ? 'active' : '' ?>" href="<?= $calBase ?>&view=week&ws=<?= $weekStartStr ?>">📆 Week</a>
+  <a class="cvt-btn <?= $calView==='month' ? 'active' : '' ?>" href="<?= $calBase ?>&view=month&cm=<?= $calMonth ?>&cy=<?= $calYear ?>">🗓️ Month</a>
+  <a class="cvt-btn <?= $calView==='year'  ? 'active' : '' ?>" href="<?= $calBase ?>&view=year&cy=<?= $calYearView ?>">📊 Year</a>
+</div>
+
+<?php if ($calView === 'day'): ?>
 
 <!-- Day navigation -->
 <div class="day-nav">
-  <a class="day-btn" href="admin.php?section=day&date=<?= $prevDay ?>">← <?= date('d M', strtotime($prevDay)) ?></a>
+  <a class="day-btn" href="<?= $calBase ?>&view=day&date=<?= $prevDay ?>">← <?= date('d M', strtotime($prevDay)) ?></a>
   <span class="day-lbl"><?= date('l, d F Y', strtotime($dayDate)) ?></span>
   <?php if ($isToday): ?><span class="today-pill">Today</span><?php endif; ?>
-  <a class="day-btn" href="admin.php?section=day&date=<?= $nextDay ?>"><?= date('d M', strtotime($nextDay)) ?> →</a>
-  <a class="day-btn" href="admin.php?section=day&date=<?= date('Y-m-d') ?>" style="margin-left:auto">Jump to Today</a>
+  <a class="day-btn" href="<?= $calBase ?>&view=day&date=<?= $nextDay ?>"><?= date('d M', strtotime($nextDay)) ?> →</a>
+  <a class="day-btn" href="<?= $calBase ?>&view=day&date=<?= date('Y-m-d') ?>" style="margin-left:auto">Jump to Today</a>
 </div>
 
 <!-- Demand event banner -->
@@ -1546,9 +1728,9 @@ $totalOccupied = count($propStatus) - $totalFree;
     $nextBrowse = date('Y-m-d', strtotime($dayDate.' +1 month'));
     ?>
     <div class="cal-nav">
-      <button onclick="window.location.href='admin.php?section=day&date=<?= date('Y-m-d', mktime(0,0,0,$browseMonth-1,1,$browseYear)) ?>'">&lsaquo; <?= date('M', strtotime($dayDate.' -1 month')) ?></button>
+      <button onclick="window.location.href='<?= $calBase ?>&view=day&date=<?= date('Y-m-d', mktime(0,0,0,$browseMonth-1,1,$browseYear)) ?>'">&lsaquo; <?= date('M', strtotime($dayDate.' -1 month')) ?></button>
       <span class="cal-title"><?= date('F Y', $firstOfMonth) ?></span>
-      <button onclick="window.location.href='admin.php?section=day&date=<?= date('Y-m-d', mktime(0,0,0,$browseMonth+1,1,$browseYear)) ?>'">  <?= date('M', strtotime($dayDate.' +1 month')) ?> &rsaquo;</button>
+      <button onclick="window.location.href='<?= $calBase ?>&view=day&date=<?= date('Y-m-d', mktime(0,0,0,$browseMonth+1,1,$browseYear)) ?>'">  <?= date('M', strtotime($dayDate.' +1 month')) ?> &rsaquo;</button>
     </div>
     <table class="mini-cal">
       <thead><tr><?php foreach(['Mo','Tu','We','Th','Fr','Sa','Su'] as $d): ?><th><?= $d ?></th><?php endforeach; ?></tr></thead>
@@ -1564,7 +1746,7 @@ $totalOccupied = count($propStatus) - $totalFree;
         foreach ($confirmed as $b) { if ($ds>=$b['check_in']&&$ds<$b['check_out']) { $hasBk2=true; break; } }
         $isDem2 = !empty($demandByDate[$ds]);
         $cls2 = implode(' ', array_filter(['dc',$isTd?'today':'', $hasBk2?'has-booking':'', $isDem2&&!$isTd?'is-demand':'', $isSel?'selected':'']));
-        echo '<td><div class="'.$cls2.'" onclick="window.location.href=\'admin.php?section=day&date='.$ds.'\'">'.$day.'</div></td>';
+        echo '<td><div class="'.$cls2.'" onclick="window.location.href=\''.htmlspecialchars($calBase).'&view=day&date='.$ds.'\'">'.$day.'</div></td>';
         $col2++;
         if ($col2%7===0&&$day<$daysInBrowse) echo '</tr><tr>';
       }
@@ -1575,22 +1757,27 @@ $totalOccupied = count($propStatus) - $totalFree;
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════
-     WEEK VIEW
-════════════════════════════════════════════════ -->
-<?php elseif ($section === 'week'): ?>
+<?php elseif ($calView === 'week'): ?>
+
+<!-- Week navigation -->
+<div class="day-nav" style="margin-bottom:1rem">
+  <a class="day-btn" href="<?= $calBase ?>&view=week&ws=<?= $prevWeekStr ?>">← <?= date('d M', strtotime($prevWeekStr)) ?></a>
+  <span class="day-lbl"><?= date('d M', $weekStartTs) ?> — <?= date('d M Y', strtotime($weekEndStr)) ?></span>
+  <a class="day-btn" href="<?= $calBase ?>&view=week&ws=<?= $nextWeekStr ?>"><?= date('d M', strtotime($nextWeekStr)) ?> →</a>
+  <a class="day-btn" href="<?= $calBase ?>&view=week&ws=<?= date('Y-m-d', strtotime('monday this week')) ?>" style="margin-left:auto">This Week</a>
+</div>
 
 <div class="panel">
   <div class="panel-hd">
-    <h3>📅 Week at a Glance</h3>
-    <span class="sub"><?= date('d M Y') ?> — <?= date('d M Y', strtotime('+6 days')) ?></span>
+    <h3>📆 Week at a Glance</h3>
+    <span class="sub"><?= date('d M Y', $weekStartTs) ?> — <?= date('d M Y', strtotime($weekEndStr)) ?></span>
   </div>
   <div class="panel-bd">
     <div class="week-grid">
       <?php
       $today = date('Y-m-d');
       for ($d = 0; $d < 7; $d++):
-        $dateStr = date('Y-m-d', strtotime("+$d days"));
+        $dateStr = date('Y-m-d', strtotime("+$d days", $weekStartTs));
         $isToday = $dateStr === $today;
         $dayDemand = $demandByDate[$dateStr] ?? [];
         $hasDemand = !empty($dayDemand);
@@ -1605,7 +1792,7 @@ $totalOccupied = count($propStatus) - $totalFree;
           if ($dateStr > $b['check_in'] && $dateStr < $b['check_out']) $dayStays[] = $b;
         }
       ?>
-      <div class="week-day <?= $isToday?'today':'' ?> <?= $hasDemand?'has-demand':'' ?>" onclick="window.location.href='admin.php?section=day&date=<?= $dateStr ?>'" style="cursor:pointer" title="View <?= date('d M', strtotime($dateStr)) ?> details">
+      <div class="week-day <?= $isToday?'today':'' ?> <?= $hasDemand?'has-demand':'' ?>" onclick="window.location.href='<?= $calBase ?>&view=day&date=<?= $dateStr ?>'" style="cursor:pointer" title="View <?= date('d M', strtotime($dateStr)) ?> details">
         <div class="wd-hdr">
           <div class="wd-dow"><?= date('D', strtotime($dateStr)) ?></div>
           <div class="wd-date"><?= date('d', strtotime($dateStr)) ?></div>
@@ -1629,13 +1816,13 @@ $totalOccupied = count($propStatus) - $totalFree;
       <?php endfor; ?>
     </div>
 
-    <!-- Next 7 days table -->
+    <!-- 7-day detail table -->
     <div style="margin-top:1.25rem">
       <table class="tbl">
         <thead><tr><th>Date</th><th>Check-ins</th><th>In-Stay</th><th>Check-outs</th><th>Demand Event</th></tr></thead>
         <tbody>
-          <?php for ($d = 0; $d < 14; $d++):
-            $dateStr = date('Y-m-d', strtotime("+$d days"));
+          <?php for ($d = 0; $d < 7; $d++):
+            $dateStr = date('Y-m-d', strtotime("+$d days", $weekStartTs));
             $ci = array_filter($confirmed, fn($b) => $b['check_in'] === $dateStr);
             $co = array_filter($confirmed, fn($b) => $b['check_out'] === $dateStr);
             $st = array_filter($confirmed, fn($b) => $dateStr > $b['check_in'] && $dateStr < $b['check_out']);
@@ -1669,36 +1856,104 @@ $totalOccupied = count($propStatus) - $totalFree;
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════
-     CALENDAR (GANTT)
-════════════════════════════════════════════════ -->
-<?php elseif ($section === 'calendar'): ?>
+<?php elseif ($calView === 'month'): ?>
 
-<!-- Block date form -->
-<div class="panel">
-  <div class="panel-hd"><h3>🔒 Block / Unblock Dates</h3><span class="sub">Instantly blocks across all iCal channels</span></div>
-  <div class="panel-bd">
-    <form method="POST">
-      <input type="hidden" name="action" value="block_date">
-      <div class="form-grid">
-        <div class="fld">
-          <label>Property</label>
-          <select name="room_id">
-            <?php foreach ($rooms as $rid => $rname): ?>
-            <option value="<?= htmlspecialchars($rid) ?>"><?= htmlspecialchars($rname) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        <div class="fld"><label>Block From</label><input type="date" name="check_in" required min="<?= date('Y-m-d') ?>"></div>
-        <div class="fld"><label>Block Until (exclusive)</label><input type="date" name="check_out" required min="<?= date('Y-m-d') ?>"></div>
-        <div class="fld" style="display:flex;align-items:flex-end">
-          <button type="submit" class="btn btn-danger" style="width:100%;justify-content:center">🔒 Block Dates</button>
-        </div>
-      </div>
-    </form>
+<?php
+  // Month view data
+  $firstDay    = mktime(0,0,0,$calMonth,1,$calYear);
+  $daysInMonth = (int)date('t', $firstDay);
+  $startDow    = (int)date('N', $firstDay);
+  $prevMonth   = $calMonth-1 < 1  ? 12 : $calMonth-1;
+  $prevYearM   = $calMonth-1 < 1  ? $calYear-1 : $calYear;
+  $nextMonth   = $calMonth+1 > 12 ? 1  : $calMonth+1;
+  $nextYearM   = $calMonth+1 > 12 ? $calYear+1 : $calYear;
+  $monthBookingDates = [];
+  $monthBookingSrc   = [];
+  foreach ($confirmed as $b) {
+    $ci = strtotime($b['check_in']); $co = strtotime($b['check_out']);
+    for ($t=$ci; $t<$co; $t+=86400) {
+      if (date('n',$t)==$calMonth && date('Y',$t)==$calYear) {
+        $ds = date('Y-m-d',$t);
+        $monthBookingDates[$ds] = true;
+        $monthBookingSrc[$ds][] = $b['source'];
+      }
+    }
+  }
+?>
+
+<!-- Month view: big calendar + gantt below -->
+<div class="panel" style="margin-bottom:1.25rem">
+  <div class="panel-hd">
+    <h3>🗓️ <?= date('F Y', $firstDay) ?></h3>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <a class="day-btn" href="<?= $calBase ?>&view=month&cm=<?= $prevMonth ?>&cy=<?= $prevYearM ?>">← <?= date('M Y', mktime(0,0,0,$prevMonth,1,$prevYearM)) ?></a>
+      <a class="day-btn" href="<?= $calBase ?>&view=month&cm=<?= date('n') ?>&cy=<?= date('Y') ?>">Today's Month</a>
+      <a class="day-btn" href="<?= $calBase ?>&view=month&cm=<?= $nextMonth ?>&cy=<?= $nextYearM ?>"><?= date('M Y', mktime(0,0,0,$nextMonth,1,$nextYearM)) ?> →</a>
+    </div>
+  </div>
+  <div class="panel-bd" style="padding:.75rem">
+    <!-- Large month calendar -->
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <thead>
+        <tr><?php foreach(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'] as $dname): ?>
+          <th style="text-align:center;padding:.5rem;font-size:.78rem;font-weight:700;color:var(--text-muted);border-bottom:2px solid var(--border)"><?= substr($dname,0,3) ?></th>
+        <?php endforeach; ?></tr>
+      </thead>
+      <tbody>
+      <?php
+        $col = 0; echo '<tr>';
+        for ($i=1; $i<$startDow; $i++) { echo '<td style="padding:.25rem;height:80px;border:1px solid var(--border);background:#fafafa"></td>'; $col++; }
+        for ($day=1; $day<=$daysInMonth; $day++) {
+          $ds = sprintf('%04d-%02d-%02d', $calYear, $calMonth, $day);
+          $isToday = $ds === date('Y-m-d');
+          $hasBk   = isset($monthBookingDates[$ds]);
+          $isDem   = !empty($demandByDate[$ds]);
+          $isPast  = $ds < date('Y-m-d');
+          $srcs    = $monthBookingSrc[$ds] ?? [];
+          $topSrc  = $srcs[0] ?? null;
+          $bgCell  = $isToday ? '#f0faf3' : ($isPast ? '#fafafa' : '#fff');
+          $topColor = $topSrc ? sourceColor($topSrc) : 'transparent';
+          echo '<td onclick="window.location.href=\''.htmlspecialchars($calBase).'&view=day&date='.$ds.'\'" '
+            .'style="padding:.25rem;height:80px;border:1px solid var(--border);background:'.$bgCell.';cursor:pointer;vertical-align:top;transition:background .12s" '
+            .'onmouseover="this.style.background=\'#f0faf3\'" onmouseout="this.style.background=\''.$bgCell.'\'">';
+          // Day number pill
+          $numStyle = $isToday ? 'background:var(--primary);color:#fff;border-radius:50%;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem' : 'font-size:.8rem;font-weight:'.($hasBk?'700':'400').';color:'.($isPast?'var(--text-muted)':'var(--text)').'';
+          echo '<div style="'.$numStyle.'">'.$day.'</div>';
+          // Colored bar for bookings
+          if ($hasBk) {
+            foreach (array_unique($srcs) as $s) {
+              echo '<div style="margin-top:2px;padding:1px 4px;border-radius:3px;background:'.sourceColor($s).';color:#fff;font-size:.62rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'.sourceName($s).'</div>';
+            }
+          }
+          // Demand badge
+          if ($isDem) {
+            $de0 = $demandByDate[$ds][0];
+            echo '<div style="margin-top:2px;font-size:.58rem">'.demandIcon($de0['demand_level']).' '.htmlspecialchars(substr($de0['event_name'],0,10)).'</div>';
+          }
+          echo '</td>';
+          $col++;
+          if ($col%7===0 && $day<$daysInMonth) echo '</tr><tr>';
+        }
+        // Fill trailing cells
+        $rem = 7 - ($col % 7);
+        if ($rem < 7) for ($i=0; $i<$rem; $i++) echo '<td style="padding:.25rem;height:80px;border:1px solid var(--border);background:#fafafa"></td>';
+        echo '</tr>';
+      ?>
+      </tbody>
+    </table>
+    <!-- Legend -->
+    <div style="margin-top:.75rem;display:flex;gap:1rem;flex-wrap:wrap;font-size:.73rem;color:var(--text-muted);align-items:center">
+      <?php foreach (['#FF5A5F'=>'Airbnb','#003580'=>'Booking.com','#EB1A23'=>'Agoda','#2e7d32'=>'Direct','#e53e3e'=>'Blocked'] as $col2 => $lbl2): ?>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:<?= $col2 ?>;margin-right:.3rem"></span><?= $lbl2 ?></span>
+      <?php endforeach; ?>
+      <span>⭐ = Demand event</span>
+    </div>
   </div>
 </div>
 
+<!-- Gantt + stats side by side -->
+<div class="dash-grid">
+  <div style="grid-column:span 2">
 <!-- Demand legend -->
 <div class="gantt-legend" style="margin-bottom:.5rem">
   <?php foreach ([
@@ -1779,76 +2034,14 @@ $totalOccupied = count($propStatus) - $totalFree;
   </table>
 </div>
 
-<!-- ══════════════════════════════════════════════
-     OVERVIEW  (Calendar · Platform · Occupancy)
-════════════════════════════════════════════════ -->
-<?php elseif ($section === 'overview'): ?>
+  </div><!-- end span 2 gantt col -->
 
-<div class="dash-grid">
+  <!-- Side stats for month view -->
   <div>
-    <!-- Monthly mini-calendar -->
-    <div class="panel">
-      <div class="panel-hd"><h3>📆 Monthly Calendar</h3><span class="sub">Click any date to drill down</span></div>
-      <div class="panel-bd" style="padding:.75rem">
-        <?php
-        $calMonth = (int)($_GET['cm'] ?? date('n'));
-        $calYear  = (int)($_GET['cy'] ?? date('Y'));
-        if ($calMonth < 1) { $calMonth = 12; $calYear--; }
-        if ($calMonth > 12) { $calMonth = 1; $calYear++; }
-        $firstDay    = mktime(0,0,0,$calMonth,1,$calYear);
-        $daysInMonth = (int)date('t', $firstDay);
-        $startDow    = (int)date('N', $firstDay);
-        $monthBookingDates = [];
-        foreach ($confirmed as $b) {
-            $ci = strtotime($b['check_in']); $co = strtotime($b['check_out']);
-            for ($t=$ci; $t<$co; $t+=86400) {
-                if (date('n',$t)==$calMonth && date('Y',$t)==$calYear) $monthBookingDates[date('Y-m-d',$t)] = true;
-            }
-        }
-        $prevMonth = $calMonth-1 < 1  ? 12 : $calMonth-1;
-        $prevYear  = $calMonth-1 < 1  ? $calYear-1 : $calYear;
-        $nextMonth = $calMonth+1 > 12 ? 1  : $calMonth+1;
-        $nextYear  = $calMonth+1 > 12 ? $calYear+1 : $calYear;
-        ?>
-        <div class="cal-nav">
-          <button onclick="window.location.href='admin.php?section=overview&cm=<?= $prevMonth ?>&cy=<?= $prevYear ?>'">&lsaquo;</button>
-          <span class="cal-title"><?= date('F Y', $firstDay) ?></span>
-          <button onclick="window.location.href='admin.php?section=overview&cm=<?= $nextMonth ?>&cy=<?= $nextYear ?>'">&rsaquo;</button>
-        </div>
-        <table class="mini-cal">
-          <thead><tr><?php foreach(['Mo','Tu','We','Th','Fr','Sa','Su'] as $d): ?><th><?= $d ?></th><?php endforeach; ?></tr></thead>
-          <tbody>
-          <?php
-          $col = 0; echo '<tr>';
-          for ($i=1; $i<$startDow; $i++) { echo '<td></td>'; $col++; }
-          for ($day=1; $day<=$daysInMonth; $day++) {
-              $dateStr = sprintf('%04d-%02d-%02d', $calYear, $calMonth, $day);
-              $isToday = $dateStr === date('Y-m-d');
-              $hasBk   = isset($monthBookingDates[$dateStr]);
-              $isDem   = !empty($demandByDate[$dateStr]);
-              $cls = implode(' ', array_filter(['dc', $isToday?'today':'', $hasBk?'has-booking':'', $isDem&&!$isToday?'is-demand':'']));
-              echo '<td><div class="'.$cls.'" onclick="window.location.href=\'admin.php?section=day&date='.$dateStr.'\'" title="'.$dateStr.($isDem?' — '.htmlspecialchars($demandByDate[$dateStr][0]['event_name']??''):'').'">'.$day.'</div></td>';
-              $col++;
-              if ($col % 7 === 0 && $day < $daysInMonth) echo '</tr><tr>';
-          }
-          echo '</tr>';
-          ?>
-          </tbody>
-        </table>
-        <div style="margin-top:.6rem;font-size:.72rem;color:var(--text-muted);display:flex;gap:.75rem;flex-wrap:wrap">
-          <span>● Has booking</span>
-          <span style="color:#92400e">■ High-demand date</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div>
-    <!-- Platform breakdown -->
-    <div class="panel">
-      <div class="panel-hd"><h3>📡 Platform Breakdown</h3><span class="sub">All confirmed bookings</span></div>
+    <div class="panel" style="margin-bottom:1rem">
+      <div class="panel-hd"><h3>📡 Platform Breakdown</h3><span class="sub">All confirmed</span></div>
       <div class="panel-bd">
-        <div class="platform-grid" style="margin-bottom:.85rem">
+        <div class="platform-grid" style="margin-bottom:.5rem">
           <?php foreach (array_filter($byPlatform, fn($cnt, $src) => $src !== 'blocked', ARRAY_FILTER_USE_BOTH) as $src => $cnt): ?>
           <div class="platform-card" style="background:<?= sourceColor($src) ?>">
             <div class="pc-count"><?= $cnt ?></div>
@@ -1858,8 +2051,6 @@ $totalOccupied = count($propStatus) - $totalFree;
         </div>
       </div>
     </div>
-
-    <!-- Room occupancy -->
     <div class="panel">
       <div class="panel-hd"><h3>🏠 Room Occupancy (30d)</h3></div>
       <div class="panel-bd">
@@ -1878,22 +2069,189 @@ $totalOccupied = count($propStatus) - $totalFree;
       </div>
     </div>
   </div>
+</div><!-- end dash-grid month view -->
+
+<?php elseif ($calView === 'year'): ?>
+<?php
+  // Year view
+  $yvPrev = $calYearView - 1;
+  $yvNext = $calYearView + 1;
+  // Pre-index bookings by date
+  $yrBkDates = []; $yrBkSrc = [];
+  foreach ($confirmed as $b) {
+    $ci = strtotime($b['check_in']); $co = strtotime($b['check_out']);
+    for ($t=$ci; $t<$co; $t+=86400) {
+      if (date('Y',$t) == $calYearView) {
+        $ds = date('Y-m-d',$t);
+        $yrBkDates[$ds] = true;
+        $yrBkSrc[$ds]   = $b['source'];
+      }
+    }
+  }
+  $yrDemDates = [];
+  foreach ($demandByDate as $ds => $des) {
+    if (substr($ds,0,4) == $calYearView) $yrDemDates[$ds] = $des[0]['demand_level'] ?? 'medium';
+  }
+  // Year stats
+  $yrTotal = 0; $yrRev = 0; $yrNights = 0;
+  foreach ($confirmed as $b) {
+    if (substr($b['check_in'],0,4) == $calYearView && $b['source'] !== 'blocked') {
+      $yrTotal++; $yrRev += $b['amount'];
+      $yrNights += max(0,(int)ceil((strtotime($b['check_out'])-strtotime($b['check_in']))/86400));
+    }
+  }
+?>
+
+<!-- Year navigation + stats -->
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+  <div style="display:flex;align-items:center;gap:.5rem">
+    <a class="day-btn" href="<?= $calBase ?>&view=year&cy=<?= $yvPrev ?>">← <?= $yvPrev ?></a>
+    <span style="font-size:1.4rem;font-weight:800;color:var(--text)"><?= $calYearView ?></span>
+    <a class="day-btn" href="<?= $calBase ?>&view=year&cy=<?= $yvNext ?>"><?= $yvNext ?> →</a>
+    <?php if ($calYearView != date('Y')): ?>
+    <a class="day-btn" href="<?= $calBase ?>&view=year&cy=<?= date('Y') ?>">This Year</a>
+    <?php endif; ?>
+  </div>
+  <div style="display:flex;gap:1rem;flex-wrap:wrap">
+    <div class="day-stat"><div class="ds-val"><?= $yrTotal ?></div><div class="ds-lbl">Bookings <?= $calYearView ?></div></div>
+    <div class="day-stat"><div class="ds-val"><?= $yrNights ?></div><div class="ds-lbl">Nights Booked</div></div>
+    <div class="day-stat"><div class="ds-val"><?= fmt($yrRev) ?></div><div class="ds-lbl">Revenue</div></div>
+  </div>
 </div>
+
+<!-- Year legend -->
+<div class="year-legend">
+  <span><span class="yl-dot" style="background:#bbf7d0"></span>Booked</span>
+  <span><span class="yl-dot" style="background:#fecaca"></span>Blocked</span>
+  <span><span class="yl-dot" style="background:var(--primary);border-radius:50%"></span>Today</span>
+  <span><span class="yl-dot" style="outline:2px solid #f59e0b;outline-offset:-2px;background:transparent"></span>Demand event</span>
+</div>
+
+<!-- 12-month grid -->
+<div class="year-grid">
+<?php for ($mo = 1; $mo <= 12; $mo++):
+  $moFirst = mktime(0,0,0,$mo,1,$calYearView);
+  $moDays  = (int)date('t', $moFirst);
+  $moStartDow = (int)date('N', $moFirst);
+  $isCurrentMonth = ($mo == date('n') && $calYearView == date('Y'));
+?>
+  <div class="year-month-card">
+    <div class="ymc-hd"><?= date('F Y', $moFirst) ?></div>
+    <div class="ymc-body">
+      <table class="ymc-cal">
+        <thead><tr><?php foreach(['M','T','W','T','F','S','S'] as $dh): ?><th><?= $dh ?></th><?php endforeach; ?></tr></thead>
+        <tbody>
+        <?php
+          $mc = 0; echo '<tr>';
+          for ($i=1; $i<$moStartDow; $i++) { echo '<td></td>'; $mc++; }
+          for ($md=1; $md<=$moDays; $md++) {
+            $mds = sprintf('%04d-%02d-%02d',$calYearView,$mo,$md);
+            $mIsToday   = $mds === date('Y-m-d');
+            $mIsBooked  = isset($yrBkDates[$mds]);
+            $mIsBlocked = $mIsBooked && (($yrBkSrc[$mds] ?? '') === 'blocked');
+            $mIsDem     = isset($yrDemDates[$mds]);
+            $mIsPast    = $mds < date('Y-m-d');
+            $cls = 'ydc';
+            if ($mIsToday)        $cls .= ' ydc-today';
+            elseif ($mIsBlocked)  $cls .= ' ydc-blocked'.($mIsPast?' ydc-past':'');
+            elseif ($mIsBooked)   $cls .= ' ydc-booked'.($mIsPast?' ydc-past':'');
+            elseif ($mIsPast)     $cls .= ' ydc-past';
+            if ($mIsDem && !$mIsToday) $cls .= ' ydc-demand';
+            $nav = htmlspecialchars($calBase).'&view=day&date='.$mds;
+            echo '<td><div class="'.$cls.'" onclick="window.location.href=\''.$nav.'\'" title="'.$mds.'">'.$md.'</div></td>';
+            $mc++;
+            if ($mc%7===0&&$md<$moDays) echo '</tr><tr>';
+          }
+          echo '</tr>';
+        ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<?php endfor; ?>
+</div><!-- end year-grid -->
+
+<?php endif; // end calView branches ?>
 
 <!-- ══════════════════════════════════════════════
      BLOCKED DATES
 ════════════════════════════════════════════════ -->
 <?php elseif ($section === 'blocked'): ?>
 
-<!-- Quick block form -->
-<div class="panel">
+<?php
+// ── Blocked dates data ───────────────────────────────────────────
+$bview = $_GET['bv'] ?? 'week';   // week | month | quarter
+
+// Week nav
+$bwRaw   = $_GET['bws'] ?? date('Y-m-d', strtotime('monday this week'));
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $bwRaw)) $bwRaw = date('Y-m-d', strtotime('monday this week'));
+$bwStartTs  = strtotime($bwRaw);
+$bwPrev     = date('Y-m-d', strtotime('-7 days', $bwStartTs));
+$bwNext     = date('Y-m-d', strtotime('+7 days', $bwStartTs));
+
+// Month nav
+$bmMonth    = (int)($_GET['bm'] ?? date('n'));
+$bmYear     = (int)($_GET['by'] ?? date('Y'));
+if ($bmMonth < 1) { $bmMonth = 12; $bmYear--; }
+if ($bmMonth > 12) { $bmMonth = 1; $bmYear++; }
+$bmPrevM    = $bmMonth-1 < 1  ? 12 : $bmMonth-1;
+$bmPrevY    = $bmMonth-1 < 1  ? $bmYear-1 : $bmYear;
+$bmNextM    = $bmMonth+1 > 12 ? 1  : $bmMonth+1;
+$bmNextY    = $bmMonth+1 > 12 ? $bmYear+1 : $bmYear;
+
+// Quarter nav (Q1–Q4)
+$bqYear     = (int)($_GET['bqy'] ?? date('Y'));
+$bqNum      = (int)($_GET['bqn'] ?? ceil(date('n') / 3));
+if ($bqNum < 1) { $bqNum = 4; $bqYear--; }
+if ($bqNum > 4) { $bqNum = 1; $bqYear++; }
+$bqPrevN    = $bqNum-1 < 1 ? 4 : $bqNum-1;
+$bqPrevY    = $bqNum-1 < 1 ? $bqYear-1 : $bqYear;
+$bqNextN    = $bqNum+1 > 4 ? 1 : $bqNum+1;
+$bqNextY    = $bqNum+1 > 4 ? $bqYear+1 : $bqYear;
+
+// Build occupancy lookup: $occ[$roomId][$date] = booking
+$occ = [];
+foreach ($confirmed as $b) {
+    $ci = strtotime($b['check_in']); $co = strtotime($b['check_out']);
+    for ($t = $ci; $t < $co; $t += 86400) {
+        $ds = date('Y-m-d', $t);
+        $occ[$b['room_id']][$ds] = $b;
+    }
+}
+
+// Manual blocks only (for the list table)
+$blockedBookings = array_values(array_filter($allBookings, fn($b) => $b['source'] === 'blocked'));
+
+// Summary counts
+$today = date('Y-m-d');
+$blocksActive   = 0; $blocksUpcoming = 0; $totalBlockedNights = 0;
+foreach ($blockedBookings as $b) {
+    $n = (int)ceil((strtotime($b['check_out'])-strtotime($b['check_in']))/86400);
+    $totalBlockedNights += $n;
+    if ($b['check_in'] <= $today && $b['check_out'] > $today) $blocksActive++;
+    elseif ($b['check_in'] > $today) $blocksUpcoming++;
+}
+
+// All blocked days across all sources (for visual views)
+$baseUrl = 'admin.php?section=blocked';
+
+// Source → short label
+function srcShort(string $src): string {
+    return match($src) {
+        'airbnb' => 'AIR', 'booking.com','booking' => 'BK', 'agoda' => 'AGO',
+        'makemytrip' => 'MMT', 'direct','phone','whatsapp','walk_in' => 'DIR',
+        'blocked' => 'BLK', default => strtoupper(substr($src,0,3))
+    };
+}
+?>
+
+<!-- ── Quick block form ──────────────────────────────────────── -->
+<div class="panel" style="margin-bottom:1.25rem">
   <div class="panel-hd">
-    <div>
-      <h3>🚫 Block Dates</h3>
-      <div class="sub">Block a property so no new bookings can be taken</div>
-    </div>
+    <div><h3>🚫 Block Dates</h3><div class="sub">Block a property instantly — syncs to all OTA channels via iCal</div></div>
+    <button type="button" class="btn btn-grey btn-sm" onclick="togglePanel('blkFormPanel')">▲ Collapse</button>
   </div>
-  <div class="panel-bd">
+  <div class="panel-bd" id="blkFormPanel">
     <form method="POST">
       <input type="hidden" name="action" value="add_booking">
       <input type="hidden" name="source" value="blocked">
@@ -1910,52 +2268,434 @@ $totalOccupied = count($propStatus) - $totalFree;
             <?php endforeach; ?>
           </select>
         </div>
-        <div class="fld">
-          <label>Block From (Check-in)</label>
-          <input type="date" name="check_in" required min="<?= date('Y-m-d') ?>">
-        </div>
-        <div class="fld">
-          <label>Block Until (Check-out)</label>
-          <input type="date" name="check_out" required min="<?= date('Y-m-d') ?>">
-        </div>
+        <div class="fld"><label>Block From</label><input type="date" name="check_in" required min="<?= date('Y-m-d') ?>"></div>
+        <div class="fld"><label>Block Until</label><input type="date" name="check_out" required min="<?= date('Y-m-d') ?>"></div>
       </div>
       <div class="fld" style="margin-bottom:1rem">
         <label>Reason (optional)</label>
         <input type="text" name="notes" placeholder="e.g. Owner stay, Maintenance, Deep cleaning…">
       </div>
-      <button type="submit" class="btn btn-primary">🚫 Block These Dates</button>
+      <button type="submit" class="btn btn-danger">🚫 Block These Dates</button>
     </form>
   </div>
 </div>
 
-<!-- Current blocks table -->
-<div class="panel">
-  <div class="panel-hd"><h3>📋 All Blocked Date Ranges</h3></div>
-  <div class="tbl-wrap">
+<!-- ── Summary stats ────────────────────────────────────────── -->
+<div class="stats-row" style="margin-bottom:1.25rem">
+  <?php
+  // Count all occupied (booked) nights in next 90 days across all rooms
+  $occNights90 = 0; $freeNights90 = 0; $totalSlots90 = count($rooms) * 90;
+  $d90end = date('Y-m-d', strtotime('+90 days'));
+  for ($t = strtotime($today); $t < strtotime($d90end); $t += 86400) {
+    $ds = date('Y-m-d',$t);
+    foreach ($rooms as $rid => $_) {
+      if (isset($occ[$rid][$ds])) $occNights90++; else $freeNights90++;
+    }
+  }
+  $occPct90 = $totalSlots90 > 0 ? round($occNights90/$totalSlots90*100) : 0;
+  ?>
+  <div class="stat-card"><div class="stat-icon">🔴</div><div class="stat-val"><?= $blocksActive ?></div><div class="stat-lbl">Active Blocks Today</div></div>
+  <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-val"><?= $blocksUpcoming ?></div><div class="stat-lbl">Upcoming Blocks</div></div>
+  <div class="stat-card"><div class="stat-icon">🌙</div><div class="stat-val"><?= $totalBlockedNights ?></div><div class="stat-lbl">Manual Block Nights</div></div>
+  <div class="stat-card"><div class="stat-icon">🏠</div><div class="stat-val"><?= $occPct90 ?>%</div><div class="stat-lbl">Occupancy (Next 90d)</div></div>
+</div>
+
+<!-- ── View tabs ─────────────────────────────────────────────── -->
+<div class="cal-view-tabs" style="margin-bottom:1rem">
+  <a class="cvt-btn <?= $bview==='week'    ? 'active' : '' ?>" href="<?= $baseUrl ?>&bv=week&bws=<?= $bwRaw ?>">📅 Weekly</a>
+  <a class="cvt-btn <?= $bview==='month'   ? 'active' : '' ?>" href="<?= $baseUrl ?>&bv=month&bm=<?= $bmMonth ?>&by=<?= $bmYear ?>">🗓️ Monthly</a>
+  <a class="cvt-btn <?= $bview==='quarter' ? 'active' : '' ?>" href="<?= $baseUrl ?>&bv=quarter&bqy=<?= $bqYear ?>&bqn=<?= $bqNum ?>">📊 Quarterly</a>
+</div>
+
+<!-- ── Source legend ────────────────────────────────────────── -->
+<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;font-size:.75rem;align-items:center">
+  <?php foreach (['airbnb'=>'Airbnb','booking.com'=>'Booking.com','agoda'=>'Agoda','direct'=>'Direct','blocked'=>'Blocked'] as $s => $sl): ?>
+  <span style="display:flex;align-items:center;gap:.35rem">
+    <span style="width:14px;height:14px;border-radius:3px;background:<?= sourceColor($s) ?>;display:inline-block"></span><?= $sl ?>
+  </span>
+  <?php endforeach; ?>
+  <span style="display:flex;align-items:center;gap:.35rem">
+    <span style="width:14px;height:14px;border-radius:3px;background:#e5e7eb;display:inline-block"></span>Free
+  </span>
+</div>
+
+<?php if ($bview === 'week'): ?>
+<!-- ══ WEEKLY VIEW ════════════════════════════════════════════ -->
+<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.85rem;flex-wrap:wrap">
+  <a class="day-btn" href="<?= $baseUrl ?>&bv=week&bws=<?= $bwPrev ?>">← <?= date('d M', strtotime($bwPrev)) ?></a>
+  <span style="font-weight:700;font-size:.95rem"><?= date('d M Y', $bwStartTs) ?> — <?= date('d M Y', strtotime('+6 days',$bwStartTs)) ?></span>
+  <a class="day-btn" href="<?= $baseUrl ?>&bv=week&bws=<?= $bwNext ?>"><?= date('d M', strtotime($bwNext)) ?> →</a>
+  <a class="day-btn" href="<?= $baseUrl ?>&bv=week&bws=<?= date('Y-m-d',strtotime('monday this week')) ?>" style="margin-left:auto">This Week</a>
+</div>
+
+<div class="panel" style="margin-bottom:1.25rem">
+  <div class="panel-bd" style="padding:0;overflow-x:auto">
     <?php
-    $blockedBookings = array_filter($allBookings, fn($b) => $b['source'] === 'blocked');
-    $blockedBookings = array_values($blockedBookings);
+    $wDays = [];
+    for ($d = 0; $d < 7; $d++) $wDays[] = date('Y-m-d', strtotime("+$d days", $bwStartTs));
     ?>
-    <?php if (empty($blockedBookings)): ?>
-      <p style="padding:1rem;color:var(--text-muted);font-size:.85rem">No dates are currently blocked.</p>
-    <?php else: ?>
+    <table style="width:100%;border-collapse:collapse;min-width:600px">
+      <thead>
+        <tr style="background:#f8fafc">
+          <th style="padding:.6rem .75rem;text-align:left;font-size:.78rem;border-bottom:2px solid var(--border);min-width:140px">Property</th>
+          <?php foreach ($wDays as $wd): ?>
+          <?php $isWdToday = $wd === $today; $dow = date('D',$bwStartTs+86400*array_search($wd,$wDays)); ?>
+          <th style="padding:.6rem .4rem;text-align:center;font-size:.75rem;border-bottom:2px solid var(--border);<?= $isWdToday?'background:#f0faf3':'' ?>;<?= in_array($dow,['Sat','Sun'])?'background:#fafaf5':'' ?>">
+            <div style="font-weight:700"><?= date('D',strtotime($wd)) ?></div>
+            <div style="font-size:.68rem;color:var(--text-muted)"><?= date('d M',strtotime($wd)) ?></div>
+            <?php if ($isWdToday): ?><div style="font-size:.6rem;color:var(--primary);font-weight:700">TODAY</div><?php endif; ?>
+          </th>
+          <?php endforeach; ?>
+          <th style="padding:.6rem;text-align:center;font-size:.75rem;border-bottom:2px solid var(--border)">Free Days</th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach ($rooms as $rid => $rname):
+        $freeCnt = 0;
+      ?>
+        <tr>
+          <td style="padding:.5rem .75rem;font-size:.8rem;font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap"><?= htmlspecialchars($rname) ?></td>
+          <?php foreach ($wDays as $wd):
+            $bk = $occ[$rid][$wd] ?? null;
+            $isWdToday = $wd === $today;
+            $cellBg = $isWdToday ? '#f0faf3' : '#fff';
+          ?>
+          <td style="padding:.35rem .25rem;text-align:center;border-bottom:1px solid var(--border);border-left:1px solid #f0f0f0;background:<?= $cellBg ?>">
+            <?php if ($bk):
+              $sc = sourceColor($bk['source']);
+            ?>
+            <div style="background:<?= $sc ?>;color:#fff;border-radius:5px;padding:.2rem .35rem;font-size:.65rem;font-weight:700;line-height:1.3;cursor:default"
+              title="<?= htmlspecialchars($bk['guest_name']) ?> (<?= $bk['source'] ?>) <?= $bk['check_in'] ?>→<?= $bk['check_out'] ?>">
+              <?= srcShort($bk['source']) ?><br>
+              <span style="font-weight:400;font-size:.6rem"><?= htmlspecialchars(substr($bk['guest_name'],0,7)) ?></span>
+            </div>
+            <?php else: $freeCnt++; ?>
+            <div style="width:100%;height:28px;background:#f3f4f6;border-radius:4px"></div>
+            <?php endif; ?>
+          </td>
+          <?php endforeach; ?>
+          <td style="text-align:center;font-weight:700;font-size:.85rem;border-bottom:1px solid var(--border);color:<?= $freeCnt===7?'#16a34a':($freeCnt===0?'#e53e3e':'#92400e') ?>">
+            <?= $freeCnt ?>/7
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Weekly summary table -->
+<div class="panel">
+  <div class="panel-hd"><h3>📊 Week Summary — Bookings by Platform</h3></div>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead><tr><th>Date</th><th>Day</th><th>Free Rooms</th><th>Airbnb</th><th>Booking.com</th><th>Agoda</th><th>Direct/Phone</th><th>Blocked</th></tr></thead>
+      <tbody>
+        <?php foreach ($wDays as $wd):
+          $srcCount = [];
+          $freeRms = 0;
+          foreach ($rooms as $rid => $_) {
+            $bk = $occ[$rid][$wd] ?? null;
+            if ($bk) $srcCount[$bk['source']] = ($srcCount[$bk['source']] ?? 0) + 1;
+            else $freeRms++;
+          }
+          $isWdToday = $wd === $today;
+        ?>
+        <tr style="<?= $isWdToday?'background:#f0faf3':'' ?>">
+          <td style="font-weight:700"><?= date('d M Y',strtotime($wd)) ?></td>
+          <td class="muted"><?= date('D',strtotime($wd)) ?></td>
+          <td style="font-weight:700;color:<?= $freeRms===count($rooms)?'#16a34a':($freeRms===0?'#e53e3e':'#92400e') ?>"><?= $freeRms ?> / <?= count($rooms) ?></td>
+          <td><?= $srcCount['airbnb'] ?? 0 ?></td>
+          <td><?= ($srcCount['booking.com'] ?? 0) + ($srcCount['booking'] ?? 0) ?></td>
+          <td><?= $srcCount['agoda'] ?? 0 ?></td>
+          <td><?= ($srcCount['direct'] ?? 0) + ($srcCount['phone'] ?? 0) + ($srcCount['whatsapp'] ?? 0) + ($srcCount['walk_in'] ?? 0) ?></td>
+          <td><?= $srcCount['blocked'] ?? 0 ?></td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<?php elseif ($bview === 'month'): ?>
+<!-- ══ MONTHLY VIEW ══════════════════════════════════════════ -->
+<?php
+  $bmFirst   = mktime(0,0,0,$bmMonth,1,$bmYear);
+  $bmDays    = (int)date('t',$bmFirst);
+  $bmStartDow= (int)date('N',$bmFirst);
+?>
+<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.85rem;flex-wrap:wrap">
+  <a class="day-btn" href="<?= $baseUrl ?>&bv=month&bm=<?= $bmPrevM ?>&by=<?= $bmPrevY ?>">← <?= date('M Y',mktime(0,0,0,$bmPrevM,1,$bmPrevY)) ?></a>
+  <span style="font-weight:700;font-size:.95rem"><?= date('F Y',$bmFirst) ?></span>
+  <a class="day-btn" href="<?= $baseUrl ?>&bv=month&bm=<?= $bmNextM ?>&by=<?= $bmNextY ?>"><?= date('M Y',mktime(0,0,0,$bmNextM,1,$bmNextY)) ?> →</a>
+  <a class="day-btn" href="<?= $baseUrl ?>&bv=month&bm=<?= date('n') ?>&by=<?= date('Y') ?>" style="margin-left:auto">This Month</a>
+</div>
+
+<!-- Gantt-style: rooms as rows, dates as cols -->
+<div class="panel" style="margin-bottom:1.25rem">
+  <div class="panel-bd" style="padding:0;overflow-x:auto">
+    <table style="border-collapse:collapse;white-space:nowrap">
+      <thead>
+        <tr style="background:#f8fafc">
+          <th style="padding:.6rem .75rem;text-align:left;font-size:.75rem;border-bottom:2px solid var(--border);min-width:140px;position:sticky;left:0;background:#f8fafc;z-index:2">Property</th>
+          <?php for ($d=1; $d<=$bmDays; $d++):
+            $ds = sprintf('%04d-%02d-%02d',$bmYear,$bmMonth,$d);
+            $dow = date('D',strtotime($ds));
+            $isWknd = in_array($dow,['Sat','Sun']);
+            $isToday2 = $ds === $today;
+          ?>
+          <th style="padding:.35rem .2rem;text-align:center;font-size:.65rem;width:28px;border-bottom:2px solid var(--border);<?= $isToday2?'background:#f0faf3;color:var(--primary);font-weight:700':($isWknd?'background:#fafaf5':'') ?>">
+            <div><?= $d ?></div>
+            <div style="font-size:.55rem;color:var(--text-muted)"><?= substr($dow,0,2) ?></div>
+          </th>
+          <?php endfor; ?>
+          <th style="padding:.6rem;font-size:.75rem;border-bottom:2px solid var(--border);text-align:center">Occ %</th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach ($rooms as $rid => $rname):
+        $bookedDays = 0;
+      ?>
+        <tr>
+          <td style="padding:.4rem .75rem;font-size:.78rem;font-weight:600;border-bottom:1px solid var(--border);position:sticky;left:0;background:#fff;z-index:1"><?= htmlspecialchars($rname) ?></td>
+          <?php for ($d=1; $d<=$bmDays; $d++):
+            $ds = sprintf('%04d-%02d-%02d',$bmYear,$bmMonth,$d);
+            $bk = $occ[$rid][$ds] ?? null;
+            $isToday2 = $ds === $today;
+            $dow = date('D',strtotime($ds));
+            $isWknd = in_array($dow,['Sat','Sun']);
+            $bg = $bk ? sourceColor($bk['source']) : ($isToday2?'#d1fae5':($isWknd?'#f5f5f0':'#f3f4f6'));
+            $tc = $bk ? '#fff' : '#999';
+            if ($bk) $bookedDays++;
+            // Check if this is check-in day
+            $isCI = $bk && $bk['check_in'] === $ds;
+            $isCO = $bk && $bk['check_out'] === $ds;
+          ?>
+          <td style="padding:.25rem .1rem;border-bottom:1px solid var(--border);border-left:1px solid #f0f0f0;text-align:center" title="<?= $ds ?><?= $bk?' — '.htmlspecialchars($bk['guest_name']).' ('.$bk['source'].')':' — Free' ?>">
+            <div style="width:24px;height:22px;border-radius:<?= $isCI?'5px 2px 2px 5px':($isCO?'2px 5px 5px 2px':'2px') ?>;background:<?= $bg ?>;margin:0 auto;font-size:.55rem;color:<?= $tc ?>;display:flex;align-items:center;justify-content:center;font-weight:700">
+              <?= $bk ? srcShort($bk['source']) : '' ?>
+            </div>
+          </td>
+          <?php endfor; ?>
+          <td style="text-align:center;font-weight:700;font-size:.82rem;border-bottom:1px solid var(--border);color:<?= $bookedDays>=$bmDays*0.8?'#e53e3e':($bookedDays>=$bmDays*0.5?'#92400e':'#16a34a') ?>">
+            <?= round($bookedDays/$bmDays*100) ?>%
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Monthly breakdown by platform -->
+<div class="panel">
+  <div class="panel-hd"><h3>📡 <?= date('F Y',$bmFirst) ?> — Platform Breakdown</h3></div>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead><tr><th>Property</th><th>Total Days</th><th>Airbnb</th><th>Booking.com</th><th>Agoda</th><th>Direct</th><th>Blocked</th><th>Free</th><th>Occupancy</th></tr></thead>
+      <tbody>
+      <?php foreach ($rooms as $rid => $rname):
+        $totals = ['airbnb'=>0,'booking.com'=>0,'agoda'=>0,'direct'=>0,'blocked'=>0,'free'=>0];
+        for ($d=1; $d<=$bmDays; $d++) {
+          $ds = sprintf('%04d-%02d-%02d',$bmYear,$bmMonth,$d);
+          $bk = $occ[$rid][$ds] ?? null;
+          if (!$bk) { $totals['free']++; continue; }
+          $src = $bk['source'];
+          if (in_array($src,['booking','booking.com'])) $totals['booking.com']++;
+          elseif (in_array($src,['direct','phone','whatsapp','walk_in'])) $totals['direct']++;
+          elseif (isset($totals[$src])) $totals[$src]++;
+          else $totals['direct']++;
+        }
+        $occPct = round(($bmDays-$totals['free'])/$bmDays*100);
+      ?>
+      <tr>
+        <td style="font-weight:600;font-size:.83rem"><?= htmlspecialchars($rname) ?></td>
+        <td class="muted"><?= $bmDays ?></td>
+        <td><?= $totals['airbnb'] ?: '—' ?></td>
+        <td><?= $totals['booking.com'] ?: '—' ?></td>
+        <td><?= $totals['agoda'] ?: '—' ?></td>
+        <td><?= $totals['direct'] ?: '—' ?></td>
+        <td style="color:#e53e3e;font-weight:<?= $totals['blocked']?'700':'400' ?>"><?= $totals['blocked'] ?: '—' ?></td>
+        <td style="color:var(--primary);font-weight:700"><?= $totals['free'] ?></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:.4rem">
+            <div style="flex:1;height:8px;background:#e5e7eb;border-radius:4px;min-width:60px">
+              <div style="height:8px;border-radius:4px;background:<?= $occPct>=80?'#e53e3e':($occPct>=50?'#f59e0b':'#16a34a') ?>;width:<?= $occPct ?>%"></div>
+            </div>
+            <span style="font-weight:700;font-size:.8rem;color:<?= $occPct>=80?'#e53e3e':($occPct>=50?'#92400e':'#16a34a') ?>"><?= $occPct ?>%</span>
+          </div>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<?php elseif ($bview === 'quarter'): ?>
+<!-- ══ QUARTERLY VIEW ════════════════════════════════════════ -->
+<?php
+  $qLabel   = "Q{$bqNum} {$bqYear}";
+  $qMonths  = [($bqNum-1)*3+1, ($bqNum-1)*3+2, ($bqNum-1)*3+3];
+?>
+<div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.85rem;flex-wrap:wrap">
+  <a class="day-btn" href="<?= $baseUrl ?>&bv=quarter&bqy=<?= $bqPrevY ?>&bqn=<?= $bqPrevN ?>">← Q<?= $bqPrevN ?> <?= $bqPrevY ?></a>
+  <span style="font-weight:700;font-size:.95rem"><?= $qLabel ?> — <?= date('M',mktime(0,0,0,$qMonths[0],1,$bqYear)) ?> to <?= date('M Y',mktime(0,0,0,$qMonths[2],1,$bqYear)) ?></span>
+  <a class="day-btn" href="<?= $baseUrl ?>&bv=quarter&bqy=<?= $bqNextY ?>&bqn=<?= $bqNextN ?>">Q<?= $bqNextN ?> <?= $bqNextY ?> →</a>
+  <a class="day-btn" href="<?= $baseUrl ?>&bv=quarter&bqy=<?= date('Y') ?>&bqn=<?= ceil(date('n')/3) ?>" style="margin-left:auto">This Quarter</a>
+</div>
+
+<!-- 3 monthly mini-gantt grids side by side -->
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.25rem">
+<?php foreach ($qMonths as $qm):
+  $qmFirst = mktime(0,0,0,$qm,1,$bqYear);
+  $qmDays  = (int)date('t',$qmFirst);
+?>
+  <div class="panel" style="margin:0">
+    <div class="panel-hd" style="background:var(--primary);color:#fff;padding:.5rem .75rem">
+      <h3 style="color:#fff;font-size:.85rem;margin:0"><?= date('F Y',$qmFirst) ?></h3>
+    </div>
+    <div class="panel-bd" style="padding:.5rem;overflow-x:auto">
+      <!-- Mini calendar per room -->
+      <?php foreach ($rooms as $rid => $rname):
+        $rshort = substr($rname,0,16);
+      ?>
+      <div style="margin-bottom:.4rem">
+        <div style="font-size:.65rem;font-weight:700;color:var(--text-muted);margin-bottom:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><?= htmlspecialchars($rshort) ?></div>
+        <div style="display:flex;gap:1px;flex-wrap:nowrap">
+          <?php for ($d=1; $d<=$qmDays; $d++):
+            $ds = sprintf('%04d-%02d-%02d',$bqYear,$qm,$d);
+            $bk = $occ[$rid][$ds] ?? null;
+            $dow = date('D',strtotime($ds));
+            $isWknd = in_array($dow,['Sat','Sun']);
+            $isToday2 = $ds === $today;
+            $bg = $bk ? sourceColor($bk['source']) : ($isToday2?'#16a34a':($isWknd?'#e5e7eb':'#f3f4f6'));
+            $title = $ds.($bk?' — '.htmlspecialchars($bk['guest_name']).' ('.$bk['source'].')':' — Free');
+          ?>
+          <div style="width:9px;height:14px;border-radius:1px;background:<?= $bg ?>;flex-shrink:0;cursor:default<?= $isToday2?';outline:2px solid var(--primary);outline-offset:-1px':'' ?>"
+            title="<?= $title ?>" onclick="window.location.href='admin.php?section=calendar&view=day&date=<?= $ds ?>'"></div>
+          <?php endfor; ?>
+        </div>
+      </div>
+      <?php endforeach; ?>
+      <!-- Month totals -->
+      <?php
+        $mFree=0; $mBooked=0;
+        for ($d=1; $d<=$qmDays; $d++) {
+          $ds = sprintf('%04d-%02d-%02d',$bqYear,$qm,$d);
+          foreach ($rooms as $rid => $_) { if (isset($occ[$rid][$ds])) $mBooked++; else $mFree++; }
+        }
+        $mOcc = round($mBooked/($qmDays*count($rooms))*100);
+      ?>
+      <div style="margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:.7rem">
+        <span style="color:var(--text-muted)">Occ: <strong style="color:<?= $mOcc>=70?'#e53e3e':'#16a34a' ?>"><?= $mOcc ?>%</strong></span>
+        <span style="color:var(--text-muted)">Free slots: <strong><?= $mFree ?></strong></span>
+      </div>
+    </div>
+  </div>
+<?php endforeach; ?>
+</div>
+
+<!-- Quarterly summary table -->
+<div class="panel" style="margin-bottom:1.25rem">
+  <div class="panel-hd"><h3>📊 <?= $qLabel ?> Summary — All Properties</h3></div>
+  <div class="tbl-wrap">
     <table class="tbl">
       <thead>
-        <tr><th>Property</th><th>Blocked From</th><th>Blocked Until</th><th>Nights</th><th>Reason</th><th>Actions</th></tr>
+        <tr>
+          <th>Property</th>
+          <?php foreach ($qMonths as $qm): ?><th style="text-align:center"><?= date('M',$qm>0?mktime(0,0,0,$qm,1,$bqYear):time()) ?></th><?php endforeach; ?>
+          <th style="text-align:center">Q Total Nights</th>
+          <th style="text-align:center">Airbnb</th>
+          <th style="text-align:center">Booking.com</th>
+          <th style="text-align:center">Direct</th>
+          <th style="text-align:center">Blocked</th>
+          <th>Quarter Occ</th>
+        </tr>
       </thead>
+      <tbody>
+      <?php foreach ($rooms as $rid => $rname):
+        $qTotalDays = 0; $qBooked = 0;
+        $qSrc = ['airbnb'=>0,'booking.com'=>0,'agoda'=>0,'direct'=>0,'blocked'=>0];
+        $mOccs = [];
+        foreach ($qMonths as $qm) {
+          $qmDays2 = (int)date('t',mktime(0,0,0,$qm,1,$bqYear));
+          $qTotalDays += $qmDays2;
+          $mBk = 0;
+          for ($d=1; $d<=$qmDays2; $d++) {
+            $ds = sprintf('%04d-%02d-%02d',$bqYear,$qm,$d);
+            $bk = $occ[$rid][$ds] ?? null;
+            if ($bk) {
+              $mBk++; $qBooked++;
+              $src = $bk['source'];
+              if (in_array($src,['booking','booking.com'])) $qSrc['booking.com']++;
+              elseif (in_array($src,['direct','phone','whatsapp','walk_in'])) $qSrc['direct']++;
+              elseif (isset($qSrc[$src])) $qSrc[$src]++;
+              else $qSrc['direct']++;
+            }
+          }
+          $mOccs[$qm] = $qmDays2>0 ? round($mBk/$qmDays2*100) : 0;
+        }
+        $qOccPct = $qTotalDays>0 ? round($qBooked/$qTotalDays*100) : 0;
+      ?>
+      <tr>
+        <td style="font-weight:600;font-size:.83rem"><?= htmlspecialchars($rname) ?></td>
+        <?php foreach ($qMonths as $qm): ?>
+        <td style="text-align:center;font-size:.82rem">
+          <div style="font-weight:700;color:<?= $mOccs[$qm]>=70?'#e53e3e':($mOccs[$qm]>=40?'#92400e':'#16a34a') ?>"><?= $mOccs[$qm] ?>%</div>
+        </td>
+        <?php endforeach; ?>
+        <td style="text-align:center;font-weight:700"><?= $qBooked ?></td>
+        <td style="text-align:center"><?= $qSrc['airbnb'] ?: '—' ?></td>
+        <td style="text-align:center"><?= $qSrc['booking.com'] ?: '—' ?></td>
+        <td style="text-align:center"><?= $qSrc['direct'] ?: '—' ?></td>
+        <td style="text-align:center;color:#e53e3e;font-weight:<?= $qSrc['blocked']?'700':'400' ?>"><?= $qSrc['blocked'] ?: '—' ?></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:.4rem">
+            <div style="flex:1;height:8px;background:#e5e7eb;border-radius:4px;min-width:50px">
+              <div style="height:8px;border-radius:4px;background:<?= $qOccPct>=70?'#e53e3e':($qOccPct>=40?'#f59e0b':'#16a34a') ?>;width:<?= $qOccPct ?>%"></div>
+            </div>
+            <strong style="font-size:.8rem;color:<?= $qOccPct>=70?'#e53e3e':'#16a34a' ?>"><?= $qOccPct ?>%</strong>
+          </div>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<?php endif; // end bview ?>
+
+<!-- ── Manual blocks list ───────────────────────────────────── -->
+<div class="panel">
+  <div class="panel-hd"><h3>🚫 Manual Block Ranges</h3><span class="sub">Owner-blocked periods only (excludes OTA bookings)</span></div>
+  <div class="tbl-wrap">
+    <?php if (empty($blockedBookings)): ?>
+      <p style="padding:1rem;color:var(--text-muted);font-size:.85rem">No manual blocks set. Use the form above to block dates.</p>
+    <?php else: ?>
+    <table class="tbl">
+      <thead><tr><th>Property</th><th>From</th><th>Until</th><th>Nights</th><th>Reason</th><th>Synced To</th><th>Actions</th></tr></thead>
       <tbody>
         <?php foreach ($blockedBookings as $b): ?>
         <tr>
           <td style="font-weight:600"><?= htmlspecialchars($b['room_name']) ?></td>
-          <td><?= $b['check_in'] ?></td>
-          <td><?= $b['check_out'] ?></td>
+          <td><?= date('d M Y',strtotime($b['check_in'])) ?></td>
+          <td><?= date('d M Y',strtotime($b['check_out'])) ?></td>
           <td><?= nights($b['check_in'], $b['check_out']) ?></td>
           <td class="muted"><?= htmlspecialchars($b['notes'] ?: '—') ?></td>
+          <td>
+            <span style="font-size:.7rem;display:flex;gap:.25rem;flex-wrap:wrap">
+              <?php foreach (['airbnb'=>'#FF5A5F','booking.com'=>'#003580','agoda'=>'#EB1A23'] as $pl => $pc): ?>
+              <span style="background:<?= $pc ?>;color:#fff;padding:.1rem .3rem;border-radius:3px;font-weight:700">✓ <?= strtoupper(substr($pl,0,3)) ?></span>
+              <?php endforeach; ?>
+            </span>
+          </td>
           <td style="white-space:nowrap">
-            <form method="POST" style="display:inline" onsubmit="return confirm('Remove this block?')">
+            <form method="POST" style="display:inline" onsubmit="return confirm('Remove this block? Dates will reopen on all platforms within 15 minutes.')">
               <input type="hidden" name="action" value="delete_booking">
               <input type="hidden" name="id" value="<?= $b['id'] ?>">
-              <button type="submit" class="btn btn-warn btn-sm">🗑 Remove Block</button>
+              <button type="submit" class="btn btn-warn btn-sm">🗑 Remove</button>
             </form>
           </td>
         </tr>
@@ -2231,22 +2971,233 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
 ════════════════════════════════════════════════ -->
 <?php elseif ($section === 'pricing'): ?>
 
-<!-- Base Rates -->
-<div class="panel">
-  <div class="panel-hd"><h3>💰 Base Nightly Rates</h3><span class="sub">Used for pricing calculations</span></div>
+<?php
+// OTA commission rates
+$otaComm = OTA_COMMISSIONS;
+$platforms = ['airbnb' => 'Airbnb', 'booking.com' => 'Booking.com', 'agoda' => 'Agoda', 'direct' => 'Direct / Website'];
+
+// Default discount rules if none saved
+$defaultRules = [
+  'los_weekly'     => ['label'=>'Weekly Stay (7+ nights)',    'value'=>10,'unit'=>'pct','min_nights'=>7, 'days_ahead'=>0,  'enabled'=>1],
+  'los_monthly'    => ['label'=>'Monthly Stay (28+ nights)',  'value'=>20,'unit'=>'pct','min_nights'=>28,'days_ahead'=>0,  'enabled'=>1],
+  'early_bird_30'  => ['label'=>'Early Bird (30+ days ahead)','value'=>5, 'unit'=>'pct','min_nights'=>1, 'days_ahead'=>30, 'enabled'=>1],
+  'last_minute_3'  => ['label'=>'Last Minute (≤3 days)',      'value'=>10,'unit'=>'pct','min_nights'=>1, 'days_ahead'=>3,  'enabled'=>0],
+  'weekend'        => ['label'=>'Weekend Premium',            'value'=>15,'unit'=>'pct','min_nights'=>1, 'days_ahead'=>0,  'enabled'=>1],
+];
+foreach ($defaultRules as $k => $d) {
+  if (!isset($discountRules[$k])) $discountRules[$k] = array_merge(['rule_type'=>$k], $d);
+}
+
+// OTA deep-link update pages
+$otaLinks = [
+  'airbnb'     => 'https://www.airbnb.com/hosting/listings',
+  'booking.com'=> 'https://account.booking.com/auth/login',
+  'agoda'      => 'https://ycs.agoda.com/',
+];
+?>
+
+<!-- ── Sync explanation banner ──────────────────────────────── -->
+<div class="panel" style="border-color:#3b82f6;margin-bottom:1.25rem">
+  <div class="panel-hd" style="background:#eff6ff">
+    <h3 style="color:#1d4ed8">ℹ️ How Cross-Platform Pricing Works</h3>
+  </div>
   <div class="panel-bd">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem">
+      <div style="padding:.85rem;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0">
+        <div style="font-weight:700;font-size:.85rem;color:#166534;margin-bottom:.35rem">✅ What syncs automatically</div>
+        <div style="font-size:.82rem;color:#166534">Availability (blocked dates) sync via iCal every 15 minutes to Airbnb, Booking.com, and Agoda.</div>
+      </div>
+      <div style="padding:.85rem;background:#fffbeb;border-radius:8px;border:1px solid #fde68a">
+        <div style="font-weight:700;font-size:.85rem;color:#92400e;margin-bottom:.35rem">⚠️ What needs manual update</div>
+        <div style="font-size:.82rem;color:#92400e">Prices. OTAs don't accept pricing via iCal — you must update rates on each platform. Set them here first, then use the quick-links below to update each OTA in one click.</div>
+      </div>
+      <div style="padding:.85rem;background:#f5f3ff;border-radius:8px;border:1px solid #ddd6fe">
+        <div style="font-weight:700;font-size:.85rem;color:#5b21b6;margin-bottom:.35rem">🔗 Quick-update links</div>
+        <div style="font-size:.82rem;color:#5b21b6">Each platform card below has a direct link to that OTA's pricing page so you can update in seconds.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Platform Rate Matrix ─────────────────────────────────── -->
+<div class="panel" style="margin-bottom:1.25rem">
+  <div class="panel-hd">
+    <h3>💰 Rate Matrix — All Properties × All Platforms</h3>
+    <span class="sub">Set base rate + per-platform rate. Net = rate after OTA commission.</span>
+  </div>
+  <div class="panel-bd" style="padding:0">
     <form method="POST">
       <input type="hidden" name="action" value="update_base_rate">
-      <div class="form-grid">
-        <?php foreach ($rooms as $rid => $rname): ?>
-        <div class="fld">
-          <label><?= htmlspecialchars($rname) ?></label>
-          <input type="number" name="rates[<?= htmlspecialchars($rid) ?>]" value="<?= $ratesMap[$rid] ?? '' ?>" placeholder="₹ per night" min="0">
-        </div>
-        <?php endforeach; ?>
+      <div class="tbl-wrap">
+        <table class="tbl" style="min-width:700px">
+          <thead>
+            <tr>
+              <th style="min-width:160px">Property</th>
+              <th style="text-align:center">Base Rate<br><span style="font-weight:400;font-size:.7rem;color:var(--text-muted)">₹/night</span></th>
+              <?php foreach ($platforms as $pid => $pname): ?>
+              <th style="text-align:center">
+                <?= $pname ?><br>
+                <span style="font-weight:400;font-size:.7rem;color:var(--text-muted)">
+                  <?php if ($pid !== 'direct'): ?>-<?= $otaComm[$pid] ?? 15 ?>% comm<?php else: ?>no comm<?php endif; ?>
+                </span>
+              </th>
+              <th style="text-align:center;font-size:.7rem;color:var(--text-muted)">Net<br>(<?= $pname ?>)</th>
+              <?php endforeach; ?>
+              <th style="text-align:center">Update On</th>
+            </tr>
+          </thead>
+          <tbody>
+          <?php foreach ($rooms as $rid => $rname):
+            $base = $ratesMap[$rid] ?? 0;
+          ?>
+          <tr>
+            <td style="font-weight:600;font-size:.83rem"><?= htmlspecialchars($rname) ?></td>
+            <td style="text-align:center">
+              <input type="number" name="rates[<?= $rid ?>]" value="<?= $base ?>" min="0"
+                style="width:80px;padding:.3rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-size:.82rem;text-align:center"
+                oninput="calcNet(this,'<?= $rid ?>')">
+            </td>
+            <?php foreach ($platforms as $pid => $pname):
+              $prate = $platformRates[$rid][$pid] ?? ($base ?: '');
+              $comm  = $pid !== 'direct' ? ($otaComm[$pid] ?? 15) : 0;
+              $netId = "net-{$rid}-{$pid}";
+              $net   = $prate ? round($prate * (1 - $comm/100)) : 0;
+            ?>
+            <td style="text-align:center">
+              <input type="number" name="platform_rates[<?= $rid ?>][<?= $pid ?>]"
+                value="<?= htmlspecialchars($prate) ?>" min="0"
+                id="pr-<?= $rid ?>-<?= $pid ?>"
+                style="width:80px;padding:.3rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-size:.82rem;text-align:center"
+                oninput="document.getElementById('<?= $netId ?>').textContent='₹'+Math.round(this.value*(1-<?= $comm ?>/100)).toLocaleString('en-IN')">
+            </td>
+            <td style="text-align:center;font-size:.82rem;font-weight:600;color:var(--primary-dark)" id="<?= $netId ?>">
+              <?= $net ? '₹'.number_format($net) : '—' ?>
+            </td>
+            <?php endforeach; ?>
+            <td style="text-align:center">
+              <?php foreach ($otaLinks as $pid2 => $link): ?>
+              <a href="<?= $link ?>" target="_blank"
+                style="display:inline-block;padding:.2rem .45rem;margin:.1rem;border-radius:4px;font-size:.65rem;font-weight:700;text-decoration:none;color:#fff;background:<?= sourceColor($pid2) ?>">
+                <?= strtoupper(substr($pid2,0,3)) ?>↗
+              </a>
+              <?php endforeach; ?>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
       </div>
-      <div style="margin-top:1rem;display:flex;gap:.75rem;flex-wrap:wrap">
-        <button type="submit" class="btn btn-primary">💾 Save Base Rates</button>
+      <div style="padding:.85rem 1rem;border-top:1px solid var(--border);display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+        <button type="submit" class="btn btn-primary">💾 Save All Rates</button>
+        <span style="font-size:.78rem;color:var(--text-muted)">Saving updates base rates and all platform-specific rates at once.</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Platform Quick-Update Cards ──────────────────────────── -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-bottom:1.25rem">
+  <?php
+  $otaCardInfo = [
+    'airbnb'      => ['color'=>'#FF5A5F','icon'=>'🏠','steps'=>'Listings → Select property → Pricing → Calendar pricing'],
+    'booking.com' => ['color'=>'#003580','icon'=>'🏨','steps'=>'Rates & Availability → Rate Plans → Edit rates per date range'],
+    'agoda'       => ['color'=>'#EB1A23','icon'=>'🌏','steps'=>'YCS → Properties → Rate Plans → Manage rates'],
+  ];
+  foreach ($otaCardInfo as $pid => $info): ?>
+  <div style="background:var(--card);border:1px solid var(--border);border-top:4px solid <?= $info['color'] ?>;border-radius:10px;padding:1rem">
+    <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.6rem">
+      <span style="font-size:1.4rem"><?= $info['icon'] ?></span>
+      <div>
+        <div style="font-weight:700;font-size:.92rem"><?= $platforms[$pid] ?></div>
+        <div style="font-size:.72rem;color:var(--text-muted)"><?= $otaComm[$pid] ?? 15 ?>% commission</div>
+      </div>
+    </div>
+    <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.75rem;line-height:1.5">
+      <strong>Steps:</strong> <?= $info['steps'] ?>
+    </div>
+    <!-- Net rates summary for this platform -->
+    <div style="margin-bottom:.75rem">
+      <?php foreach (array_slice($rooms, 0, 5) as $rid => $rname):
+        $pr  = $platformRates[$rid][$pid] ?? ($ratesMap[$rid] ?? 0);
+        $net = $pr ? round($pr * (1 - ($otaComm[$pid] ?? 15)/100)) : null;
+      ?>
+      <div style="display:flex;justify-content:space-between;font-size:.75rem;padding:.2rem 0;border-bottom:1px dashed var(--border)">
+        <span style="color:var(--text-muted)"><?= htmlspecialchars(substr($rname,0,20)) ?></span>
+        <span>
+          <?php if ($pr): ?>
+            <span style="font-weight:600">₹<?= number_format($pr) ?></span>
+            <span style="color:var(--text-muted);font-size:.68rem"> → net ₹<?= number_format($net) ?></span>
+          <?php else: ?><span style="color:#e53e3e">Not set</span><?php endif; ?>
+        </span>
+      </div>
+      <?php endforeach; ?>
+    </div>
+    <a href="<?= $otaLinks[$pid] ?>" target="_blank"
+      style="display:block;text-align:center;padding:.45rem;background:<?= $info['color'] ?>;color:#fff;border-radius:7px;font-size:.78rem;font-weight:700;text-decoration:none">
+      Update <?= $platforms[$pid] ?> Pricing ↗
+    </a>
+  </div>
+  <?php endforeach; ?>
+</div>
+
+<!-- ── Discount Rules ────────────────────────────────────────── -->
+<div class="panel" style="margin-bottom:1.25rem">
+  <div class="panel-hd">
+    <h3>🏷️ Discount Rules</h3>
+    <span class="sub">Applied to all platforms — update each OTA manually with these rules</span>
+  </div>
+  <div class="panel-bd">
+    <form method="POST">
+      <input type="hidden" name="action" value="save_discount_rules">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Enabled</th><th>Discount Type</th><th>Discount %</th><th>Min Nights / Days Ahead</th><th>Apply To</th></tr></thead>
+          <tbody>
+          <?php foreach ($discountRules as $rtype => $dr): ?>
+          <tr>
+            <td style="text-align:center">
+              <input type="hidden" name="rule_type[]" value="<?= htmlspecialchars($rtype) ?>">
+              <input type="hidden" name="rule_label[]" value="<?= htmlspecialchars($dr['label']) ?>">
+              <input type="hidden" name="rule_unit[]" value="pct">
+              <input type="checkbox" name="rule_enabled[]" value="1" <?= ($dr['enabled'] ?? 0) ? 'checked' : '' ?>
+                style="width:16px;height:16px;cursor:pointer">
+            </td>
+            <td style="font-weight:600;font-size:.85rem"><?= htmlspecialchars($dr['label']) ?></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:.4rem">
+                <input type="number" name="rule_value[]" value="<?= $dr['value'] ?? 0 ?>" min="0" max="90" step="0.5"
+                  style="width:70px;padding:.3rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-size:.83rem;text-align:center">
+                <span style="font-size:.82rem;color:var(--text-muted)">%</span>
+              </div>
+            </td>
+            <td style="font-size:.82rem;color:var(--text-muted)">
+              <?php if (($dr['min_nights'] ?? 1) > 1): ?>
+                Min <?= $dr['min_nights'] ?> nights
+              <?php elseif (($dr['days_ahead'] ?? 0) > 0): ?>
+                Book ≥ <?= $dr['days_ahead'] ?> days ahead
+              <?php elseif ($rtype === 'last_minute_3'): ?>
+                Book ≤ 3 days before
+              <?php else: ?>
+                Any stay
+              <?php endif; ?>
+              <input type="hidden" name="rule_min[]" value="<?= $dr['min_nights'] ?? 1 ?>">
+              <input type="hidden" name="rule_ahead[]" value="<?= $dr['days_ahead'] ?? 0 ?>">
+            </td>
+            <td style="font-size:.8rem">
+              <?php foreach ($platforms as $pid => $pname): ?>
+                <span style="display:inline-block;padding:.1rem .35rem;border-radius:4px;background:<?= sourceColor($pid) ?>;color:#fff;font-size:.65rem;font-weight:700;margin:.1rem"><?= strtoupper(substr($pid,0,3)) ?></span>
+              <?php endforeach; ?>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:.85rem 1rem;border-top:1px solid var(--border);display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+        <button type="submit" class="btn btn-primary">💾 Save Discount Rules</button>
+        <span style="font-size:.78rem;color:var(--text-muted)">
+          These discounts are for reference — apply them manually on each OTA's discount/promotions section.
+        </span>
       </div>
     </form>
   </div>
@@ -3255,7 +4206,11 @@ function showBookingModal(b) {
 
 // ── Navigation ──────────────────────────────────────────────
 function goTo(section) {
-  window.location.href = 'admin.php?section=' + section;
+  if (section === 'calendar') {
+    window.location.href = 'admin.php?section=calendar&view=day&date=<?= date('Y-m-d') ?>';
+  } else {
+    window.location.href = 'admin.php?section=' + section;
+  }
 }
 
 // ── Sync ────────────────────────────────────────────────────

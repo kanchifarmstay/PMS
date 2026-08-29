@@ -109,18 +109,45 @@ function syncOneCalendar(array $cal): array {
         // Skip cancelled / tentative events
         if (in_array($status, ['CANCELLED', 'TENTATIVE'])) continue;
 
-        // Skip "Not available", "CLOSED", "Closed - Booking.com", "Blocked" etc.
         $summaryLower = strtolower($summary);
+
+        // ── Platform-specific handling ────────────────────────────
+        // Booking.com sends "CLOSED - Not available" for BOTH real reservations
+        // AND availability closures. We must import them (they block the calendar).
+        // Skip only if implausibly long (> 400 days = system closure, not a booking).
+        $isBookingCom = ($platform === 'booking.com' || $platform === 'booking');
+        if ($isBookingCom && preg_match('/^closed\s*[-–]/i', $summary)) {
+            $durationDays = (int)ceil((strtotime($checkOut) - strtotime($checkIn)) / 86400);
+            if ($durationDays > 400) continue; // skip extreme long closures only
+            // Real booking — import as Booking.com Guest
+            if ($uid) $feedUids[] = $uid;
+            $booking = [
+                'room_id'          => $roomId,
+                'room_name'        => $roomName,
+                'check_in'         => $checkIn,
+                'check_out'        => $checkOut,
+                'guest_name'       => 'Booking.com Guest',
+                'guest_email'      => '',
+                'guest_phone'      => '',
+                'source'           => $platform,
+                'booking_ref'      => $uid ?? '',
+                'amount'           => 0,
+                'status'           => 'confirmed',
+                'uid'              => $uid,
+                'notes'            => $summary,
+                'is_sync_imported' => 1,
+            ];
+            $id = addBooking($booking);
+            if ($id !== false) { $imported++; $newBookings[] = $booking; }
+            continue;
+        }
+
+        // For all other platforms — skip block/closure summaries
         $shouldSkip = false;
         foreach ($skipSummaries as $skipWord) {
-            if (str_contains($summaryLower, $skipWord)) {
-                $shouldSkip = true;
-                break;
-            }
+            if (str_contains($summaryLower, $skipWord)) { $shouldSkip = true; break; }
         }
-        // Also skip Booking.com CLOSED pattern "CLOSED - ..."
         if (preg_match('/^closed\s*[-–]/i', $summary)) $shouldSkip = true;
-        // Skip bare "Blocked" summary (Airbnb auto-block)
         if (preg_match('/^blocked$/i', trim($summary))) $shouldSkip = true;
         if ($shouldSkip) continue;
 
@@ -131,13 +158,12 @@ function syncOneCalendar(array $cal): array {
         $guestName = 'Guest';
         if (preg_match('/\((.+?)\)/', $summary, $m)) {
             $extracted = trim($m[1]);
-            // Skip events where the parenthesised "name" is actually a block label
             $extractedLower = strtolower($extracted);
             $nameIsBlock = false;
             foreach ($skipExtractedNames as $skipName) {
                 if (str_contains($extractedLower, $skipName)) { $nameIsBlock = true; break; }
             }
-            if ($nameIsBlock) continue; // skip this event entirely
+            if ($nameIsBlock) continue;
             $guestName = $extracted;
         } elseif ($summary && !in_array($summaryLower, ['reserved', 'blocked', 'booked'])) {
             $guestName = $summary;

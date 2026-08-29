@@ -54,6 +54,29 @@ function _initSchema(PDO $db): void {
             updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS platform_rates (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_id      TEXT NOT NULL,
+            platform     TEXT NOT NULL,
+            rate         REAL NOT NULL DEFAULT 0,
+            updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(room_id, platform)
+        );
+
+        CREATE TABLE IF NOT EXISTS discount_rules (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_id      TEXT NOT NULL DEFAULT '__all__',
+            rule_type    TEXT NOT NULL,
+            label        TEXT NOT NULL DEFAULT '',
+            value        REAL NOT NULL DEFAULT 0,
+            unit         TEXT NOT NULL DEFAULT 'pct',
+            min_nights   INTEGER DEFAULT 1,
+            days_ahead   INTEGER DEFAULT 0,
+            enabled      INTEGER NOT NULL DEFAULT 1,
+            updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(room_id, rule_type)
+        );
+
         CREATE TABLE IF NOT EXISTS demand_events (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             event_date   DATE NOT NULL,
@@ -374,6 +397,40 @@ function getRoomBasePrice(string $roomId): float {
     $stmt = getDB()->prepare("SELECT base_price FROM room_rates WHERE room_id=?");
     $stmt->execute([$roomId]);
     return (float)($stmt->fetchColumn() ?: 0);
+}
+
+// ---- Platform Rates ------------------------------------------
+
+function getPlatformRates(): array {
+    $rows = getDB()->query("SELECT * FROM platform_rates ORDER BY room_id, platform")->fetchAll();
+    $out = [];
+    foreach ($rows as $r) $out[$r['room_id']][$r['platform']] = (float)$r['rate'];
+    return $out;
+}
+
+function upsertPlatformRate(string $roomId, string $platform, float $rate): void {
+    getDB()->prepare("
+        INSERT INTO platform_rates (room_id, platform, rate, updated_at)
+        VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(room_id, platform) DO UPDATE SET rate=excluded.rate, updated_at=datetime('now')
+    ")->execute([$roomId, $platform, $rate]);
+}
+
+// ---- Discount Rules ------------------------------------------
+
+function getDiscountRules(): array {
+    return getDB()->query("SELECT * FROM discount_rules ORDER BY room_id, rule_type")->fetchAll();
+}
+
+function upsertDiscountRule(string $roomId, string $ruleType, string $label, float $value, string $unit, int $minNights, int $daysAhead, int $enabled): void {
+    getDB()->prepare("
+        INSERT INTO discount_rules (room_id, rule_type, label, value, unit, min_nights, days_ahead, enabled, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(room_id, rule_type) DO UPDATE SET
+            label=excluded.label, value=excluded.value, unit=excluded.unit,
+            min_nights=excluded.min_nights, days_ahead=excluded.days_ahead,
+            enabled=excluded.enabled, updated_at=datetime('now')
+    ")->execute([$roomId, $ruleType, $label, $value, $unit, $minNights, $daysAhead, $enabled]);
 }
 
 // ---- Demand Events -------------------------------------------

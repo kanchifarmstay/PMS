@@ -1,0 +1,8 @@
+Options -Indexes
+
+# ── iCal short URLs — root level ──────────────────────────────────────────────
+# Maps  https://kanchifarmstay.com/room-name.ics
+# →     /channel-manager/ical-export.php?room=room-name&token=ksf-ical-secret-2025
+#
+RewriteEngine On
+RewriteRule ^([a-z0-9-]+)\.ics$ /channel-manager/ical-export.php?room=$1&token=ksf-ical-secret-2025 [QSA,L,NC]

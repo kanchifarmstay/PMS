@@ -73,11 +73,21 @@ echo "END:VEVENT\r\n";
 
 // ── Real bookings ────────────────────────────────────────────
 foreach ($bookings as $b) {
-    $uid      = $b['uid'] ?: ('bk-' . $b['id'] . '@kanchifarmstay.com');
-    $dtStart  = date('Ymd', strtotime($b['check_in']));
-    $dtEnd    = date('Ymd', strtotime($b['check_out']));
+    $ciTs = strtotime($b['check_in']);
+    $coTs = strtotime($b['check_out']);
+
+    // RFC 5545: DTEND must be strictly after DTSTART for DATE values.
+    // If check_out == check_in (zero-night entry), advance end by 1 day.
+    if ($coTs <= $ciTs) $coTs = $ciTs + 86400;
+
+    // Skip events with implausibly long duration (>400 days) — system closures
+    if (($coTs - $ciTs) / 86400 > 400) continue;
+
+    $uid      = $b['uid'] ?: ('bk-' . substr(md5($b['id'].$b['room_id']),0,16) . '@kanchifarmstay.com');
+    $dtStart  = date('Ymd', $ciTs);
+    $dtEnd    = date('Ymd', $coTs);
     $sourceUC = strtoupper($b['source'] ?? 'DIRECT');
-    $summary  = 'Booked';   // Booking.com prefers a plain summary
+    $summary  = 'Booked';
     $guest    = ($b['guest_name'] && $b['guest_name'] !== 'Blocked') ? $b['guest_name'] : 'Guest';
     $desc     = "Guest: {$guest} | Source: {$sourceUC}";
     if (!empty($b['booking_ref'])) $desc .= " | Ref: {$b['booking_ref']}";
