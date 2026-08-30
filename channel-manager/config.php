@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/env-loader.php';
+loadKfsEnvFile(kfsEnvFilePath(__DIR__));
+
 /** Runtime configuration. Secrets come from the hosting environment. */
 function kfsEnv(string $name, string $default = ''): string
 {
