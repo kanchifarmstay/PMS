@@ -1,6 +1,8 @@
-# React + Vite
+# Kanchi Farm Stay PMS
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This repository contains the Kanchi Farm Stay website and property-management tools, including booking workflows and the channel manager.
+
+The channel manager lives in [`channel-manager/`](channel-manager/), while the public website pages and assets are kept at the repository root.
 
 Currently, two official plugins are available:
 
