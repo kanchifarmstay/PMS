@@ -20,9 +20,22 @@ if (is_file($securityPath)) {
     require_once $securityPath;
 }
 
+function restoreTestEnvironment(string $name, string|false $original): void
+{
+    if ($original === false) {
+        putenv($name);
+        return;
+    }
+    putenv($name . '=' . $original);
+}
+
 test('private environment loader reads only KFS keys and quoted values', function (): void {
     $path = tempnam(sys_get_temp_dir(), 'kfs-env-');
     assertTrue($path !== false, 'Could not create temporary environment file');
+    $originals = [];
+    foreach (['KFS_TEST_FILE', 'KFS_TEST_QUOTED', 'OTHER_SECRET'] as $name) {
+        $originals[$name] = getenv($name);
+    }
 
     try {
         file_put_contents($path, "KFS_TEST_FILE=loaded\nKFS_TEST_QUOTED=\"hello world\"\nOTHER_SECRET=ignored\n");
@@ -35,9 +48,45 @@ test('private environment loader reads only KFS keys and quoted values', functio
         assertSame('hello world', getenv('KFS_TEST_QUOTED'));
         assertFalse(getenv('OTHER_SECRET') !== false);
     } finally {
-        putenv('KFS_TEST_FILE');
-        putenv('KFS_TEST_QUOTED');
-        putenv('OTHER_SECRET');
+        foreach ($originals as $name => $original) restoreTestEnvironment($name, $original);
+        if (is_file($path)) unlink($path);
+    }
+});
+
+test('private environment loader enforces the exact KFS key grammar', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'kfs-env-');
+    assertTrue($path !== false, 'Could not create temporary environment file');
+    $names = ['KFS_TEST_2_VALID', 'KFS_test_lower', 'KFS-TEST-DASH'];
+    $originals = [];
+    foreach ($names as $name) $originals[$name] = getenv($name);
+
+    try {
+        file_put_contents($path, "KFS_TEST_2_VALID=accepted\nKFS_test_lower=rejected\nKFS-TEST-DASH=rejected\n");
+        foreach ($names as $name) putenv($name);
+
+        assertSame(1, loadKfsEnvFile($path));
+        assertSame('accepted', getenv('KFS_TEST_2_VALID'));
+        assertFalse(getenv('KFS_test_lower') !== false);
+        assertFalse(getenv('KFS-TEST-DASH') !== false);
+    } finally {
+        foreach ($originals as $name => $original) restoreTestEnvironment($name, $original);
+        if (is_file($path)) unlink($path);
+    }
+});
+
+test('private environment loader fails closed without partial assignments', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'kfs-env-');
+    assertTrue($path !== false, 'Could not create temporary environment file');
+    $original = getenv('KFS_TEST_MALFORMED');
+
+    try {
+        file_put_contents($path, "KFS_TEST_MALFORMED=must-not-load\n[unclosed-section\n");
+        putenv('KFS_TEST_MALFORMED');
+
+        assertSame(0, loadKfsEnvFile($path));
+        assertFalse(getenv('KFS_TEST_MALFORMED') !== false);
+    } finally {
+        restoreTestEnvironment('KFS_TEST_MALFORMED', $original);
         if (is_file($path)) unlink($path);
     }
 });
@@ -45,6 +94,7 @@ test('private environment loader reads only KFS keys and quoted values', functio
 test('private environment loader preserves process values and handles missing files', function (): void {
     $path = tempnam(sys_get_temp_dir(), 'kfs-env-');
     assertTrue($path !== false, 'Could not create temporary environment file');
+    $original = getenv('KFS_TEST_EXISTING');
 
     try {
         file_put_contents($path, "KFS_TEST_EXISTING=file-value\n");
@@ -54,12 +104,13 @@ test('private environment loader preserves process values and handles missing fi
         assertSame('process-value', getenv('KFS_TEST_EXISTING'));
         assertSame(0, loadKfsEnvFile($path . '.missing'));
     } finally {
-        putenv('KFS_TEST_EXISTING');
+        restoreTestEnvironment('KFS_TEST_EXISTING', $original);
         if (is_file($path)) unlink($path);
     }
 });
 
 test('private environment path uses an override or the domain-root fallback', function (): void {
+    $original = getenv('KFS_ENV_FILE');
     try {
         putenv('KFS_ENV_FILE=/private/custom-kfs.env');
         assertSame('/private/custom-kfs.env', kfsEnvFilePath('/home/example/domains/kanchifarmstay.com/public_html/channel-manager'));
@@ -70,7 +121,7 @@ test('private environment path uses an override or the domain-root fallback', fu
             kfsEnvFilePath('/home/example/domains/kanchifarmstay.com/public_html/channel-manager')
         );
     } finally {
-        putenv('KFS_ENV_FILE');
+        restoreTestEnvironment('KFS_ENV_FILE', $original);
     }
 });
 
