@@ -42,7 +42,15 @@ test_images.html
 
 # Channel manager runtime files
 channel-manager/calendar.db
+channel-manager/calendar.db-wal
+channel-manager/calendar.db-shm
 channel-manager/sync.log
+channel-manager/cron.log
+channel-manager/cron.lock
+channel-manager/.last_demand_seed
+.env
+.env.*
+!.env.example
 *.MP4
 *.mp4
 assets/videos/

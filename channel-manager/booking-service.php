@@ -114,6 +114,35 @@ function releaseBookingHold(string $token): void
     getDB()->prepare("UPDATE booking_holds SET status='released', updated_at=datetime('now') WHERE token=? AND status='pending'")->execute([$token]);
 }
 
+function createConfirmedBooking(array $data): int
+{
+    $roomId = trim((string)($data['room_id'] ?? ''));
+    $checkIn = trim((string)($data['check_in'] ?? ''));
+    $checkOut = trim((string)($data['check_out'] ?? ''));
+    validateStay($roomId, $checkIn, $checkOut);
+
+    $db = getDB();
+    $db->exec('BEGIN IMMEDIATE');
+    try {
+        cleanupExpiredHolds($db);
+        if (!isInventoryAvailable($roomId, $checkIn, $checkOut, null, null, $db)) {
+            throw new DomainException('Those dates conflict with a booking, OTA block, or payment hold.');
+        }
+        $data['room_id'] = $roomId;
+        $data['room_name'] = ROOM_IDS[$roomId];
+        $data['check_in'] = $checkIn;
+        $data['check_out'] = $checkOut;
+        $data['status'] = 'confirmed';
+        $id = addBooking($data);
+        if (!$id) throw new DomainException('This booking already exists.');
+        $db->exec('COMMIT');
+        return $id;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->exec('ROLLBACK');
+        throw $e;
+    }
+}
+
 function roomPricing(string $roomId, ?PDO $db = null): array
 {
     if (!isset(ROOM_PRICING[$roomId])) throw new InvalidArgumentException('Unknown room.');
@@ -180,4 +209,50 @@ function getBlockedRangesForRoom(string $roomId, ?string $fromDate = null, ?PDO 
     }
     ksort($ranges);
     return array_values($ranges);
+}
+
+function getExternalBlockCalendarEntries(?string $fromDate = null, ?string $toDate = null, ?PDO $db = null): array
+{
+    if ($fromDate !== null && !validYmd($fromDate)) throw new InvalidArgumentException('Invalid starting date.');
+    if ($toDate !== null && !validYmd($toDate)) throw new InvalidArgumentException('Invalid ending date.');
+    if ($fromDate !== null && $toDate !== null && $toDate <= $fromDate) throw new InvalidArgumentException('Invalid date range.');
+    $db ??= getDB();
+    $where = [];
+    $params = [];
+    if ($fromDate !== null) { $where[] = 'check_out > ?'; $params[] = $fromDate; }
+    if ($toDate !== null) { $where[] = 'check_in < ?'; $params[] = $toDate; }
+    $sql = 'SELECT id, room_id, platform, check_in, check_out FROM external_blocks';
+    if ($where !== []) $sql .= ' WHERE ' . implode(' AND ', $where);
+    $sql .= ' ORDER BY check_in, room_id, platform';
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+
+    return array_map(static fn(array $row): array => [
+        'id'=>-1_000_000 - (int)$row['id'],
+        'room_id'=>$row['room_id'],
+        'room_name'=>ROOM_IDS[$row['room_id']] ?? $row['room_id'],
+        'check_in'=>$row['check_in'], 'check_out'=>$row['check_out'],
+        'guest_name'=>'OTA unavailable', 'guest_email'=>'', 'guest_phone'=>'', 'whatsapp_number'=>'',
+        'source'=>strtolower((string)$row['platform']), 'booking_ref'=>'',
+        'amount'=>0.0, 'amount_paid'=>0.0, 'payment_method'=>'', 'payment_status'=>'unpaid',
+        'status'=>'confirmed', 'uid'=>'external-block-' . (int)$row['id'] . '@kanchifarmstay.com',
+        'notes'=>'Imported iCal availability block', 'is_sync_imported'=>1, 'is_external_block'=>1,
+    ], $stmt->fetchAll());
+}
+
+function expandCalendarEntriesToRelatedInventory(array $entries): array
+{
+    $expanded = [];
+    foreach ($entries as $entry) {
+        $originRoomId = (string)($entry['room_id'] ?? '');
+        foreach (relatedInventoryIds($originRoomId) as $targetRoomId) {
+            $copy = $entry;
+            $copy['inventory_origin_room_id'] = $originRoomId;
+            $copy['room_id'] = $targetRoomId;
+            $copy['room_name'] = ROOM_IDS[$targetRoomId];
+            $copy['is_derived_inventory'] = $targetRoomId !== $originRoomId ? 1 : 0;
+            $expanded[] = $copy;
+        }
+    }
+    return $expanded;
 }

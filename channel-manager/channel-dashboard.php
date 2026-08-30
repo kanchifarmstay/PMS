@@ -5,16 +5,20 @@
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/booking-service.php';
 
-session_start();
+startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) {
     header('Location: admin.php'); exit;
 }
 
 // ── Handle manual booking save ─────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_manual') {
+    requireValidCsrfToken($_POST['csrf_token'] ?? null);
     $rid = trim($_POST['room_id'] ?? '');
-    addBooking([
+    try {
+        createConfirmedBooking([
         'room_id'        => $rid,
         'room_name'      => ROOM_IDS[$rid] ?? $rid,
         'check_in'       => $_POST['check_in']    ?? '',
@@ -29,8 +33,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_m
         'status'         => 'confirmed',
         'uid'            => 'manual-'.uniqid(),
         'booking_ref'    => '',
-    ]);
-    header('Location: channel-dashboard.php?saved=1'); exit;
+        ]);
+        header('Location: channel-dashboard.php?saved=1'); exit;
+    } catch (Throwable $e) {
+        header('Location: channel-dashboard.php?error=' . urlencode($e->getMessage())); exit;
+    }
 }
 
 // ── Date range: today → today+13 (2 weeks) ────────────────────
@@ -74,6 +81,8 @@ $stmt = $db->prepare("
 ");
 $stmt->execute([':s' => $rangeStart, ':e' => $rangeEndStr]);
 $bookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$bookings = array_merge($bookings, getExternalBlockCalendarEntries($rangeStart, date('Y-m-d', strtotime($rangeEndStr . ' +1 day')), $db));
+$bookings = expandCalendarEntriesToRelatedInventory($bookings);
 
 // ── Query: ALL upcoming bookings (for the list below the grid) ─
 $upcomingStmt = $db->prepare("
@@ -85,6 +94,9 @@ $upcomingStmt = $db->prepare("
 ");
 $upcomingStmt->execute([':today' => $rangeStart]);
 $upcomingAll = $upcomingStmt->fetchAll(PDO::FETCH_ASSOC);
+$upcomingAll = array_merge($upcomingAll, getExternalBlockCalendarEntries($rangeStart, null, $db));
+usort($upcomingAll, static fn(array $a, array $b): int => strcmp($a['check_in'], $b['check_in']));
+$upcomingAll = array_slice($upcomingAll, 0, 60);
 
 // ── Build cell map [room_id][Y-m-d] = booking ─────────────────
 $cellMap = [];
@@ -513,6 +525,7 @@ if ($missing):
     <button class="x" onclick="document.getElementById('addOv').classList.remove('open')">✕</button>
     <h3>📞 Add Phone / WhatsApp Booking</h3>
     <form method="POST">
+    <?= csrfField() ?>
     <input type="hidden" name="action" value="add_manual">
     <div class="fg">
         <label>Guest Name *</label>

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Room Details | Kanchi Farm Stay</title>
     <meta name="description" content="View room details, amenities, availability and book your stay at Kanchi Farm Stay. Multiple booking options including direct payment, Airbnb and Booking.com.">
-    <link rel="icon" type="image/svg+xml" href="assets/images/favicon.ico">
+    <link rel="icon" type="image/png" href="assets/images/logo.png">
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -112,6 +112,16 @@
                                         placeholder="e.g. +91 9876543210" style="width: 100%; box-sizing: border-box;"
                                         required>
                                 </div>
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+                                    <div class="form-group" style="margin-bottom:0.75rem">
+                                        <label for="guest-adults" style="font-size:0.8rem;display:block;margin-bottom:0.25rem">Adults</label>
+                                        <input type="number" id="guest-adults" class="form-input" min="1" max="15" value="1" style="width:100%;box-sizing:border-box" required>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom:0.75rem">
+                                        <label for="guest-children" style="font-size:0.8rem;display:block;margin-bottom:0.25rem">Children</label>
+                                        <input type="number" id="guest-children" class="form-input" min="0" max="6" value="0" style="width:100%;box-sizing:border-box" required>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Availability error message -->
@@ -145,7 +155,8 @@
 
     <!-- Scripts -->
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <script src="script.js?v=5"></script>
+    <script src="date-utils.js?v=1"></script>
+    <script src="script.js?v=6"></script>
 </body>
 
 </html>

@@ -583,52 +583,22 @@ function loadRoomDetails() {
         // ── Availability: fetch blocked ranges, then wire up pickers ──
         // blockedRanges: array of [checkIn, checkOut] strings
         let blockedRanges = [];
-
-        // Build a Set of all individual blocked date strings YYYY-MM-DD
-        function buildBlockedSet(ranges) {
-            const set = new Set();
-            ranges.forEach(([ci, co]) => {
-                let cur = new Date(ci + 'T00:00:00');
-                const end = new Date(co + 'T00:00:00');
-                while (cur < end) {
-                    set.add(cur.toISOString().split('T')[0]);
-                    cur.setDate(cur.getDate() + 1);
-                }
-            });
-            return set;
-        }
-
-        // Returns true if [checkIn, checkOut) overlaps any blocked range
-        function isRangeBlocked(checkIn, checkOut, ranges) {
-            for (const [ci, co] of ranges) {
-                // overlap: ci < checkOut AND co > checkIn
-                if (ci < checkOut && co > checkIn) return true;
-            }
-            return false;
-        }
-
-        // Find the next available check-in date on or after `fromDate`
-        function nextAvailableDate(fromDateStr, blockedSet) {
-            let d = new Date(fromDateStr + 'T00:00:00');
-            for (let i = 0; i < 365; i++) {
-                const s = d.toISOString().split('T')[0];
-                if (!blockedSet.has(s)) return s;
-                d.setDate(d.getDate() + 1);
-            }
-            return fromDateStr;
-        }
+        const { addDays, buildBlockedSet, daysBetween, isRangeBlocked, nextAvailableDate, todayLocal } = window.KfsDateUtils;
 
         const checkinInput  = document.getElementById('room-checkin');
         const checkoutInput = document.getElementById('room-checkout');
         const totalPriceEl  = document.getElementById('room-total-price');
         const razorpayBtn   = document.getElementById('razorpay-btn');
         const availMsg      = document.getElementById('availability-message');
+        const adultsInput   = document.getElementById('guest-adults');
+        const childrenInput = document.getElementById('guest-children');
 
-        const todayStr    = new Date().toISOString().split('T')[0];
-        const tomorrowStr = (() => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; })();
+        const todayStr = todayLocal();
+        const tomorrowStr = addDays(todayStr, 1);
 
         let days = 1;
         let currentTotal = room.numericPrice;
+        let quoteRequest = 0;
 
         function setBookingError(msg) {
             if (availMsg) {
@@ -651,7 +621,8 @@ function loadRoomDetails() {
             }
         }
 
-        function updateTotalPrice() {
+        async function updateTotalPrice() {
+            const requestId = ++quoteRequest;
             const ci = checkinInput?.value;
             const co = checkoutInput?.value;
             if (!ci || !co || co <= ci) {
@@ -669,11 +640,32 @@ function loadRoomDetails() {
                 return;
             }
 
-            const diffTime = new Date(co) - new Date(ci);
-            days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            currentTotal = room.numericPrice * days;
-            if (totalPriceEl) totalPriceEl.innerText = `₹${currentTotal.toLocaleString()}`;
-            clearBookingError();
+            days = daysBetween(ci, co);
+            setBookingError('Checking live price and availability…');
+            if (totalPriceEl) totalPriceEl.innerText = 'Checking…';
+            try {
+                const response = await fetch('check-availability.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        roomId: room.id, checkIn: ci, checkOut: co,
+                        adults: Number(adultsInput?.value || 1), children: Number(childrenInput?.value || 0)
+                    })
+                });
+                const data = await response.json();
+                if (requestId !== quoteRequest) return;
+                if (!response.ok || !data.available || !data.quote) throw new Error(data.error || data.message || 'These dates are unavailable.');
+                currentTotal = data.quote.total;
+                days = data.quote.nights;
+                if (totalPriceEl) totalPriceEl.innerText = `₹${currentTotal.toLocaleString()}`;
+                if (!data.payment_configured) throw new Error('Online payment is unavailable. Please contact the property.');
+                clearBookingError();
+            } catch (error) {
+                if (requestId !== quoteRequest) return;
+                currentTotal = 0;
+                if (totalPriceEl) totalPriceEl.innerText = 'Unavailable';
+                setBookingError(error.message || 'Live availability could not be checked.');
+            }
         }
 
         function initPickers() {
@@ -686,15 +678,11 @@ function loadRoomDetails() {
             // Set initial values to first available pair
             const firstAvail = nextAvailableDate(todayStr, blockedSet);
             checkinInput.value = firstAvail;
-            const dayAfter = new Date(firstAvail + 'T00:00:00');
-            dayAfter.setDate(dayAfter.getDate() + 1);
-            checkoutInput.value = nextAvailableDate(dayAfter.toISOString().split('T')[0], blockedSet);
+            checkoutInput.value = nextAvailableDate(addDays(firstAvail, 1), blockedSet);
             updateTotalPrice();
 
             checkinInput.addEventListener('change', () => {
-                const newMin = new Date(checkinInput.value + 'T00:00:00');
-                newMin.setDate(newMin.getDate() + 1);
-                const newMinStr = newMin.toISOString().split('T')[0];
+                const newMinStr = addDays(checkinInput.value, 1);
                 checkoutInput.min = newMinStr;
                 if (!checkoutInput.value || checkoutInput.value <= checkinInput.value) {
                     checkoutInput.value = nextAvailableDate(newMinStr, blockedSet);
@@ -703,20 +691,28 @@ function loadRoomDetails() {
             });
 
             checkoutInput.addEventListener('change', updateTotalPrice);
+            adultsInput?.addEventListener('change', updateTotalPrice);
+            childrenInput?.addEventListener('change', updateTotalPrice);
         }
 
         // Fetch blocked dates from channel manager, then init
-        fetch(`channel-manager/availability-api.php?room=${encodeURIComponent(room.id)}`)
-            .then(r => r.json())
+        setBookingError('Checking live availability…');
+        fetch(`channel-manager/availability-api.php?room=${encodeURIComponent(room.id)}`, {cache: 'no-store'})
+            .then(async r => {
+                const data = await r.json();
+                if (!r.ok || data.error) throw new Error(data.error || 'Availability service failed');
+                return data;
+            })
             .then(data => {
                 blockedRanges = data.blocked || [];
                 loadAvailabilityCalendar(room.id, blockedRanges);
                 initPickers();
             })
             .catch(() => {
-                // API unavailable — init pickers without blocking
-                initPickers();
-                loadAvailabilityCalendar(room.id, []);
+                setBookingError('Live availability is temporarily unavailable. Please try again or contact the property.');
+                if (totalPriceEl) totalPriceEl.innerText = 'Unavailable';
+                const calendar = document.getElementById('availability-calendar');
+                if (calendar) calendar.innerHTML = '<p>Live availability is temporarily unavailable.</p>';
             });
 
         // ── Razorpay payment ──────────────────────────────────────────
@@ -761,10 +757,10 @@ function loadRoomDetails() {
                     const availRes  = await fetch('check-availability.php', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ roomId: room.id, checkIn: checkinInput.value, checkOut: checkoutInput.value })
+                        body: JSON.stringify({ roomId: room.id, checkIn: checkinInput.value, checkOut: checkoutInput.value, adults: Number(adultsInput?.value || 1), children: Number(childrenInput?.value || 0) })
                     });
                     const availData = await availRes.json();
-                    if (!availData.available) {
+                    if (!availRes.ok || !availData.available) {
                         // Refresh blocked ranges in case something was just booked
                         const fresh = await fetch(`channel-manager/availability-api.php?room=${encodeURIComponent(room.id)}`);
                         const freshData = await fresh.json();
@@ -775,53 +771,55 @@ function loadRoomDetails() {
                         razorpayBtn.innerText = originalText;
                         return;
                     }
+                    if (!availData.payment_configured) throw new Error('Online payment is not configured. Please contact the property.');
+                    currentTotal = availData.quote.total;
+                    days = availData.quote.nights;
+                    if (totalPriceEl) totalPriceEl.innerText = `₹${currentTotal.toLocaleString()}`;
 
                     razorpayBtn.innerText = 'Processing…';
 
                     // 2. Create Razorpay order
-                    const amountInPaise = currentTotal * 100;
                     const response = await fetch('create_order.php', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            amount: amountInPaise,
+                            roomId: room.id,
                             guestName, guestEmail, guestPhone,
-                            checkin: checkinInput.value,
-                            checkout: checkoutInput.value,
-                            roomName: room.name,
-                            days
+                            checkIn: checkinInput.value,
+                            checkOut: checkoutInput.value,
+                            adults: Number(adultsInput?.value || 1),
+                            children: Number(childrenInput?.value || 0)
                         })
                     });
                     const orderData = await response.json();
-                    if (!response.ok || !orderData.id) {
+                    if (!response.ok || !orderData.id || !orderData.keyId || !orderData.amount) {
                         throw new Error(orderData.error || orderData.error_description || 'Failed to create order');
                     }
 
                     // 3. Open Razorpay checkout
                     const options = {
-                        key: 'rzp_live_SImDeaehZI93nG',
-                        amount: amountInPaise,
-                        currency: 'INR',
+                        key: orderData.keyId,
+                        amount: orderData.amount,
+                        currency: orderData.currency,
                         name: 'Kanchi Farm Stay',
                         description: `${room.name} — ${days} night${days > 1 ? 's' : ''}`,
                         image: window.location.origin + '/assets/images/logo.png',
                         order_id: orderData.id,
-                        handler: function (rzpResponse) {
-                            // Save to channel manager DB + WhatsApp notify
-                            fetch('confirm_booking.php', {
+                        handler: async function (rzpResponse) {
+                            try {
+                                const confirmation = await fetch('confirm_booking.php', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
-                                    paymentId:  rzpResponse.razorpay_payment_id,
-                                    orderId:    rzpResponse.razorpay_order_id,
-                                    roomId:     room.id,
-                                    roomName:   room.name,
-                                    checkIn:    checkinInput.value,
-                                    checkOut:   checkoutInput.value,
-                                    guestName, guestEmail, guestPhone,
-                                    amount: currentTotal, days
+                                    razorpay_payment_id: rzpResponse.razorpay_payment_id,
+                                    razorpay_order_id: rzpResponse.razorpay_order_id,
+                                    razorpay_signature: rzpResponse.razorpay_signature
                                 })
-                            }).then(() => {
+                                });
+                                const confirmationData = await confirmation.json();
+                                if (!confirmation.ok || !confirmationData.success) {
+                                    throw new Error(confirmationData.error || 'Booking confirmation failed');
+                                }
                                 // Refresh availability after booking confirmed
                                 fetch(`channel-manager/availability-api.php?room=${encodeURIComponent(room.id)}`)
                                     .then(r => r.json())
@@ -830,9 +828,13 @@ function loadRoomDetails() {
                                         loadAvailabilityCalendar(room.id, blockedRanges);
                                         updateTotalPrice();
                                     }).catch(() => {});
-                            }).catch(() => {});
-
-                            alert(`Payment Successful!\nPayment ID: ${rzpResponse.razorpay_payment_id}\nRoom: ${room.name}\nCheck-in: ${checkinInput.value}\nCheck-out: ${checkoutInput.value}\nGuest: ${guestName}\nThank you for booking with Kanchi Farm Stay!`);
+                                alert(`Booking confirmed!\nBooking ID: ${confirmationData.bookingId}\nPayment ID: ${rzpResponse.razorpay_payment_id}\nRoom: ${room.name}\nCheck-in: ${checkinInput.value}\nCheck-out: ${checkoutInput.value}\nThank you for booking with Kanchi Farm Stay!`);
+                            } catch (error) {
+                                alert(`Your payment may have been received, but automatic confirmation needs attention. Please contact Kanchi Farm Stay with payment ID ${rzpResponse.razorpay_payment_id}.`);
+                            } finally {
+                                razorpayBtn.innerText = originalText;
+                                razorpayBtn.disabled = false;
+                            }
                         },
                         prefill: { name: guestName, email: guestEmail, contact: guestPhone },
                         notes: { room_id: room.id, checkin: checkinInput.value, checkout: checkoutInput.value, days },
@@ -1269,21 +1271,7 @@ function loadAvailabilityCalendar(roomId, blockedRanges) {
 }
 
 function renderAvailabilityCalendar(container, blockedRanges) {
-    // Build a Set of blocked date strings for fast lookup
-    function buildBlockedSet(ranges) {
-        const set = new Set();
-        ranges.forEach(([ci, co]) => {
-            let cur = new Date(ci + 'T00:00:00');
-            const end = new Date(co + 'T00:00:00');
-            while (cur < end) {
-                set.add(cur.toISOString().split('T')[0]);
-                cur.setDate(cur.getDate() + 1);
-            }
-        });
-        return set;
-    }
-
-    const blocked = buildBlockedSet(blockedRanges);
+    const blocked = window.KfsDateUtils.buildBlockedSet(blockedRanges);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 

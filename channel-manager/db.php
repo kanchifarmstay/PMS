@@ -605,10 +605,31 @@ function getExternalCalendars(): array {
 }
 
 function addExternalCalendar(string $roomId, string $platform, string $url): int {
-    $db   = getDB();
-    $stmt = $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)");
-    $stmt->execute([$roomId, $platform, $url]);
-    return (int)$db->lastInsertId();
+    $db = getDB();
+    $db->exec('BEGIN IMMEDIATE');
+    try {
+        $find = $db->prepare('SELECT id FROM external_calendars WHERE room_id=? AND platform=? ORDER BY id');
+        $find->execute([$roomId, $platform]);
+        $ids = array_map('intval', $find->fetchAll(PDO::FETCH_COLUMN));
+        if ($ids !== []) {
+            $id = array_shift($ids);
+            $db->prepare("UPDATE external_calendars SET ical_url=?, is_active=1, last_synced=NULL, last_status='never', last_error='' WHERE id=?")
+                ->execute([$url, $id]);
+            if ($ids !== []) {
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $db->prepare("DELETE FROM external_calendars WHERE id IN ({$placeholders})")->execute($ids);
+            }
+        } else {
+            $stmt = $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)");
+            $stmt->execute([$roomId, $platform, $url]);
+            $id = (int)$db->lastInsertId();
+        }
+        $db->exec('COMMIT');
+        return $id;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->exec('ROLLBACK');
+        throw $e;
+    }
 }
 
 function deleteExternalCalendar(int $id): void {

@@ -4,9 +4,10 @@
  * Tests WhatsApp and email delivery. Admin-only.
  */
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/whatsapp.php';
 
-session_start();
+startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) {
     header('Location: admin.php'); exit;
 }
@@ -14,24 +15,8 @@ if (empty($_SESSION['admin_logged_in'])) {
 $results = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireValidCsrfToken($_POST['csrf_token'] ?? null);
     $action = $_POST['action'] ?? '';
-
-    // ── Save CallMeBot API key ──────────────────────────────
-    if ($action === 'save_key') {
-        $key = trim($_POST['callmebot_key'] ?? '');
-        if ($key) {
-            // Rewrite config.php with the new key
-            $configPath = __DIR__ . '/config.php';
-            $config = file_get_contents($configPath);
-            $config = preg_replace(
-                "/define\('CALLMEBOT_API_KEY',\s*'[^']*'\)/",
-                "define('CALLMEBOT_API_KEY', '" . addslashes($key) . "')",
-                $config
-            );
-            file_put_contents($configPath, $config);
-            $results[] = ['type' => 'success', 'msg' => "API key saved: {$key}"];
-        }
-    }
 
     // ── Test WhatsApp ───────────────────────────────────────
     if ($action === 'test_whatsapp') {
@@ -135,17 +120,12 @@ a{color:#3182ce}
         <li>Open WhatsApp and send this exact message to that contact:<br>
             <code>I allow callmebot to send me messages</code></li>
         <li>Within 1 minute you'll receive a WhatsApp reply with your <strong>API key</strong></li>
-        <li>Paste that API key below and click Save</li>
+        <li>Add it to the server environment as <code>KFS_CALLMEBOT_API_KEY</code>, then reload this page.</li>
     </ol>
-    <form method="POST" style="margin-top:16px">
-        <input type="hidden" name="action" value="save_key">
-        <label>CallMeBot API Key (from the WhatsApp reply)</label>
-        <input type="text" name="callmebot_key" placeholder="e.g. 1234567" required>
-        <button type="submit" class="btn btn-green">💾 Save API Key</button>
-    </form>
     <?php else: ?>
     <p style="color:#276749;font-size:.88rem;margin-bottom:16px">✅ API key is configured. Click below to send a test message to +<?= WHATSAPP_PHONE ?>.</p>
     <form method="POST">
+    <?= csrfField() ?>
         <input type="hidden" name="action" value="test_whatsapp">
         <button type="submit" class="btn btn-wa">💬 Send Test WhatsApp</button>
     </form>
@@ -159,6 +139,7 @@ a{color:#3182ce}
         Sends a test email to <strong>ops@kanchifarmstay.com</strong>. Check your inbox and spam folder.
     </p>
     <form method="POST">
+    <?= csrfField() ?>
         <input type="hidden" name="action" value="test_email">
         <button type="submit" class="btn btn-blue">📧 Send Test Email</button>
     </form>

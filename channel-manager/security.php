@@ -45,6 +45,11 @@ function requireValidCsrfToken(?string $token): void
     }
 }
 
+function csrfField(): string
+{
+    return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars(csrfToken(), ENT_QUOTES, 'UTF-8') . '">';
+}
+
 function isPublicIp(string $ip): bool
 {
     return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
@@ -69,4 +74,3 @@ function isSafeCalendarUrl(string $url): bool
     }
     return true;
 }
-

@@ -1,51 +1,33 @@
-/**
- * Kanchi Farm Stay Admin — Service Worker
- * Enables PWA install + offline shell for the PMS dashboard.
- */
+/** Admin worker: private PMS responses are always handled by the network. */
+const CACHE_PREFIX = 'kfs-admin-';
+const CACHE = CACHE_PREFIX + 'v2';
+const IMMUTABLE_CDN_HOSTS = new Set(['cdn.jsdelivr.net']);
 
-const CACHE = 'kfs-admin-v1';
-const SHELL = [
-  '/channel-manager/admin.php',
-  'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js',
-];
-
-self.addEventListener('install', e => {
+self.addEventListener('install', event => {
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)));
+  event.waitUntil(Promise.resolve());
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(
+      keys.filter(key => key.startsWith('kfs-admin-') && key !== CACHE).map(key => caches.delete(key))
+    )).then(() => self.clients.claim())
   );
 });
 
-self.addEventListener('fetch', e => {
-  const { request } = e;
+self.addEventListener('fetch', event => {
+  const request = event.request;
   if (request.method !== 'GET') return;
+  const url = new URL(request.url);
 
-  // Chart.js CDN — cache-first (rarely changes)
-  if (request.url.includes('cdn.jsdelivr.net')) {
-    e.respondWith(
-      caches.match(request).then(r => r || fetch(request).then(res => {
-        caches.open(CACHE).then(c => c.put(request, res.clone()));
-        return res;
-      }))
-    );
-    return;
-  }
-
-  // Admin pages — network-first so data is always fresh
-  if (request.url.includes('/channel-manager/')) {
-    e.respondWith(
-      fetch(request)
-        .then(res => {
-          if (res.ok) caches.open(CACHE).then(c => c.put(request, res.clone()));
-          return res;
-        })
-        .catch(() => caches.match(request))
-    );
-  }
+  // Only versioned third-party libraries are cacheable. Admin HTML, APIs,
+  // receipts, and exports fall through to the browser's normal network path.
+  if (!IMMUTABLE_CDN_HOSTS.has(url.hostname)) return;
+  event.respondWith(
+    caches.match(request).then(cached => cached || fetch(request).then(response => {
+      if (response.ok) caches.open(CACHE).then(store => store.put(request, response.clone()));
+      return response;
+    }))
+  );
 });

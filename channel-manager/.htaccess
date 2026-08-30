@@ -1,8 +1,5 @@
 Options -Indexes
 
-# ── iCal clean URL rewrite ──────────────────────────────────────
-# Maps  /channel-manager/room-name.ics
-# →     /channel-manager/ical-export.php?room=room-name&token=...
-#
-RewriteEngine On
-RewriteRule ^([a-z0-9-]+)\.ics$ ical-export.php?room=$1&token=ksf-ical-secret-2025 [QSA,L,NC]
+<FilesMatch "(^\.env|calendar\.db(?:-wal|-shm)?|cron\.log|cron\.lock|\.last_demand_seed|\.(?:bak|sql|sqlite)$)">
+    Require all denied
+</FilesMatch>

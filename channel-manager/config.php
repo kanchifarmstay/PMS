@@ -9,10 +9,15 @@ function kfsEnv(string $name, string $default = ''): string
 }
 
 define('APP_ENV', kfsEnv('KFS_APP_ENV', 'production'));
+$propertyTimezone = kfsEnv('KFS_PROPERTY_TIMEZONE', 'Asia/Kolkata');
+if (!in_array($propertyTimezone, DateTimeZone::listIdentifiers(), true)) $propertyTimezone = 'Asia/Kolkata';
+define('PROPERTY_TIMEZONE', $propertyTimezone);
+date_default_timezone_set(PROPERTY_TIMEZONE);
 define('DB_PATH', kfsEnv('KFS_DB_PATH', __DIR__ . '/calendar.db'));
 define('SITE_URL', rtrim(kfsEnv('KFS_SITE_URL', 'https://kanchifarmstay.com'), '/'));
 define('ADMIN_PASSWORD_HASH', kfsEnv('KFS_ADMIN_PASSWORD_HASH'));
 define('ICAL_TOKEN', kfsEnv('KFS_ICAL_TOKEN'));
+define('DOCUMENT_SIGNING_SECRET', kfsEnv('KFS_DOCUMENT_SIGNING_SECRET'));
 define('CRON_SECRET', kfsEnv('KFS_CRON_SECRET'));
 define('RAZORPAY_KEY_ID', kfsEnv('KFS_RAZORPAY_KEY_ID'));
 define('RAZORPAY_KEY_SECRET', kfsEnv('KFS_RAZORPAY_KEY_SECRET'));
@@ -69,4 +74,3 @@ define('INVENTORY_COMPONENTS', [
     'kanchi-farm-stay'=>array_values(array_filter(array_keys(ROOM_IDS), static fn(string $id): bool => $id !== 'kanchi-farm-stay')),
 ]);
 define('SUPPORTED_ICAL_PLATFORMS', ['airbnb', 'booking.com', 'agoda', 'makemytrip']);
-

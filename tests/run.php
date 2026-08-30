@@ -12,6 +12,7 @@ test('configuration contains no shipped production secrets', function () use ($c
         assertNotContains($secret, $configSource);
     }
     assertContains('getenv', $configSource);
+    assertSame('Asia/Kolkata', date_default_timezone_get());
 });
 
 if (is_file($securityPath)) {
@@ -278,6 +279,22 @@ test('parent and component bookings propagate into related iCal exports', functi
     assertSame([['2030-10-05','2030-10-06']], array_map(static fn($e)=>[$e['check_in'],$e['check_out']], $groupEvents));
 });
 
+test('same-platform blocks propagate to related listings but not back to their source listing', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['white-villa', 'airbnb', 'https://example.com/room-one.ics']);
+    $calendarId = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out) VALUES (?,?,?,?,?,?)")
+       ->execute([$calendarId, 'white-villa', 'airbnb', 'same-platform', '2030-10-10', '2030-10-12']);
+
+    assertSame([], collectAvailabilityEvents('white-villa', 'airbnb', '2030-01-01'));
+    foreach (['white-villa-full-floor', 'kanchi-farm-stay'] as $target) {
+        $events = collectAvailabilityEvents($target, 'airbnb', '2030-01-01');
+        assertSame([['2030-10-10','2030-10-12']], array_map(static fn($e)=>[$e['check_in'],$e['check_out']], $events));
+    }
+});
+
 $apiServicePath = dirname(__DIR__) . '/channel-manager/api.php';
 if (is_file($apiServicePath)) require_once $apiServicePath;
 
@@ -318,6 +335,52 @@ test('blocked-range API data includes parent and external dependencies', functio
        ->execute([$calendarId, 'white-villa', 'airbnb', 'api-block', '2030-12-01', '2030-12-03']);
     $ranges = getBlockedRangesForRoom('white-villa-full-floor', '2030-01-01');
     assertSame([['check_in'=>'2030-12-01','check_out'=>'2030-12-03']], $ranges);
+});
+
+test('external blocks are normalized for privacy-safe operational calendar views', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['wooden-villa', 'agoda', 'https://example.com/agoda.ics']);
+    $calendarId = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out) VALUES (?,?,?,?,?,?)")
+       ->execute([$calendarId, 'wooden-villa', 'agoda', 'private-provider-uid', '2030-12-10', '2030-12-12']);
+    $entries = getExternalBlockCalendarEntries('2030-12-01', '2030-12-31');
+    assertSame(1, count($entries));
+    assertSame('OTA unavailable', $entries[0]['guest_name']);
+    assertSame('agoda', $entries[0]['source']);
+    assertFalse(str_contains(json_encode($entries), 'private-provider-uid'));
+    $expanded = expandCalendarEntriesToRelatedInventory($entries);
+    assertSame(
+        ['kanchi-farm-stay', 'wooden-villa'],
+        array_column($expanded, 'room_id')
+    );
+});
+
+test('manual confirmed bookings cannot bypass dependent inventory conflicts', function (): void {
+    resetAvailabilityData();
+    createConfirmedBooking([
+        'room_id'=>'white-villa', 'check_in'=>'2031-03-10', 'check_out'=>'2031-03-12',
+        'guest_name'=>'Room Guest', 'source'=>'manual',
+    ]);
+    $thrown = false;
+    try {
+        createConfirmedBooking([
+            'room_id'=>'white-villa-full-floor', 'check_in'=>'2031-03-11', 'check_out'=>'2031-03-13',
+            'guest_name'=>'Floor Guest', 'source'=>'manual',
+        ]);
+    } catch (DomainException) { $thrown = true; }
+    assertTrue($thrown);
+    assertSame(1, (int)getDB()->query("SELECT COUNT(*) FROM bookings")->fetchColumn());
+});
+
+test('reconnecting a room platform updates one calendar instead of duplicating it', function (): void {
+    resetAvailabilityData();
+    $firstId = addExternalCalendar('wooden-villa', 'airbnb', 'https://example.com/first.ics');
+    $secondId = addExternalCalendar('wooden-villa', 'airbnb', 'https://example.com/second.ics');
+    assertSame($firstId, $secondId);
+    assertSame(1, (int)getDB()->query("SELECT COUNT(*) FROM external_calendars")->fetchColumn());
+    assertSame('https://example.com/second.ics', getDB()->query("SELECT ical_url FROM external_calendars")->fetchColumn());
 });
 
 $paymentServicePath = dirname(__DIR__) . '/channel-manager/payment-service.php';
@@ -378,6 +441,78 @@ test('payment confirmation rejects an expired hold and mismatched payment', func
     try { confirmRazorpayPayment('order_expired', 'pay_expired', $signature); } catch (DomainException) { $thrown = true; }
     assertTrue($thrown);
     assertSame(0, (int)getDB()->query("SELECT COUNT(*) FROM bookings")->fetchColumn());
+});
+
+test('operational PHP sources contain no retired production credentials or OTA feed tokens', function (): void {
+    $root = dirname(__DIR__);
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root));
+    $needles = ['KanchiFarm2025!', 'ksf-ical-secret-2025', 'kanchi-cron-2025', 'rzp_live_', '/calendar/ical/', 'ical.booking.com/v1/export?t='];
+    foreach ($iterator as $file) {
+        if (!$file->isFile() || $file->getExtension() !== 'php' || str_contains($file->getPathname(), DIRECTORY_SEPARATOR . 'tests' . DIRECTORY_SEPARATOR)) continue;
+        $source = (string)file_get_contents($file->getPathname());
+        foreach ($needles as $needle) assertNotContains($needle, $source, $file->getPathname() . " contains {$needle}");
+    }
+});
+
+test('public maintenance and credential-writing scripts are absent', function (): void {
+    $dir = dirname(__DIR__) . '/channel-manager/';
+    foreach (['add-channels.php', 'add-bookingcom.php', 'check-channels.php', 'fix-airbnb-blocks.php', 'fix-duplicates.php'] as $name) {
+        assertFalse(is_file($dir . $name), "{$name} must not be web-accessible");
+    }
+});
+
+test('admin authentication and mutations use secure sessions and CSRF protection', function (): void {
+    $source = (string)file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php');
+    assertContains('startSecureSession()', $source);
+    assertContains('verifyAdminPassword(', $source);
+    assertContains('session_regenerate_id(true)', $source);
+    assertContains('requireValidCsrfToken(', $source);
+    assertContains('csrfField()', $source);
+    assertContains("'&destination='", $source);
+    assertNotContains('ADMIN_PASSWORD', $source);
+    assertNotContains('?action=logout', $source);
+});
+
+test('cron uses configured authentication, a non-blocking lock, and one sync pass', function (): void {
+    $source = (string)file_get_contents(dirname(__DIR__) . '/channel-manager/cron.php');
+    assertNotContains("define('CRON_SECRET'", $source);
+    assertContains('hash_equals(CRON_SECRET', $source);
+    assertContains('flock(', $source);
+    assertContains('LOCK_NB', $source);
+    assertContains('array_slice($logLines, -200)', $source);
+    assertSame(1, substr_count($source, 'runCalendarSync('));
+});
+
+test('manual sync persists structured results and admin consumes the active-block contract', function (): void {
+    $root = dirname(__DIR__);
+    $sync = (string)file_get_contents($root . '/channel-manager/sync.php');
+    $admin = (string)file_get_contents($root . '/channel-manager/admin.php');
+    assertContains("\$_SESSION['last_sync_results']", $sync);
+    assertContains('total_blocks', $admin);
+    assertNotContains('total_new', $admin);
+});
+
+test('web server rules deny private data and contain no embedded calendar token', function (): void {
+    $root = dirname(__DIR__);
+    $source = (string)file_get_contents($root . '/.htaccess');
+    foreach (['calendar\\.db', '.env', 'cron\\.log', 'tests'] as $protected) assertContains($protected, $source);
+    foreach ([$root . '/.htaccess', $root . '/channel-manager/.htaccess'] as $path) {
+        assertNotContains('ksf-ical-secret-2025', (string)file_get_contents($path));
+    }
+});
+
+test('public and admin service workers isolate their caches', function (): void {
+    $root = dirname(__DIR__);
+    $public = (string)file_get_contents($root . '/sw.js');
+    $admin = (string)file_get_contents($root . '/channel-manager/admin-sw.js');
+    assertContains("kfs-public-", $public);
+    assertContains("startsWith('kfs-public-')", $public);
+    assertContains("k === 'kfs-v1'", $public);
+    assertNotContains('caches.match(request)', $public);
+    assertContains("kfs-admin-", $admin);
+    assertContains("startsWith('kfs-admin-')", $admin);
+    assertNotContains("request.url.includes('/channel-manager/')", $admin);
+    assertNotContains("'/channel-manager/admin.php'", $admin);
 });
 
 runTests();

@@ -97,7 +97,19 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
             echo json_encode(['error'=>'Unauthorized']);
             exit;
         }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            header('Allow: POST');
+            header('Content-Type: application/json');
+            echo json_encode(['error'=>'Method not allowed']);
+            exit;
+        }
+        requireValidCsrfToken($_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null));
     }
-    outputSyncResults(runCalendarSync(), !$isCli);
+    $results = runCalendarSync();
+    if (!$isCli) {
+        $_SESSION['last_sync_results'] = $results;
+        $_SESSION['last_sync_time'] = date('Y-m-d H:i:s');
+    }
+    outputSyncResults($results, !$isCli);
 }
-

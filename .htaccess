@@ -1,8 +1,12 @@
 Options -Indexes
 
-# ── iCal short URLs — root level ──────────────────────────────────────────────
-# Maps  https://kanchifarmstay.com/room-name.ics
-# →     /channel-manager/ical-export.php?room=room-name&token=ksf-ical-secret-2025
-#
 RewriteEngine On
-RewriteRule ^([a-z0-9-]+)\.ics$ /channel-manager/ical-export.php?room=$1&token=ksf-ical-secret-2025 [QSA,L,NC]
+
+# Never serve application secrets, databases, logs, tests, or maintenance state.
+RewriteRule (^|/)\.env(?:\.|$) - [F,L,NC]
+RewriteRule ^tests(?:/|$) - [F,L,NC]
+RewriteRule ^channel-manager/(?:calendar\.db(?:-wal|-shm)?|cron\.log|cron\.lock|\.last_demand_seed|.*\.(?:bak|sql|sqlite))$ - [F,L,NC]
+
+<FilesMatch "(^\.env|calendar\.db(?:-wal|-shm)?|cron\.log|cron\.lock|\.last_demand_seed|\.(?:bak|sql|sqlite)$)">
+    Require all denied
+</FilesMatch>

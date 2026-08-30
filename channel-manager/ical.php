@@ -164,10 +164,13 @@ function collectAvailabilityEvents(string $roomId, string $destination, ?string 
     $ph = implode(',', array_fill(0, count($rooms), '?'));
     $events = [];
 
-    $bookingSql = "SELECT check_in, check_out, source FROM bookings
+    $bookingSql = "SELECT room_id, check_in, check_out, source FROM bookings
         WHERE room_id IN ({$ph}) AND status='confirmed' AND check_out >= ?";
     $params = array_merge($rooms, [$today]);
-    if ($destination !== 'generic') { $bookingSql .= ' AND lower(source) != ?'; $params[] = $destination; }
+    if ($destination !== 'generic') {
+        $bookingSql .= ' AND NOT (lower(source) = ? AND room_id = ?)';
+        array_push($params, $destination, $roomId);
+    }
     $stmt = $db->prepare($bookingSql . ' ORDER BY check_in, check_out');
     $stmt->execute($params);
     foreach ($stmt->fetchAll() as $row) {
@@ -179,10 +182,13 @@ function collectAvailabilityEvents(string $roomId, string $destination, ?string 
         ];
     }
 
-    $blockSql = "SELECT check_in, check_out, platform FROM external_blocks
+    $blockSql = "SELECT room_id, check_in, check_out, platform FROM external_blocks
         WHERE room_id IN ({$ph}) AND check_out >= ?";
     $params = array_merge($rooms, [$today]);
-    if ($destination !== 'generic') { $blockSql .= ' AND lower(platform) != ?'; $params[] = $destination; }
+    if ($destination !== 'generic') {
+        $blockSql .= ' AND NOT (lower(platform) = ? AND room_id = ?)';
+        array_push($params, $destination, $roomId);
+    }
     $stmt = $db->prepare($blockSql . ' ORDER BY check_in, check_out');
     $stmt->execute($params);
     foreach ($stmt->fetchAll() as $row) {

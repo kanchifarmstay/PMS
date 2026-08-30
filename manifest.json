@@ -9,7 +9,6 @@
   "theme_color": "#4a7c59",
   "lang": "en-IN",
   "icons": [
-    { "src": "assets/images/favicon.ico", "sizes": "48x48", "type": "image/x-icon" },
     { "src": "assets/images/logo.png",    "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
     { "src": "assets/images/logo.png",    "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ],
