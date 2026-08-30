@@ -114,3 +114,70 @@ function releaseBookingHold(string $token): void
     getDB()->prepare("UPDATE booking_holds SET status='released', updated_at=datetime('now') WHERE token=? AND status='pending'")->execute([$token]);
 }
 
+function roomPricing(string $roomId, ?PDO $db = null): array
+{
+    if (!isset(ROOM_PRICING[$roomId])) throw new InvalidArgumentException('Unknown room.');
+    $pricing = ROOM_PRICING[$roomId];
+    $db ??= getDB();
+    $stmt = $db->prepare('SELECT base_price FROM room_rates WHERE room_id=?');
+    $stmt->execute([$roomId]);
+    $saved = (float)($stmt->fetchColumn() ?: 0);
+    if ($saved > 0) {
+        $pricing['weekday'] = $saved;
+        $pricing['weekend'] = $saved;
+    }
+    return $pricing;
+}
+
+function calculateQuote(string $roomId, string $checkIn, string $checkOut, int $adults, int $children, ?PDO $db = null): array
+{
+    validateStay($roomId, $checkIn, $checkOut);
+    $pricing = roomPricing($roomId, $db);
+    if ($adults < 1 || $adults > $pricing['max_adults']) throw new InvalidArgumentException('Invalid number of adults.');
+    if ($children < 0 || $children > $pricing['max_children']) throw new InvalidArgumentException('Invalid number of children.');
+
+    $cursor = new DateTimeImmutable($checkIn);
+    $end = new DateTimeImmutable($checkOut);
+    $weekdayNights = 0;
+    $weekendNights = 0;
+    $baseTotal = 0.0;
+    while ($cursor < $end) {
+        $isWeekend = in_array((int)$cursor->format('N'), WEEKEND_ISO_DAYS, true);
+        if ($isWeekend) { $weekendNights++; $baseTotal += (float)$pricing['weekend']; }
+        else { $weekdayNights++; $baseTotal += (float)$pricing['weekday']; }
+        $cursor = $cursor->modify('+1 day');
+    }
+    $nights = $weekdayNights + $weekendNights;
+    $extraAdults = max(0, $adults - (int)$pricing['base_adults']);
+    $extraChildren = max(0, $children - (int)$pricing['base_children']);
+    $extraTotal = ($extraAdults * EXTRA_ADULT_RATE + $extraChildren * EXTRA_CHILD_RATE) * $nights;
+    return [
+        'room_id'=>$roomId, 'check_in'=>$checkIn, 'check_out'=>$checkOut,
+        'nights'=>$nights, 'weekday_nights'=>$weekdayNights, 'weekend_nights'=>$weekendNights,
+        'adults'=>$adults, 'children'=>$children, 'base_total'=>$baseTotal,
+        'extra_adults'=>$extraAdults, 'extra_children'=>$extraChildren,
+        'extra_total'=>(float)$extraTotal, 'total'=>(float)($baseTotal + $extraTotal),
+    ];
+}
+
+function getBlockedRangesForRoom(string $roomId, ?string $fromDate = null, ?PDO $db = null): array
+{
+    if (!isValidRoomId($roomId)) throw new InvalidArgumentException('Unknown room.');
+    $fromDate ??= date('Y-m-d');
+    if (!validYmd($fromDate)) throw new InvalidArgumentException('Invalid starting date.');
+    $db ??= getDB();
+    $rooms = relatedInventoryIds($roomId);
+    $ph = implode(',', array_fill(0, count($rooms), '?'));
+    $ranges = [];
+    foreach ([
+        ["SELECT check_in, check_out FROM bookings WHERE room_id IN ({$ph}) AND status='confirmed' AND check_out >= ?", array_merge($rooms, [$fromDate])],
+        ["SELECT check_in, check_out FROM external_blocks WHERE room_id IN ({$ph}) AND check_out >= ?", array_merge($rooms, [$fromDate])],
+        ["SELECT check_in, check_out FROM booking_holds WHERE room_id IN ({$ph}) AND status='pending' AND expires_at > datetime('now') AND check_out >= ?", array_merge($rooms, [$fromDate])],
+    ] as [$sql, $params]) {
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        foreach ($stmt->fetchAll() as $row) $ranges[$row['check_in'] . '|' . $row['check_out']] = $row;
+    }
+    ksort($ranges);
+    return array_values($ranges);
+}

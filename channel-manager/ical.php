@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/booking-service.php';
 
 function parseIcalEvents(string $raw): array
 {
@@ -150,3 +151,101 @@ function icalLines(array $lines): string
     return implode("\r\n", array_map('foldIcalLine', $lines)) . "\r\n";
 }
 
+function collectAvailabilityEvents(string $roomId, string $destination, ?string $today = null, ?PDO $db = null): array
+{
+    if (!isValidRoomId($roomId)) throw new InvalidArgumentException('Unknown room.');
+    if ($destination !== 'generic' && !in_array($destination, SUPPORTED_ICAL_PLATFORMS, true)) {
+        throw new InvalidArgumentException('Unsupported calendar destination.');
+    }
+    $today ??= date('Y-m-d');
+    if (!validYmd($today)) throw new InvalidArgumentException('Invalid starting date.');
+    $db ??= getDB();
+    $rooms = relatedInventoryIds($roomId);
+    $ph = implode(',', array_fill(0, count($rooms), '?'));
+    $events = [];
+
+    $bookingSql = "SELECT check_in, check_out, source FROM bookings
+        WHERE room_id IN ({$ph}) AND status='confirmed' AND check_out >= ?";
+    $params = array_merge($rooms, [$today]);
+    if ($destination !== 'generic') { $bookingSql .= ' AND lower(source) != ?'; $params[] = $destination; }
+    $stmt = $db->prepare($bookingSql . ' ORDER BY check_in, check_out');
+    $stmt->execute($params);
+    foreach ($stmt->fetchAll() as $row) {
+        $key = $row['check_in'] . '|' . $row['check_out'];
+        $events[$key] ??= [
+            'uid'=>'kfs-' . hash('sha256', $roomId . '|' . $key) . '@kanchifarmstay.com',
+            'check_in'=>$row['check_in'], 'check_out'=>$row['check_out'],
+            'summary'=>'Unavailable', 'origin'=>strtolower((string)$row['source']),
+        ];
+    }
+
+    $blockSql = "SELECT check_in, check_out, platform FROM external_blocks
+        WHERE room_id IN ({$ph}) AND check_out >= ?";
+    $params = array_merge($rooms, [$today]);
+    if ($destination !== 'generic') { $blockSql .= ' AND lower(platform) != ?'; $params[] = $destination; }
+    $stmt = $db->prepare($blockSql . ' ORDER BY check_in, check_out');
+    $stmt->execute($params);
+    foreach ($stmt->fetchAll() as $row) {
+        $key = $row['check_in'] . '|' . $row['check_out'];
+        $events[$key] ??= [
+            'uid'=>'kfs-' . hash('sha256', $roomId . '|' . $key) . '@kanchifarmstay.com',
+            'check_in'=>$row['check_in'], 'check_out'=>$row['check_out'],
+            'summary'=>'Unavailable', 'origin'=>strtolower((string)$row['platform']),
+        ];
+    }
+
+    $holdSql = "SELECT check_in, check_out FROM booking_holds
+        WHERE room_id IN ({$ph}) AND status='pending' AND expires_at > datetime('now') AND check_out >= ?
+        ORDER BY check_in, check_out";
+    $stmt = $db->prepare($holdSql);
+    $stmt->execute(array_merge($rooms, [$today]));
+    foreach ($stmt->fetchAll() as $row) {
+        $key = $row['check_in'] . '|' . $row['check_out'];
+        $events[$key] ??= [
+            'uid'=>'kfs-' . hash('sha256', $roomId . '|' . $key) . '@kanchifarmstay.com',
+            'check_in'=>$row['check_in'], 'check_out'=>$row['check_out'],
+            'summary'=>'Unavailable', 'origin'=>'hold',
+        ];
+    }
+    ksort($events);
+    return array_values($events);
+}
+
+function renderAvailabilityCalendar(
+    string $roomId,
+    string $roomName,
+    array $events,
+    ?DateTimeImmutable $generatedAt = null
+): string {
+    $generatedAt ??= new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $stamp = $generatedAt->setTimezone(new DateTimeZone('UTC'))->format('Ymd\THis\Z');
+    $lines = [
+        'BEGIN:VCALENDAR', 'VERSION:2.0',
+        'PRODID:-//Kanchi Farm Stay//Availability Calendar 2.0//EN',
+        'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+        'X-WR-CALNAME:' . icalEscapeText('Kanchi Farm Stay - ' . $roomName),
+        'X-PUBLISHED-TTL:PT1H',
+    ];
+    if ($events === []) {
+        $lines = array_merge($lines, [
+            'BEGIN:VEVENT',
+            'UID:kfs-calendar-active-' . preg_replace('/[^a-z0-9-]/', '-', strtolower($roomId)) . '@kanchifarmstay.com',
+            'DTSTAMP:' . $stamp,
+            'DTSTART;VALUE=DATE:20200101', 'DTEND;VALUE=DATE:20200102',
+            'SUMMARY:Calendar Active', 'STATUS:CONFIRMED', 'TRANSP:TRANSPARENT', 'END:VEVENT',
+        ]);
+    }
+    foreach ($events as $event) {
+        $uid = preg_replace('/[\r\n]/', '', (string)$event['uid']);
+        $checkIn = str_replace('-', '', (string)$event['check_in']);
+        $checkOut = str_replace('-', '', (string)$event['check_out']);
+        $summary = icalEscapeText((string)($event['summary'] ?? 'Unavailable'));
+        $lines = array_merge($lines, [
+            'BEGIN:VEVENT', 'UID:' . $uid, 'DTSTAMP:' . $stamp,
+            'DTSTART;VALUE=DATE:' . $checkIn, 'DTEND;VALUE=DATE:' . $checkOut,
+            'SUMMARY:' . $summary, 'STATUS:CONFIRMED', 'TRANSP:OPAQUE', 'END:VEVENT',
+        ]);
+    }
+    $lines[] = 'END:VCALENDAR';
+    return icalLines($lines);
+}

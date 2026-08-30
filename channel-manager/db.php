@@ -178,9 +178,12 @@ function _initSchema(PDO $db): void {
             currency          TEXT NOT NULL DEFAULT 'INR',
             status            TEXT NOT NULL DEFAULT 'created',
             signature_verified INTEGER NOT NULL DEFAULT 0,
+            booking_id        INTEGER,
+            last_error        TEXT DEFAULT '',
             created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(hold_token) REFERENCES booking_holds(token) ON DELETE RESTRICT
+            FOREIGN KEY(hold_token) REFERENCES booking_holds(token) ON DELETE RESTRICT,
+            FOREIGN KEY(booking_id) REFERENCES bookings(id) ON DELETE RESTRICT
         );
 
         CREATE TABLE IF NOT EXISTS wa_messages (
@@ -219,6 +222,14 @@ function _initSchema(PDO $db): void {
         "ALTER TABLE external_calendars ADD COLUMN last_status TEXT DEFAULT 'never'",
     ];
     foreach ($calendarMigrations as $sql) {
+        try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
+    }
+
+    $paymentMigrations = [
+        "ALTER TABLE payment_orders ADD COLUMN booking_id INTEGER",
+        "ALTER TABLE payment_orders ADD COLUMN last_error TEXT DEFAULT ''",
+    ];
+    foreach ($paymentMigrations as $sql) {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
     }
 

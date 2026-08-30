@@ -214,4 +214,170 @@ test('invalid calendar input does not erase the last successful snapshot', funct
     assertSame(1, (int)$db->query("SELECT COUNT(*) FROM external_blocks")->fetchColumn());
 });
 
+test('iCal export is private, CRLF terminated, escaped, and folded to 75 octets', function (): void {
+    assertTrue(function_exists('renderAvailabilityCalendar'), 'renderAvailabilityCalendar is not implemented');
+    $ical = renderAvailabilityCalendar('wooden-villa', ROOM_IDS['wooden-villa'], [[
+        'uid'=>'stable-event@example.test', 'check_in'=>'2030-08-01', 'check_out'=>'2030-08-03',
+        'summary'=>'Unavailable, owner; maintenance with a deliberately long explanation that requires folding',
+    ]], new DateTimeImmutable('2030-01-01T00:00:00Z'));
+    assertTrue(str_contains($ical, "\r\n"));
+    assertFalse((bool)preg_match('/(?<!\r)\n/', $ical), 'calendar contains bare LF');
+    assertTrue(str_ends_with($ical, "\r\n"));
+    assertContains('SUMMARY:Unavailable\\, owner\\; maintenance', $ical);
+    foreach (explode("\r\n", rtrim($ical, "\r\n")) as $line) {
+        assertTrue(strlen($line) <= 75, 'iCal line exceeds 75 octets: ' . strlen($line));
+    }
+});
+
+test('iCal export contains no guest names, references, notes, or payment data', function (): void {
+    resetAvailabilityData();
+    addBooking([
+        'room_id'=>'wooden-villa', 'room_name'=>ROOM_IDS['wooden-villa'],
+        'check_in'=>'2030-08-10', 'check_out'=>'2030-08-12',
+        'guest_name'=>'Private Guest', 'guest_email'=>'private@example.com', 'guest_phone'=>'9999999999',
+        'booking_ref'=>'SECRET-REF', 'notes'=>'Private medical note', 'amount'=>9999,
+    ]);
+    $events = collectAvailabilityEvents('wooden-villa', 'agoda', '2030-01-01');
+    $ical = renderAvailabilityCalendar('wooden-villa', ROOM_IDS['wooden-villa'], $events, new DateTimeImmutable('2030-01-01T00:00:00Z'));
+    foreach (['Private Guest', 'private@example.com', '9999999999', 'SECRET-REF', 'medical', '9999'] as $private) {
+        assertNotContains($private, $ical);
+    }
+    assertContains('SUMMARY:Unavailable', $ical);
+});
+
+test('destination export excludes blocks originating from that destination', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    foreach ([['airbnb','air'], ['booking.com','book']] as [$platform, $uid]) {
+        $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+           ->execute(['wooden-villa', $platform, "https://example.com/{$platform}.ics"]);
+        $calendarId = (int)$db->lastInsertId();
+        $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out) VALUES (?,?,?,?,?,?)")
+           ->execute([$calendarId, 'wooden-villa', $platform, $uid, '2030-09-01', '2030-09-03']);
+    }
+    $events = collectAvailabilityEvents('wooden-villa', 'airbnb', '2030-01-01');
+    assertSame(1, count($events));
+    assertSame('booking.com', $events[0]['origin']);
+});
+
+test('parent and component bookings propagate into related iCal exports', function (): void {
+    resetAvailabilityData();
+    addBooking([
+        'room_id'=>'white-villa-full-floor', 'room_name'=>ROOM_IDS['white-villa-full-floor'],
+        'check_in'=>'2030-10-01', 'check_out'=>'2030-10-03', 'guest_name'=>'Parent Guest',
+    ]);
+    $roomEvents = collectAvailabilityEvents('white-villa-room-2', 'booking.com', '2030-01-01');
+    assertSame([['2030-10-01','2030-10-03']], array_map(static fn($e)=>[$e['check_in'],$e['check_out']], $roomEvents));
+
+    resetAvailabilityData();
+    addBooking([
+        'room_id'=>'natures-nest', 'room_name'=>ROOM_IDS['natures-nest'],
+        'check_in'=>'2030-10-05', 'check_out'=>'2030-10-06', 'guest_name'=>'Component Guest',
+    ]);
+    $groupEvents = collectAvailabilityEvents('kanchi-farm-stay', 'airbnb', '2030-01-01');
+    assertSame([['2030-10-05','2030-10-06']], array_map(static fn($e)=>[$e['check_in'],$e['check_out']], $groupEvents));
+});
+
+$apiServicePath = dirname(__DIR__) . '/channel-manager/api.php';
+if (is_file($apiServicePath)) require_once $apiServicePath;
+
+test('stay validation rejects unknown rooms, impossible dates, and past dates', function (): void {
+    foreach ([
+        ['not-a-room','2030-01-01','2030-01-02'],
+        ['wooden-villa','2030-02-30','2030-03-02'],
+        ['wooden-villa','2000-01-01','2000-01-02'],
+    ] as [$room, $in, $out]) {
+        $thrown = false;
+        try { validateStay($room, $in, $out); } catch (InvalidArgumentException) { $thrown = true; }
+        assertTrue($thrown, "Expected invalid stay: {$room} {$in} {$out}");
+    }
+});
+
+test('server quote calculates room rates and extra guests', function (): void {
+    assertTrue(function_exists('calculateQuote'), 'calculateQuote is not implemented');
+    $quote = calculateQuote('wooden-villa', '2030-11-04', '2030-11-06', 3, 2);
+    assertSame(2, $quote['nights']);
+    assertSame(8600.0, $quote['total']);
+    assertSame(3, $quote['adults']);
+    assertSame(2, $quote['children']);
+});
+
+test('server quote enforces guest limits', function (): void {
+    $thrown = false;
+    try { calculateQuote('tent', '2030-11-04', '2030-11-05', 3, 0); } catch (InvalidArgumentException) { $thrown = true; }
+    assertTrue($thrown);
+});
+
+test('blocked-range API data includes parent and external dependencies', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['white-villa', 'airbnb', 'https://example.com/feed.ics']);
+    $calendarId = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out) VALUES (?,?,?,?,?,?)")
+       ->execute([$calendarId, 'white-villa', 'airbnb', 'api-block', '2030-12-01', '2030-12-03']);
+    $ranges = getBlockedRangesForRoom('white-villa-full-floor', '2030-01-01');
+    assertSame([['check_in'=>'2030-12-01','check_out'=>'2030-12-03']], $ranges);
+});
+
+$paymentServicePath = dirname(__DIR__) . '/channel-manager/payment-service.php';
+if (is_file($paymentServicePath)) require_once $paymentServicePath;
+
+test('Razorpay checkout signatures are verified exactly', function (): void {
+    assertTrue(function_exists('verifyRazorpayPaymentSignature'), 'verifyRazorpayPaymentSignature is not implemented');
+    $signature = hash_hmac('sha256', 'order_123|pay_456', RAZORPAY_KEY_SECRET);
+    assertTrue(verifyRazorpayPaymentSignature('order_123', 'pay_456', $signature));
+    assertFalse(verifyRazorpayPaymentSignature('order_123', 'pay_tampered', $signature));
+    assertFalse(verifyRazorpayPaymentSignature('order_123', 'pay_456', ''));
+});
+
+test('Razorpay webhook signatures are verified against the raw payload', function (): void {
+    assertTrue(function_exists('verifyRazorpayWebhookSignature'), 'verifyRazorpayWebhookSignature is not implemented');
+    $payload = '{"event":"payment.captured"}';
+    $signature = hash_hmac('sha256', $payload, RAZORPAY_WEBHOOK_SECRET);
+    assertTrue(verifyRazorpayWebhookSignature($payload, $signature));
+    assertFalse(verifyRazorpayWebhookSignature($payload . 'x', $signature));
+});
+
+test('verified payment atomically converts its hold into one paid booking', function (): void {
+    resetAvailabilityData();
+    $hold = createBookingHold([
+        'room_id'=>'wooden-villa', 'check_in'=>'2031-01-10', 'check_out'=>'2031-01-12',
+        'guest_name'=>'Paid Guest', 'guest_email'=>'paid@example.com', 'guest_phone'=>'9999999999',
+        'adults'=>2, 'children'=>1, 'amount'=>6000,
+    ]);
+    getDB()->prepare("INSERT INTO payment_orders (order_id, hold_token, amount_paise) VALUES (?,?,?)")
+        ->execute(['order_paid', $hold['token'], 600000]);
+    $signature = hash_hmac('sha256', 'order_paid|pay_paid', RAZORPAY_KEY_SECRET);
+    $bookingId = confirmRazorpayPayment('order_paid', 'pay_paid', $signature);
+    assertTrue($bookingId > 0);
+    $booking = getBookingById($bookingId);
+    assertSame('paid', $booking['payment_status']);
+    assertSame(6000.0, (float)$booking['amount_paid']);
+    assertSame('pay_paid', $booking['booking_ref']);
+    assertSame('confirmed', getDB()->query("SELECT status FROM booking_holds WHERE token=" . getDB()->quote($hold['token']))->fetchColumn());
+    assertSame('paid', getDB()->query("SELECT status FROM payment_orders WHERE order_id='order_paid'")->fetchColumn());
+
+    $secondId = confirmRazorpayPayment('order_paid', 'pay_paid', $signature);
+    assertSame($bookingId, $secondId);
+    assertSame(1, (int)getDB()->query("SELECT COUNT(*) FROM bookings WHERE booking_ref='pay_paid'")->fetchColumn());
+});
+
+test('payment confirmation rejects an expired hold and mismatched payment', function (): void {
+    resetAvailabilityData();
+    $hold = createBookingHold([
+        'room_id'=>'wooden-villa', 'check_in'=>'2031-02-10', 'check_out'=>'2031-02-12',
+        'guest_name'=>'Expired Guest', 'guest_email'=>'expired@example.com', 'guest_phone'=>'9999999999',
+        'adults'=>2, 'children'=>1, 'amount'=>6000,
+    ]);
+    getDB()->prepare("INSERT INTO payment_orders (order_id, hold_token, amount_paise) VALUES (?,?,?)")
+        ->execute(['order_expired', $hold['token'], 600000]);
+    getDB()->prepare("UPDATE booking_holds SET expires_at='2000-01-01 00:00:00' WHERE token=?")->execute([$hold['token']]);
+    $signature = hash_hmac('sha256', 'order_expired|pay_expired', RAZORPAY_KEY_SECRET);
+    $thrown = false;
+    try { confirmRazorpayPayment('order_expired', 'pay_expired', $signature); } catch (DomainException) { $thrown = true; }
+    assertTrue($thrown);
+    assertSame(0, (int)getDB()->query("SELECT COUNT(*) FROM bookings")->fetchColumn());
+});
+
 runTests();
