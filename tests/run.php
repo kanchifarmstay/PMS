@@ -20,6 +20,60 @@ if (is_file($securityPath)) {
     require_once $securityPath;
 }
 
+test('private environment loader reads only KFS keys and quoted values', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'kfs-env-');
+    assertTrue($path !== false, 'Could not create temporary environment file');
+
+    try {
+        file_put_contents($path, "KFS_TEST_FILE=loaded\nKFS_TEST_QUOTED=\"hello world\"\nOTHER_SECRET=ignored\n");
+        putenv('KFS_TEST_FILE');
+        putenv('KFS_TEST_QUOTED');
+        putenv('OTHER_SECRET');
+
+        assertSame(2, loadKfsEnvFile($path));
+        assertSame('loaded', getenv('KFS_TEST_FILE'));
+        assertSame('hello world', getenv('KFS_TEST_QUOTED'));
+        assertFalse(getenv('OTHER_SECRET') !== false);
+    } finally {
+        putenv('KFS_TEST_FILE');
+        putenv('KFS_TEST_QUOTED');
+        putenv('OTHER_SECRET');
+        if (is_file($path)) unlink($path);
+    }
+});
+
+test('private environment loader preserves process values and handles missing files', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'kfs-env-');
+    assertTrue($path !== false, 'Could not create temporary environment file');
+
+    try {
+        file_put_contents($path, "KFS_TEST_EXISTING=file-value\n");
+        putenv('KFS_TEST_EXISTING=process-value');
+
+        assertSame(0, loadKfsEnvFile($path));
+        assertSame('process-value', getenv('KFS_TEST_EXISTING'));
+        assertSame(0, loadKfsEnvFile($path . '.missing'));
+    } finally {
+        putenv('KFS_TEST_EXISTING');
+        if (is_file($path)) unlink($path);
+    }
+});
+
+test('private environment path uses an override or the domain-root fallback', function (): void {
+    try {
+        putenv('KFS_ENV_FILE=/private/custom-kfs.env');
+        assertSame('/private/custom-kfs.env', kfsEnvFilePath('/home/example/domains/kanchifarmstay.com/public_html/channel-manager'));
+
+        putenv('KFS_ENV_FILE');
+        assertSame(
+            '/home/example/domains/kanchifarmstay.com/kfs.env',
+            kfsEnvFilePath('/home/example/domains/kanchifarmstay.com/public_html/channel-manager')
+        );
+    } finally {
+        putenv('KFS_ENV_FILE');
+    }
+});
+
 test('admin password uses the configured hash', function (): void {
     assertTrue(function_exists('verifyAdminPassword'), 'verifyAdminPassword is not implemented');
     assertTrue(verifyAdminPassword('test-secret'));
