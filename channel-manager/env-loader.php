@@ -11,15 +11,28 @@ function kfsEnvFilePath(string $channelManagerDir = __DIR__): string
     return dirname($channelManagerDir, 2) . '/kfs.env';
 }
 
-function loadKfsEnvFile(string $path): int
+function loadKfsEnvFile(string $path, bool $required = false): int
 {
-    if (!is_file($path) || !is_readable($path)) {
+    if (!file_exists($path)) {
+        if ($required) {
+            throw new RuntimeException('Private configuration is invalid.');
+        }
+
         return 0;
     }
 
-    $values = @parse_ini_file($path, false, INI_SCANNER_RAW);
+    if (!is_file($path) || !is_readable($path)) {
+        throw new RuntimeException('Private configuration is invalid.');
+    }
+
+    $contents = @file_get_contents($path);
+    if ($contents === false || str_contains($contents, "\0")) {
+        throw new RuntimeException('Private configuration is invalid.');
+    }
+
+    $values = @parse_ini_string($contents, false, INI_SCANNER_RAW);
     if ($values === false) {
-        return 0;
+        throw new RuntimeException('Private configuration is invalid.');
     }
 
     $assignments = [];

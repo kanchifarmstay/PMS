@@ -83,10 +83,48 @@ test('private environment loader fails closed without partial assignments', func
         file_put_contents($path, "KFS_TEST_MALFORMED=must-not-load\n[unclosed-section\n");
         putenv('KFS_TEST_MALFORMED');
 
-        assertSame(0, loadKfsEnvFile($path));
+        $thrown = false;
+        try {
+            loadKfsEnvFile($path);
+        } catch (RuntimeException $e) {
+            $thrown = true;
+            assertSame('Private configuration is invalid.', $e->getMessage());
+            assertNotContains($path, $e->getMessage());
+            assertNotContains('must-not-load', $e->getMessage());
+        }
+        assertTrue($thrown, 'Malformed private configuration must throw');
         assertFalse(getenv('KFS_TEST_MALFORMED') !== false);
     } finally {
         restoreTestEnvironment('KFS_TEST_MALFORMED', $original);
+        if (is_file($path)) unlink($path);
+    }
+});
+
+test('private environment loader rejects NUL bytes without partial assignments', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'kfs-env-');
+    assertTrue($path !== false, 'Could not create temporary environment file');
+    $names = ['KFS_TEST_BEFORE_NUL', 'KFS_TEST_NUL'];
+    $originals = [];
+    foreach ($names as $name) $originals[$name] = getenv($name);
+
+    try {
+        file_put_contents($path, "KFS_TEST_BEFORE_NUL=must-not-load\nKFS_TEST_NUL=bad\0value\n");
+        foreach ($names as $name) putenv($name);
+
+        $thrown = false;
+        try {
+            loadKfsEnvFile($path);
+        } catch (RuntimeException $e) {
+            $thrown = true;
+            assertSame('Private configuration is invalid.', $e->getMessage());
+            assertNotContains($path, $e->getMessage());
+            assertNotContains('must-not-load', $e->getMessage());
+        }
+        assertTrue($thrown, 'NUL bytes in private configuration must throw');
+        assertFalse(getenv('KFS_TEST_BEFORE_NUL') !== false);
+        assertFalse(getenv('KFS_TEST_NUL') !== false);
+    } finally {
+        foreach ($originals as $name => $original) restoreTestEnvironment($name, $original);
         if (is_file($path)) unlink($path);
     }
 });
@@ -107,6 +145,50 @@ test('private environment loader preserves process values and handles missing fi
         restoreTestEnvironment('KFS_TEST_EXISTING', $original);
         if (is_file($path)) unlink($path);
     }
+});
+
+test('private environment loader throws generically when a required file is missing', function (): void {
+    $missingPath = sys_get_temp_dir() . '/missing-kfs-env-' . bin2hex(random_bytes(8));
+    $thrown = false;
+
+    try {
+        loadKfsEnvFile($missingPath, true);
+    } catch (RuntimeException $e) {
+        $thrown = true;
+        assertSame('Private configuration is invalid.', $e->getMessage());
+        assertNotContains($missingPath, $e->getMessage());
+    }
+
+    assertTrue($thrown, 'A missing required private configuration must throw');
+});
+
+test('configuration requires a private file unless a native database path exists', function () use ($configPath): void {
+    $runConfig = static function (bool $nativeDb, string|false $override) use ($configPath): int {
+        $code = 'putenv("KFS_DB_PATH"); putenv("KFS_ENV_FILE");';
+        if ($nativeDb) $code .= 'putenv("KFS_DB_PATH=/tmp/kfs-native.sqlite");';
+        if ($override !== false) $code .= 'putenv(' . var_export('KFS_ENV_FILE=' . $override, true) . ');';
+        $code .= 'require ' . var_export($configPath, true) . ';';
+
+        $process = proc_open(
+            [PHP_BINARY, '-r', $code],
+            [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']],
+            $pipes
+        );
+        assertTrue(is_resource($process), 'Could not start configuration subprocess');
+        fclose($pipes[0]);
+        stream_get_contents($pipes[1]);
+        stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        return proc_close($process);
+    };
+
+    assertSame(0, $runConfig(true, false), 'Native KFS_DB_PATH should make the private file optional');
+    assertTrue($runConfig(false, false) !== 0, 'Missing KFS_DB_PATH must require the private file');
+    assertTrue(
+        $runConfig(true, '/definitely/missing/kfs.env') !== 0,
+        'An explicit KFS_ENV_FILE must be required even with native KFS_DB_PATH'
+    );
 });
 
 test('private environment path uses an override or the domain-root fallback', function (): void {
