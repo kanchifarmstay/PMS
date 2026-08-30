@@ -27,6 +27,7 @@ test_images.html
 .__backup_vite_src
 
 # Editor directories
+.worktrees/
 .vscode/*
 !.vscode/extensions.json
 .idea
