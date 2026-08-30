@@ -7,6 +7,8 @@ function getDB(): PDO {
         $db = new PDO('sqlite:' . DB_PATH);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        $db->exec('PRAGMA foreign_keys = ON');
+        $db->exec('PRAGMA busy_timeout = 5000');
         _initSchema($db);
     }
     return $db;
@@ -134,6 +136,53 @@ function _initSchema(PDO $db): void {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS external_blocks (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            calendar_id   INTEGER NOT NULL,
+            room_id       TEXT NOT NULL,
+            platform      TEXT NOT NULL,
+            external_uid  TEXT NOT NULL,
+            check_in      DATE NOT NULL,
+            check_out     DATE NOT NULL,
+            summary       TEXT DEFAULT '',
+            status        TEXT DEFAULT 'CONFIRMED',
+            raw_hash      TEXT DEFAULT '',
+            first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(calendar_id, external_uid),
+            FOREIGN KEY(calendar_id) REFERENCES external_calendars(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS booking_holds (
+            token          TEXT PRIMARY KEY,
+            room_id        TEXT NOT NULL,
+            check_in       DATE NOT NULL,
+            check_out      DATE NOT NULL,
+            guest_name     TEXT NOT NULL,
+            guest_email    TEXT NOT NULL,
+            guest_phone    TEXT NOT NULL,
+            adults         INTEGER NOT NULL DEFAULT 1,
+            children       INTEGER NOT NULL DEFAULT 0,
+            amount         REAL NOT NULL,
+            status         TEXT NOT NULL DEFAULT 'pending',
+            expires_at     DATETIME NOT NULL,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS payment_orders (
+            order_id          TEXT PRIMARY KEY,
+            hold_token        TEXT NOT NULL UNIQUE,
+            payment_id        TEXT DEFAULT '',
+            amount_paise      INTEGER NOT NULL,
+            currency          TEXT NOT NULL DEFAULT 'INR',
+            status            TEXT NOT NULL DEFAULT 'created',
+            signature_verified INTEGER NOT NULL DEFAULT 0,
+            created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(hold_token) REFERENCES booking_holds(token) ON DELETE RESTRICT
+        );
+
         CREATE TABLE IF NOT EXISTS wa_messages (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             conversation_id     INTEGER NOT NULL,
@@ -164,6 +213,18 @@ function _initSchema(PDO $db): void {
     foreach ($migrations as $sql) {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
     }
+
+    $calendarMigrations = [
+        "ALTER TABLE external_calendars ADD COLUMN last_error TEXT DEFAULT ''",
+        "ALTER TABLE external_calendars ADD COLUMN last_status TEXT DEFAULT 'never'",
+    ];
+    foreach ($calendarMigrations as $sql) {
+        try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
+    }
+
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_bookings_availability ON bookings(room_id, status, check_in, check_out)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_external_blocks_availability ON external_blocks(room_id, check_in, check_out)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_booking_holds_availability ON booking_holds(room_id, status, expires_at, check_in, check_out)");
 }
 
 // ---- Bookings ------------------------------------------------
