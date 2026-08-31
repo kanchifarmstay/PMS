@@ -4,13 +4,18 @@ Website, direct-booking checkout, and an iCal-based property-management system f
 
 ## Production configuration
 
-Set these environment variables in the hosting control panel. Do not put their values in PHP files or Git.
+On Hostinger shared hosting, copy `.env.example` to
+`/home/<user>/domains/kanchifarmstay.com/kfs.env`, replace every placeholder,
+and keep that file outside `public_html` and Git. The application finds this
+domain-root file automatically for both Apache requests and CLI cron. Hosts
+with native environment management can set the same variables directly; an
+explicit `KFS_ENV_FILE` path overrides the default file location.
 
 ```text
 KFS_APP_ENV=production
 KFS_PROPERTY_TIMEZONE=Asia/Kolkata
 KFS_SITE_URL=https://kanchifarmstay.com
-KFS_DB_PATH=/absolute/private/path/calendar.db
+KFS_DB_PATH=/home/<user>/domains/kanchifarmstay.com/private/calendar.db
 KFS_ADMIN_PASSWORD_HASH=<password_hash output>
 KFS_ICAL_TOKEN=<long random token>
 KFS_CRON_SECRET=<different long random token>
@@ -28,7 +33,12 @@ Generate secrets with a cryptographically secure password manager. Generate the 
 php -r 'echo password_hash("replace-with-a-strong-password", PASSWORD_DEFAULT), PHP_EOL;'
 ```
 
-Keep the database outside `public_html` when the host permits it. The included `.htaccess` also denies direct access to database, log, test, and maintenance files.
+Create `/home/<user>/domains/kanchifarmstay.com/private/` and keep the live
+database there. Give `kfs.env` and the private directory owner-only permissions
+where Hostinger permits it. A required, malformed, or unreadable private config
+fails startup instead of silently creating a new database under `public_html`.
+The included `.htaccess` also denies direct access to database, log, test, and
+maintenance files as defence in depth.
 
 ## iCal setup
 
