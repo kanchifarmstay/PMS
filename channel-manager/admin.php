@@ -122,6 +122,9 @@ if (!empty($_SESSION['admin_logged_in'])) {
         } catch (Throwable $e) {
             header('Location: admin.php?section=calendar&view=month&flash=' . urlencode($e->getMessage())); exit;
         }
+        header('Location: admin.php?section=calendar&view=month&flash=Date+blocked+across+all+channels'); exit;
+    }
+
     if ($act === 'edit_booking') {
         $id = (int)($_POST['id'] ?? 0);
         $returnSec = trim((string)($_POST['return_section'] ?? 'bookings'));
@@ -187,6 +190,8 @@ if (!empty($_SESSION['admin_logged_in'])) {
         header('Location: admin.php?section=' . $returnSec . '&flash=Booking+cancelled');
         exit;
     }
+
+    if ($act === 'add_calendar') {
         $roomId = trim((string)($_POST['room_id'] ?? ''));
         $platform = strtolower(trim((string)($_POST['platform'] ?? '')));
         $url = trim((string)($_POST['ical_url'] ?? ''));
@@ -440,6 +445,31 @@ function demandBadgeStyle(string $level): string {
     };
 }
 function fmt(float $n): string { return '₹' . number_format($n, 0); }
+function bookingJson(array $b): string {
+    $bTotal   = (float)($b['amount']      ?? 0);
+    $bPaid    = (float)($b['amount_paid'] ?? 0);
+    $bBalance = max(0, $bTotal - $bPaid);
+    $pstatus  = $bBalance <= 0 && $bTotal > 0 ? 'paid' : ($bPaid > 0 ? 'partial' : 'unpaid');
+    return htmlspecialchars(json_encode([
+        'id'              => (int)($b['id'] ?? 0),
+        'room_id'         => (string)($b['room_id'] ?? ''),
+        'room_name'       => (string)($b['room_name'] ?? (ROOM_IDS[$b['room_id'] ?? ''] ?? '')),
+        'check_in'        => (string)($b['check_in'] ?? ''),
+        'check_out'       => (string)($b['check_out'] ?? ''),
+        'guest_name'      => (string)($b['guest_name'] ?? 'Guest'),
+        'guest_phone'     => (string)($b['guest_phone'] ?? ''),
+        'whatsapp_number' => (string)($b['whatsapp_number'] ?? ($b['guest_phone'] ?? '')),
+        'guest_email'     => (string)($b['guest_email'] ?? ''),
+        'source'          => (string)($b['source'] ?? 'direct'),
+        'booking_ref'     => (string)($b['booking_ref'] ?? ''),
+        'amount'          => $bTotal,
+        'amount_paid'     => $bPaid,
+        'payment_method'  => (string)($b['payment_method'] ?? 'cash'),
+        'payment_status'  => (string)($b['payment_status'] ?? $pstatus),
+        'status'          => (string)($b['status'] ?? 'confirmed'),
+        'notes'           => (string)($b['notes'] ?? ''),
+    ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+}
 function commissionForSource(string $src): float {
     $c = OTA_COMMISSIONS;
     return ($c[strtolower($src)] ?? 0) / 100;
@@ -1489,22 +1519,7 @@ $totalOccupied = count($propStatus) - $totalFree;
           $today    = date('Y-m-d');
           $isArriv  = $b['check_in']  >= $today && $b['check_in']  <= date('Y-m-d', strtotime('+7 days'));
           $isDepart = $b['check_out'] >= $today && $b['check_out'] <= date('Y-m-d', strtotime('+7 days'));
-          $bJson    = htmlspecialchars(json_encode([
-              'id'             => $b['id'],
-              'guest_name'     => $b['guest_name'],
-              'guest_phone'    => $b['guest_phone']    ?? '',
-              'guest_email'    => $b['guest_email']    ?? '',
-              'room_name'      => $b['room_name'],
-              'check_in'       => $b['check_in'],
-              'check_out'      => $b['check_out'],
-              'source'         => $b['source'],
-              'amount'         => (float)($b['amount']      ?? 0),
-              'amount_paid'    => (float)($b['amount_paid'] ?? 0),
-              'payment_method' => $b['payment_method'] ?? '',
-              'booking_ref'    => $b['booking_ref']    ?? '',
-              'notes'          => $b['notes']          ?? '',
-              'status'         => $b['status'],
-          ]), ENT_QUOTES);
+          $bJson    = bookingJson($b);
         ?>
         <tr class="clickable-row" onclick="showBookingModal(<?= $bJson ?>)" title="Click for full details">
           <td>
@@ -1541,22 +1556,7 @@ $totalOccupied = count($propStatus) - $totalFree;
       <thead><tr><th>Property</th><th>Guest</th><th>Check-in</th><th>Check-out</th><th>Nts</th><th>Source</th><th>Revenue</th></tr></thead>
       <tbody>
         <?php foreach (array_slice(array_values(array_filter($allBookings, fn($b) => $b['source'] !== 'blocked')), 0, 10) as $b):
-          $bJson = htmlspecialchars(json_encode([
-              'id'             => $b['id'],
-              'guest_name'     => $b['guest_name'],
-              'guest_phone'    => $b['guest_phone']    ?? '',
-              'guest_email'    => $b['guest_email']    ?? '',
-              'room_name'      => $b['room_name'],
-              'check_in'       => $b['check_in'],
-              'check_out'      => $b['check_out'],
-              'source'         => $b['source'],
-              'amount'         => (float)($b['amount']      ?? 0),
-              'amount_paid'    => (float)($b['amount_paid'] ?? 0),
-              'payment_method' => $b['payment_method'] ?? '',
-              'booking_ref'    => $b['booking_ref']    ?? '',
-              'notes'          => $b['notes']          ?? '',
-              'status'         => $b['status'],
-          ]), ENT_QUOTES);
+          $bJson = bookingJson($b);
         ?>
         <tr class="clickable-row" onclick="showBookingModal(<?= $bJson ?>)" title="Click for full details">
           <td style="font-weight:600"><?= htmlspecialchars($b['room_name']) ?></td>
@@ -1705,25 +1705,7 @@ $totalOccupied = count($propStatus) - $totalFree;
   <?php if (empty($dayCheckins)): ?>
     <div class="day-empty">No check-ins on this date.</div>
   <?php else: foreach ($dayCheckins as $b):
-    $bJson = htmlspecialchars(json_encode([
-      'id'              => $b['id'],
-      'room_id'         => $b['room_id'],
-      'room_name'       => $b['room_name'],
-      'check_in'        => $b['check_in'],
-      'check_out'       => $b['check_out'],
-      'guest_name'      => $b['guest_name'],
-      'guest_phone'     => $b['guest_phone']     ?? '',
-      'whatsapp_number' => $b['whatsapp_number'] ?? '',
-      'guest_email'     => $b['guest_email']     ?? '',
-      'source'          => $b['source'],
-      'booking_ref'     => $b['booking_ref']     ?? '',
-      'amount'          => (float)($b['amount']      ?? 0),
-      'amount_paid'     => (float)($b['amount_paid'] ?? 0),
-      'payment_method'  => $b['payment_method']  ?? 'cash',
-      'payment_status'  => $b['payment_status']  ?? 'unpaid',
-      'status'          => $b['status'],
-      'notes'           => $b['notes']           ?? '',
-    ]), ENT_QUOTES);
+    $bJson = bookingJson($b);
   ?>
   <div class="guest-card checkin-card" onclick="showBookingModal(<?= $bJson ?>)" style="cursor:pointer" title="Click to view / edit / delete">
     <div class="gc-icon">↘</div>
@@ -1752,25 +1734,7 @@ $totalOccupied = count($propStatus) - $totalFree;
   <?php if (empty($dayStays)): ?>
     <div class="day-empty">No guests currently mid-stay on this date.</div>
   <?php else: foreach ($dayStays as $b):
-    $bJson = htmlspecialchars(json_encode([
-      'id'              => $b['id'],
-      'room_id'         => $b['room_id'],
-      'room_name'       => $b['room_name'],
-      'check_in'        => $b['check_in'],
-      'check_out'       => $b['check_out'],
-      'guest_name'      => $b['guest_name'],
-      'guest_phone'     => $b['guest_phone']     ?? '',
-      'whatsapp_number' => $b['whatsapp_number'] ?? '',
-      'guest_email'     => $b['guest_email']     ?? '',
-      'source'          => $b['source'],
-      'booking_ref'     => $b['booking_ref']     ?? '',
-      'amount'          => (float)($b['amount']      ?? 0),
-      'amount_paid'     => (float)($b['amount_paid'] ?? 0),
-      'payment_method'  => $b['payment_method']  ?? 'cash',
-      'payment_status'  => $b['payment_status']  ?? 'unpaid',
-      'status'          => $b['status'],
-      'notes'           => $b['notes']           ?? '',
-    ]), ENT_QUOTES);
+    $bJson = bookingJson($b);
   ?>
   <div class="guest-card stay-card" onclick="showBookingModal(<?= $bJson ?>)" style="cursor:pointer" title="Click to view / edit / delete">
     <div class="gc-icon">🛏</div>
@@ -1802,25 +1766,7 @@ $totalOccupied = count($propStatus) - $totalFree;
   <?php if (empty($dayCheckouts)): ?>
     <div class="day-empty">No check-outs on this date.</div>
   <?php else: foreach ($dayCheckouts as $b):
-    $bJson = htmlspecialchars(json_encode([
-      'id'              => $b['id'],
-      'room_id'         => $b['room_id'],
-      'room_name'       => $b['room_name'],
-      'check_in'        => $b['check_in'],
-      'check_out'       => $b['check_out'],
-      'guest_name'      => $b['guest_name'],
-      'guest_phone'     => $b['guest_phone']     ?? '',
-      'whatsapp_number' => $b['whatsapp_number'] ?? '',
-      'guest_email'     => $b['guest_email']     ?? '',
-      'source'          => $b['source'],
-      'booking_ref'     => $b['booking_ref']     ?? '',
-      'amount'          => (float)($b['amount']      ?? 0),
-      'amount_paid'     => (float)($b['amount_paid'] ?? 0),
-      'payment_method'  => $b['payment_method']  ?? 'cash',
-      'payment_status'  => $b['payment_status']  ?? 'unpaid',
-      'status'          => $b['status'],
-      'notes'           => $b['notes']           ?? '',
-    ]), ENT_QUOTES);
+    $bJson = bookingJson($b);
   ?>
   <div class="guest-card checkout-card" onclick="showBookingModal(<?= $bJson ?>)" style="cursor:pointer" title="Click to view / edit / delete">
     <div class="gc-icon">↗</div>
@@ -2139,25 +2085,7 @@ $totalOccupied = count($propStatus) - $totalFree;
             $col = sourceColor($src);
             $srcAbbr = strtoupper(substr($src,0,3));
             $cls2 = $isPast ? 'gantt-day-past booked-past' : '';
-            $bJson = htmlspecialchars(json_encode([
-              'id'              => $booking['id'],
-              'room_id'         => $booking['room_id'],
-              'room_name'       => $booking['room_name'],
-              'check_in'        => $booking['check_in'],
-              'check_out'       => $booking['check_out'],
-              'guest_name'      => $booking['guest_name'],
-              'guest_phone'     => $booking['guest_phone']     ?? '',
-              'whatsapp_number' => $booking['whatsapp_number'] ?? '',
-              'guest_email'     => $booking['guest_email']     ?? '',
-              'source'          => $booking['source'],
-              'booking_ref'     => $booking['booking_ref']     ?? '',
-              'amount'          => (float)($booking['amount']      ?? 0),
-              'amount_paid'     => (float)($booking['amount_paid'] ?? 0),
-              'payment_method'  => $booking['payment_method']  ?? 'cash',
-              'payment_status'  => $booking['payment_status']  ?? 'unpaid',
-              'status'          => $booking['status'],
-              'notes'           => $booking['notes']           ?? '',
-            ]), ENT_QUOTES);
+            $bJson = bookingJson($booking);
         ?>
           <td class="gantt-booking <?= $cls2 ?>" onclick="showBookingModal(<?= $bJson ?>)" style="cursor:pointer;<?= $isPast?'opacity:.45':'' ?>" title="<?= htmlspecialchars($booking['guest_name']) ?> | <?= sourceName($src) ?> | <?= $booking['check_in'] ?>→<?= $booking['check_out'] ?> (Click to view/edit)">
             <div class="gantt-bk-inner" style="background:<?= $col ?>">
@@ -2843,6 +2771,7 @@ function srcShort(string $src): string {
     <?= csrfField() ?>
               <input type="hidden" name="action" value="delete_booking">
               <input type="hidden" name="id" value="<?= $b['id'] ?>">
+              <input type="hidden" name="return_section" value="blocked">
               <button type="submit" class="btn btn-warn btn-sm">🗑 Remove</button>
             </form>
           </td>
@@ -3068,25 +2997,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
           $pstatus  = $bBalance <= 0 && $bTotal > 0 ? 'paid' : ($bPaid > 0 ? 'partial' : 'unpaid');
           $pdfUrl   = 'booking-pdf.php?id=' . $b['id'];
           $waNum    = $b['whatsapp_number'] ?: $b['guest_phone'];
-          $bJson    = htmlspecialchars(json_encode([
-              'id'              => $b['id'],
-              'room_id'         => $b['room_id'],
-              'room_name'       => $b['room_name'],
-              'check_in'        => $b['check_in'],
-              'check_out'       => $b['check_out'],
-              'guest_name'      => $b['guest_name'],
-              'guest_phone'     => $b['guest_phone']     ?? '',
-              'whatsapp_number' => $b['whatsapp_number'] ?? '',
-              'guest_email'     => $b['guest_email']     ?? '',
-              'source'          => $b['source'],
-              'booking_ref'     => $b['booking_ref']     ?? '',
-              'amount'          => $bTotal,
-              'amount_paid'     => $bPaid,
-              'payment_method'  => $b['payment_method']  ?? 'cash',
-              'payment_status'  => $b['payment_status']  ?? $pstatus,
-              'status'          => $b['status'],
-              'notes'           => $b['notes']           ?? '',
-          ]), ENT_QUOTES);
+          $bJson    = bookingJson($b);
         ?>
         <tr data-room="<?= htmlspecialchars($b['room_name']) ?>" data-source="<?= htmlspecialchars($b['source']) ?>" data-status="<?= $b['status'] ?>" data-search="<?= htmlspecialchars(strtolower($b['guest_name'].' '.$b['room_name'].' '.($b['booking_ref']??''))) ?>">
           <td class="muted"><?= $b['id'] ?></td>
