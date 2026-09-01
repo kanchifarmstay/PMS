@@ -80,4 +80,6 @@ define('INVENTORY_COMPONENTS', [
     'white-villa-full-floor'=>['white-villa', 'white-villa-room-2'],
     'kanchi-farm-stay'=>array_values(array_filter(array_keys(ROOM_IDS), static fn(string $id): bool => $id !== 'kanchi-farm-stay')),
 ]);
+define('GROUP_INVENTORY_ID', 'kanchi-farm-stay');
+define('GROUP_BOOKING_THRESHOLD', 3);
 define('SUPPORTED_ICAL_PLATFORMS', ['airbnb', 'booking.com', 'agoda', 'makemytrip']);

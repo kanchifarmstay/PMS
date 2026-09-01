@@ -186,6 +186,15 @@ function collectAvailabilityEvents(string $roomId, string $destination, ?string 
     $today ??= date('Y-m-d');
     if (!validYmd($today)) throw new InvalidArgumentException('Invalid starting date.');
     $db ??= getDB();
+    if ($roomId === GROUP_INVENTORY_ID) {
+        return array_map(static fn(array $range): array => [
+            'uid'=>'kfs-' . hash('sha256', GROUP_INVENTORY_ID . '|' . $range['check_in'] . '|' . $range['check_out']) . '@kanchifarmstay.com',
+            'check_in'=>$range['check_in'], 'check_out'=>$range['check_out'],
+            'summary'=>'Unavailable', 'origin'=>'group-threshold',
+        ], groupBlockedRanges(
+            $today, null, null, null, $destination === 'generic' ? null : $destination, $db
+        ));
+    }
     $rooms = relatedInventoryIds($roomId);
     $ph = implode(',', array_fill(0, count($rooms), '?'));
     $events = [];

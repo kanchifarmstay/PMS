@@ -33,6 +33,128 @@ function relatedInventoryIds(string $roomId): array
     return array_keys($related);
 }
 
+function inventoryOccupancyRows(
+    string $fromDate,
+    ?string $toDate = null,
+    ?int $excludeBookingId = null,
+    ?string $excludeHoldToken = null,
+    ?string $excludeDestination = null,
+    ?PDO $db = null
+): array {
+    if (!validYmd($fromDate) || ($toDate !== null && (!validYmd($toDate) || $toDate <= $fromDate))) {
+        throw new InvalidArgumentException('Invalid occupancy range.');
+    }
+    $db ??= getDB();
+    $rows = [];
+
+    $bookingSql = "SELECT room_id, check_in, check_out, lower(source) AS origin
+        FROM bookings WHERE status='confirmed' AND check_out > ?";
+    $bookingParams = [$fromDate];
+    if ($toDate !== null) { $bookingSql .= ' AND check_in < ?'; $bookingParams[] = $toDate; }
+    if ($excludeBookingId !== null) { $bookingSql .= ' AND id != ?'; $bookingParams[] = $excludeBookingId; }
+    if ($excludeDestination !== null && $excludeDestination !== 'generic') {
+        $bookingSql .= ' AND lower(source) != ?';
+        $bookingParams[] = $excludeDestination;
+    }
+    $stmt = $db->prepare($bookingSql);
+    $stmt->execute($bookingParams);
+    $rows = array_merge($rows, $stmt->fetchAll());
+
+    $blockSql = "SELECT room_id, check_in, check_out, lower(platform) AS origin
+        FROM external_blocks WHERE check_out > ?";
+    $blockParams = [$fromDate];
+    if ($toDate !== null) { $blockSql .= ' AND check_in < ?'; $blockParams[] = $toDate; }
+    if ($excludeDestination !== null && $excludeDestination !== 'generic') {
+        $blockSql .= ' AND lower(platform) != ?';
+        $blockParams[] = $excludeDestination;
+    }
+    $stmt = $db->prepare($blockSql);
+    $stmt->execute($blockParams);
+    $rows = array_merge($rows, $stmt->fetchAll());
+
+    $holdSql = "SELECT room_id, check_in, check_out, 'hold' AS origin
+        FROM booking_holds WHERE status='pending' AND expires_at > datetime('now') AND check_out > ?";
+    $holdParams = [$fromDate];
+    if ($toDate !== null) { $holdSql .= ' AND check_in < ?'; $holdParams[] = $toDate; }
+    if ($excludeHoldToken !== null) { $holdSql .= ' AND token != ?'; $holdParams[] = $excludeHoldToken; }
+    $stmt = $db->prepare($holdSql);
+    $stmt->execute($holdParams);
+    return array_merge($rows, $stmt->fetchAll());
+}
+
+function mergeDateRanges(array $ranges): array
+{
+    if ($ranges === []) return [];
+    usort($ranges, static fn(array $a, array $b): int => [$a['check_in'], $a['check_out']] <=> [$b['check_in'], $b['check_out']]);
+    $merged = [];
+    foreach ($ranges as $range) {
+        if ($merged === [] || $range['check_in'] > $merged[array_key_last($merged)]['check_out']) {
+            $merged[] = ['check_in'=>$range['check_in'], 'check_out'=>$range['check_out']];
+            continue;
+        }
+        $last = array_key_last($merged);
+        if ($range['check_out'] > $merged[$last]['check_out']) $merged[$last]['check_out'] = $range['check_out'];
+    }
+    return $merged;
+}
+
+function groupThresholdRangesFromRows(array $rows, string $fromDate, ?string $toDate = null): array
+{
+    $occupiedByNight = [];
+    foreach ($rows as $row) {
+        $roomId = (string)($row['room_id'] ?? '');
+        if ($roomId === GROUP_INVENTORY_ID || !isset(ROOM_IDS[$roomId])) continue;
+        $start = max($fromDate, (string)$row['check_in']);
+        $end = (string)$row['check_out'];
+        if ($toDate !== null) $end = min($toDate, $end);
+        if ($end <= $start) continue;
+        for ($night = $start; $night < $end; $night = (new DateTimeImmutable($night))->modify('+1 day')->format('Y-m-d')) {
+            $occupiedByNight[$night][$roomId] = true;
+        }
+    }
+
+    $blockedNights = [];
+    foreach ($occupiedByNight as $night => $rooms) {
+        if (count($rooms) >= GROUP_BOOKING_THRESHOLD) $blockedNights[] = $night;
+    }
+    sort($blockedNights);
+    $ranges = [];
+    foreach ($blockedNights as $night) {
+        $next = (new DateTimeImmutable($night))->modify('+1 day')->format('Y-m-d');
+        $last = array_key_last($ranges);
+        if ($last !== null && $ranges[$last]['check_out'] === $night) $ranges[$last]['check_out'] = $next;
+        else $ranges[] = ['check_in'=>$night, 'check_out'=>$next];
+    }
+    return $ranges;
+}
+
+function groupBlockedRangesFromRows(array $rows, string $fromDate, ?string $toDate = null): array
+{
+    $ranges = groupThresholdRangesFromRows($rows, $fromDate, $toDate);
+    foreach ($rows as $row) {
+        if (($row['room_id'] ?? '') !== GROUP_INVENTORY_ID) continue;
+        $start = max($fromDate, (string)$row['check_in']);
+        $end = (string)$row['check_out'];
+        if ($toDate !== null) $end = min($toDate, $end);
+        if ($end > $start) $ranges[] = ['check_in'=>$start, 'check_out'=>$end];
+    }
+    return mergeDateRanges($ranges);
+}
+
+function groupBlockedRanges(
+    string $fromDate,
+    ?string $toDate = null,
+    ?int $excludeBookingId = null,
+    ?string $excludeHoldToken = null,
+    ?string $excludeDestination = null,
+    ?PDO $db = null
+): array {
+    $rows = inventoryOccupancyRows(
+        $fromDate, $toDate, $excludeBookingId, $excludeHoldToken, $excludeDestination, $db
+    );
+    return groupBlockedRangesFromRows($rows, $fromDate, $toDate);
+}
+
 function isInventoryAvailable(
     string $roomId,
     string $checkIn,
@@ -43,6 +165,9 @@ function isInventoryAvailable(
 ): bool {
     validateStay($roomId, $checkIn, $checkOut);
     $db ??= getDB();
+    if ($roomId === GROUP_INVENTORY_ID) {
+        return groupBlockedRanges($checkIn, $checkOut, $excludeBookingId, $excludeHoldToken, null, $db) === [];
+    }
     $rooms = relatedInventoryIds($roomId);
     $roomPlaceholders = implode(',', array_fill(0, count($rooms), '?'));
 
@@ -242,6 +367,7 @@ function getBlockedRangesForRoom(string $roomId, ?string $fromDate = null, ?PDO 
     $fromDate ??= date('Y-m-d');
     if (!validYmd($fromDate)) throw new InvalidArgumentException('Invalid starting date.');
     $db ??= getDB();
+    if ($roomId === GROUP_INVENTORY_ID) return groupBlockedRanges($fromDate, null, null, null, null, $db);
     $rooms = relatedInventoryIds($roomId);
     $ph = implode(',', array_fill(0, count($rooms), '?'));
     $ranges = [];
@@ -292,13 +418,40 @@ function expandCalendarEntriesToRelatedInventory(array $entries): array
     $expanded = [];
     foreach ($entries as $entry) {
         $originRoomId = (string)($entry['room_id'] ?? '');
-        foreach (relatedInventoryIds($originRoomId) as $targetRoomId) {
+        $targets = $originRoomId === GROUP_INVENTORY_ID
+            ? array_keys(ROOM_IDS)
+            : array_values(array_filter(
+                relatedInventoryIds($originRoomId),
+                static fn(string $id): bool => $id !== GROUP_INVENTORY_ID
+            ));
+        foreach ($targets as $targetRoomId) {
             $copy = $entry;
             $copy['inventory_origin_room_id'] = $originRoomId;
             $copy['room_id'] = $targetRoomId;
             $copy['room_name'] = ROOM_IDS[$targetRoomId];
             $copy['is_derived_inventory'] = $targetRoomId !== $originRoomId ? 1 : 0;
             $expanded[] = $copy;
+        }
+    }
+
+    $validEntries = array_values(array_filter($entries, static fn(array $entry): bool =>
+        validYmd((string)($entry['check_in'] ?? '')) && validYmd((string)($entry['check_out'] ?? ''))
+    ));
+    if ($validEntries !== []) {
+        $fromDate = min(array_column($validEntries, 'check_in'));
+        $toDate = max(array_column($validEntries, 'check_out'));
+        foreach (groupThresholdRangesFromRows($validEntries, $fromDate, $toDate) as $index => $range) {
+            $expanded[] = [
+                'id'=>-2_000_000 - $index,
+                'room_id'=>GROUP_INVENTORY_ID, 'room_name'=>ROOM_IDS[GROUP_INVENTORY_ID],
+                'check_in'=>$range['check_in'], 'check_out'=>$range['check_out'],
+                'guest_name'=>GROUP_BOOKING_THRESHOLD . '+ rooms occupied',
+                'guest_email'=>'', 'guest_phone'=>'', 'whatsapp_number'=>'',
+                'source'=>'blocked', 'booking_ref'=>'', 'amount'=>0.0, 'amount_paid'=>0.0,
+                'payment_method'=>'', 'payment_status'=>'unpaid', 'status'=>'confirmed',
+                'notes'=>'Group inventory threshold reached', 'is_group_threshold'=>1,
+                'is_derived_inventory'=>1, 'inventory_origin_room_id'=>'threshold',
+            ];
         }
     }
     return $expanded;

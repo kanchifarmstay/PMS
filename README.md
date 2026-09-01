@@ -48,7 +48,7 @@ maintenance files as defence in depth.
 4. Import that destination-specific URL into the corresponding OTA extranet.
 5. Run **Sync Now**, then verify a known OTA block appears on both the room and any dependent parent inventory.
 
-Whole-property inventory blocks every component. White Villa Full Floor and its two component rooms block each other. Destination feeds never send a booking or block back to the OTA it originated from, including through dependent listings; this prevents imported calendar events from circulating through the OTA and returning as false whole-property blocks.
+A confirmed whole-property booking blocks every component. Individual component inventory blocks the KanchiFarmStay group listing only when at least three distinct component rooms are occupied on the same night; one or two occupied rooms leave the group listing available. White Villa Full Floor and its two component rooms block each other. Destination feeds never send a booking or block back to the OTA it originated from, including through dependent listings; this prevents imported calendar events from circulating through the OTA and returning as false whole-property blocks.
 
 ## Scheduled sync and payments
 

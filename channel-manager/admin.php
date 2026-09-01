@@ -4337,6 +4337,22 @@ function showBookingModal(b) {
   const csrfToken = <?= json_encode(csrfToken()) ?>;
   const currentSection = <?= json_encode($section ?? 'bookings') ?>;
 
+  if (b.is_group_threshold) {
+    document.getElementById('bkMTitle').textContent = 'Group inventory unavailable';
+    document.getElementById('bkMSub').textContent = `${b.room_name} · occupancy threshold reached`;
+    document.getElementById('bkMBody').innerHTML = `
+      <div class="bk-detail-grid">
+        <div><div class="bk-lbl">From</div><div class="bk-val">${fmtDate(ci)}</div></div>
+        <div><div class="bk-lbl">Until</div><div class="bk-val">${fmtDate(co)}</div></div>
+        <div class="bk-detail-full">
+          <div class="bk-lbl">Reason</div>
+          <div class="bk-val" style="font-weight:500">At least <?= GROUP_BOOKING_THRESHOLD ?> component rooms are occupied on these dates.</div>
+        </div>
+      </div>`;
+    document.getElementById('bkDetailModal').style.display = 'flex';
+    return;
+  }
+
   window._activeBookingData = b;
 
   document.getElementById('bkMTitle').textContent = b.guest_name || 'Booking #' + b.id;

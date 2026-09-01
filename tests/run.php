@@ -284,16 +284,31 @@ test('a component booking blocks its parent but not unrelated inventory', functi
     assertTrue(isInventoryAvailable('white-villa', '2030-01-12', '2030-01-13'), 'checkout day must remain available');
 });
 
-test('an external component block blocks parent and whole-property inventory', function (): void {
+test('three external component blocks are required to block whole-property inventory', function (): void {
     resetAvailabilityData();
     $db = getDB();
-    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
-       ->execute(['white-villa-room-2', 'airbnb', 'https://example.com/feed.ics']);
-    $calendarId = (int)$db->lastInsertId();
-    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out) VALUES (?,?,?,?,?,?)")
-       ->execute([$calendarId, 'white-villa-room-2', 'airbnb', 'ext-1', '2030-02-01', '2030-02-03']);
+    foreach (['white-villa-room-2', 'wooden-villa', 'tent'] as $index => $roomId) {
+        $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+           ->execute([$roomId, 'airbnb', "https://example.com/{$roomId}.ics"]);
+        $calendarId = (int)$db->lastInsertId();
+        $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out) VALUES (?,?,?,?,?,?)")
+           ->execute([$calendarId, $roomId, 'airbnb', 'ext-' . $index, '2030-02-01', '2030-02-03']);
+        if ($index < 2) assertTrue(isInventoryAvailable('kanchi-farm-stay', '2030-02-02', '2030-02-04'));
+    }
     assertFalse(isInventoryAvailable('white-villa-full-floor', '2030-02-02', '2030-02-04'));
     assertFalse(isInventoryAvailable('kanchi-farm-stay', '2030-02-02', '2030-02-04'));
+});
+
+test('a confirmed group booking blocks every component room', function (): void {
+    resetAvailabilityData();
+    addBooking([
+        'room_id'=>'kanchi-farm-stay', 'room_name'=>ROOM_IDS['kanchi-farm-stay'],
+        'check_in'=>'2030-02-10', 'check_out'=>'2030-02-12', 'guest_name'=>'Group Guest',
+    ]);
+    foreach (array_keys(ROOM_IDS) as $roomId) {
+        if ($roomId === 'kanchi-farm-stay') continue;
+        assertFalse(isInventoryAvailable($roomId, '2030-02-10', '2030-02-12'), $roomId . ' must be blocked');
+    }
 });
 
 test('payment holds are exclusive and expired holds are ignored', function (): void {
@@ -458,12 +473,36 @@ test('parent and component bookings propagate into related iCal exports', functi
     assertSame([['2030-10-01','2030-10-03']], array_map(static fn($e)=>[$e['check_in'],$e['check_out']], $roomEvents));
 
     resetAvailabilityData();
+    foreach (['natures-nest', 'wooden-villa'] as $roomId) {
+        addBooking([
+            'room_id'=>$roomId, 'room_name'=>ROOM_IDS[$roomId],
+            'check_in'=>'2030-10-05', 'check_out'=>'2030-10-06', 'guest_name'=>'Component Guest',
+        ]);
+    }
+    assertSame([], collectAvailabilityEvents('kanchi-farm-stay', 'airbnb', '2030-01-01'));
     addBooking([
-        'room_id'=>'natures-nest', 'room_name'=>ROOM_IDS['natures-nest'],
-        'check_in'=>'2030-10-05', 'check_out'=>'2030-10-06', 'guest_name'=>'Component Guest',
+        'room_id'=>'tent', 'room_name'=>ROOM_IDS['tent'],
+        'check_in'=>'2030-10-05', 'check_out'=>'2030-10-06', 'guest_name'=>'Third Component Guest',
     ]);
     $groupEvents = collectAvailabilityEvents('kanchi-farm-stay', 'airbnb', '2030-01-01');
     assertSame([['2030-10-05','2030-10-06']], array_map(static fn($e)=>[$e['check_in'],$e['check_out']], $groupEvents));
+});
+
+test('calendar expansion shows group inventory only at the three-room threshold', function (): void {
+    $entries = [];
+    foreach (['wooden-villa', 'natures-nest', 'tent'] as $index => $roomId) {
+        $entries[] = [
+            'id'=>$index + 1, 'room_id'=>$roomId, 'room_name'=>ROOM_IDS[$roomId],
+            'check_in'=>'2030-10-20', 'check_out'=>'2030-10-22', 'guest_name'=>'Guest',
+            'source'=>'direct', 'status'=>'confirmed',
+        ];
+    }
+    $twoRooms = expandCalendarEntriesToRelatedInventory(array_slice($entries, 0, 2));
+    assertFalse(in_array('kanchi-farm-stay', array_column($twoRooms, 'room_id'), true));
+    $threeRooms = expandCalendarEntriesToRelatedInventory($entries);
+    $groupRows = array_values(array_filter($threeRooms, static fn(array $entry): bool => $entry['room_id'] === 'kanchi-farm-stay'));
+    assertSame(1, count($groupRows));
+    assertSame(1, $groupRows[0]['is_group_threshold']);
 });
 
 test('same-platform blocks are not exported back through related listings', function (): void {
@@ -567,7 +606,7 @@ test('external blocks are normalized for privacy-safe operational calendar views
     assertFalse(str_contains(json_encode($entries), 'private-provider-uid'));
     $expanded = expandCalendarEntriesToRelatedInventory($entries);
     assertSame(
-        ['kanchi-farm-stay', 'wooden-villa'],
+        ['wooden-villa'],
         array_column($expanded, 'room_id')
     );
 });
