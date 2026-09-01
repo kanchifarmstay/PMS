@@ -713,4 +713,94 @@ test('public and admin service workers isolate their caches', function (): void 
     assertNotContains("'/channel-manager/admin.php'", $admin);
 });
 
+test('booking edit allows date modification when inventory is available and validates conflicts', function (): void {
+    resetAvailabilityData();
+    $bookingId = createConfirmedBooking([
+        'room_id'     => 'wooden-villa',
+        'check_in'    => '2030-05-10',
+        'check_out'   => '2030-05-12',
+        'guest_name'  => 'Original Guest',
+        'amount'      => 7000,
+        'amount_paid' => 3500,
+        'source'      => 'direct',
+    ]);
+    assertTrue($bookingId > 0);
+
+    // Create another booking nearby to test conflicts
+    $otherBookingId = createConfirmedBooking([
+        'room_id'     => 'wooden-villa',
+        'check_in'    => '2030-05-15',
+        'check_out'   => '2030-05-18',
+        'guest_name'  => 'Neighbor Guest',
+        'amount'      => 10500,
+        'source'      => 'direct',
+    ]);
+    assertTrue($otherBookingId > 0);
+
+    // Attempting to move booking 1 into conflicting dates (2030-05-14 to 2030-05-16) must fail
+    $conflictThrown = false;
+    try {
+        updateConfirmedBooking($bookingId, [
+            'room_id'   => 'wooden-villa',
+            'check_in'  => '2030-05-14',
+            'check_out' => '2030-05-16',
+        ]);
+    } catch (DomainException $e) {
+        $conflictThrown = true;
+    }
+    assertTrue($conflictThrown, 'Conflicting booking dates must throw a DomainException');
+
+    // Successfully edit dates, guest details, room, and payment when dates are available
+    updateConfirmedBooking($bookingId, [
+        'room_id'        => 'wooden-villa',
+        'check_in'       => '2030-05-08',
+        'check_out'      => '2030-05-11',
+        'guest_name'     => 'Updated Guest Name',
+        'guest_phone'    => '9876543210',
+        'amount'         => 10500,
+        'amount_paid'    => 10500,
+        'payment_method' => 'upi',
+        'payment_status' => 'paid',
+        'status'         => 'confirmed',
+        'notes'          => 'Requested extra pillows',
+    ]);
+
+    $updated = getBookingById($bookingId);
+    assertSame('2030-05-08', $updated['check_in']);
+    assertSame('2030-05-11', $updated['check_out']);
+    assertSame('Updated Guest Name', $updated['guest_name']);
+    assertSame('9876543210', $updated['guest_phone']);
+    assertSame(10500.0, (float)$updated['amount']);
+    assertSame(10500.0, (float)$updated['amount_paid']);
+    assertSame('upi', $updated['payment_method']);
+    assertSame('paid', $updated['payment_status']);
+    assertSame('Requested extra pillows', $updated['notes']);
+});
+
+test('booking deletion permanently removes record and frees up calendar inventory', function (): void {
+    resetAvailabilityData();
+    $bookingId = createConfirmedBooking([
+        'room_id'    => 'tent',
+        'check_in'   => '2030-06-01',
+        'check_out'  => '2030-06-03',
+        'guest_name' => 'Dummy Test Booking',
+        'amount'     => 1000,
+        'source'     => 'manual',
+    ]);
+    assertTrue($bookingId > 0);
+
+    // Verify inventory is blocked
+    assertFalse(isInventoryAvailable('tent', '2030-06-01', '2030-06-03'));
+
+    // Delete booking
+    deleteBooking($bookingId);
+
+    // Verify record is gone from DB
+    $deleted = getBookingById($bookingId);
+    assertTrue($deleted === null, 'Booking must be deleted from DB');
+
+    // Verify inventory is immediately free again
+    assertTrue(isInventoryAvailable('tent', '2030-06-01', '2030-06-03'));
+});
+
 runTests();

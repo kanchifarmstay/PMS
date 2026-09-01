@@ -143,6 +143,53 @@ function createConfirmedBooking(array $data): int
     }
 }
 
+function updateConfirmedBooking(int $id, array $data): void
+{
+    $existing = getBookingById($id);
+    if (!$existing) throw new InvalidArgumentException('Booking not found.');
+
+    $roomId = trim((string)($data['room_id'] ?? $existing['room_id']));
+    $checkIn = trim((string)($data['check_in'] ?? $existing['check_in']));
+    $checkOut = trim((string)($data['check_out'] ?? $existing['check_out']));
+    $status = trim((string)($data['status'] ?? $existing['status']));
+    if (!in_array($status, ['confirmed', 'cancelled'], true)) {
+        throw new InvalidArgumentException('Invalid booking status.');
+    }
+    validateStay($roomId, $checkIn, $checkOut, true);
+
+    $db = getDB();
+    $db->exec('BEGIN IMMEDIATE');
+    try {
+        cleanupExpiredHolds($db);
+        if ($status === 'confirmed' && !isInventoryAvailable($roomId, $checkIn, $checkOut, $id, null, $db)) {
+            throw new DomainException('Those dates conflict with another booking, OTA block, or payment hold.');
+        }
+        $data['room_id'] = $roomId;
+        $data['room_name'] = ROOM_IDS[$roomId] ?? $roomId;
+        $data['check_in'] = $checkIn;
+        $data['check_out'] = $checkOut;
+        $data['status'] = $status;
+        $data['guest_name'] = trim((string)($data['guest_name'] ?? $existing['guest_name']));
+        if ($data['guest_name'] === '') $data['guest_name'] = 'Guest';
+        $data['guest_email'] = trim((string)($data['guest_email'] ?? $existing['guest_email']));
+        $data['guest_phone'] = trim((string)($data['guest_phone'] ?? $existing['guest_phone']));
+        $data['whatsapp_number'] = trim((string)($data['whatsapp_number'] ?? $existing['whatsapp_number']));
+        $data['source'] = trim((string)($data['source'] ?? $existing['source']));
+        $data['booking_ref'] = trim((string)($data['booking_ref'] ?? $existing['booking_ref']));
+        $data['amount'] = max(0.0, (float)($data['amount'] ?? $existing['amount']));
+        $data['amount_paid'] = max(0.0, (float)($data['amount_paid'] ?? $existing['amount_paid']));
+        $data['payment_method'] = trim((string)($data['payment_method'] ?? $existing['payment_method']));
+        $data['payment_status'] = trim((string)($data['payment_status'] ?? $existing['payment_status']));
+        $data['notes'] = trim((string)($data['notes'] ?? $existing['notes']));
+
+        updateBooking($id, $data);
+        $db->exec('COMMIT');
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) $db->exec('ROLLBACK');
+        throw $e;
+    }
+}
+
 function roomPricing(string $roomId, ?PDO $db = null): array
 {
     if (!isset(ROOM_PRICING[$roomId])) throw new InvalidArgumentException('Unknown room.');

@@ -122,13 +122,71 @@ if (!empty($_SESSION['admin_logged_in'])) {
         } catch (Throwable $e) {
             header('Location: admin.php?section=calendar&view=month&flash=' . urlencode($e->getMessage())); exit;
         }
-        header('Location: admin.php?section=calendar&view=month&flash=Date+blocked+across+all+channels'); exit;
+    if ($act === 'edit_booking') {
+        $id = (int)($_POST['id'] ?? 0);
+        $returnSec = trim((string)($_POST['return_section'] ?? 'bookings'));
+        if (!in_array($returnSec, ['bookings', 'calendar', 'overview', 'day', 'week', 'month', 'blocked'], true)) {
+            $returnSec = 'bookings';
+        }
+        if (!$id) {
+            header('Location: admin.php?section=' . $returnSec . '&flash=' . urlencode('Invalid booking ID.'));
+            exit;
+        }
+        $rid = trim((string)($_POST['room_id'] ?? ''));
+        $total = max(0.0, (float)($_POST['amount'] ?? 0));
+        $paid = max(0.0, (float)($_POST['amount_paid'] ?? 0));
+        $pmeth = trim((string)($_POST['payment_method'] ?? 'cash'));
+        $pstatus = $paid >= $total && $total > 0 ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
+        $status = trim((string)($_POST['status'] ?? 'confirmed'));
+        $data = [
+            'room_id'         => $rid,
+            'room_name'       => ROOM_IDS[$rid] ?? $rid,
+            'check_in'        => trim((string)($_POST['check_in'] ?? '')),
+            'check_out'       => trim((string)($_POST['check_out'] ?? '')),
+            'guest_name'      => trim((string)($_POST['guest_name'] ?? 'Guest')),
+            'guest_email'     => trim((string)($_POST['guest_email'] ?? '')),
+            'guest_phone'     => trim((string)($_POST['guest_phone'] ?? '')),
+            'whatsapp_number' => trim((string)($_POST['whatsapp_number'] ?? $_POST['guest_phone'] ?? '')),
+            'source'          => trim((string)($_POST['source'] ?? 'direct')),
+            'booking_ref'     => trim((string)($_POST['booking_ref'] ?? '')),
+            'amount'          => $total,
+            'amount_paid'     => $paid,
+            'payment_method'  => $pmeth,
+            'payment_status'  => $pstatus,
+            'status'          => $status,
+            'notes'           => trim((string)($_POST['notes'] ?? '')),
+        ];
+        try {
+            updateConfirmedBooking($id, $data);
+        } catch (Throwable $e) {
+            header('Location: admin.php?section=' . $returnSec . '&flash=' . urlencode($e->getMessage()));
+            exit;
+        }
+        header('Location: admin.php?section=' . $returnSec . '&flash=Booking+updated+successfully');
+        exit;
     }
 
-    if ($act === 'delete_booking')  { deleteBooking((int)$_POST['id']);  header('Location: admin.php?section=bookings&flash=Deleted');   exit; }
-    if ($act === 'cancel_booking')  { cancelBooking((int)$_POST['id']);  header('Location: admin.php?section=bookings&flash=Cancelled'); exit; }
+    if ($act === 'delete_booking') {
+        $id = (int)($_POST['id'] ?? 0);
+        $returnSec = trim((string)($_POST['return_section'] ?? 'bookings'));
+        if (!in_array($returnSec, ['bookings', 'calendar', 'overview', 'day', 'week', 'month', 'blocked'], true)) {
+            $returnSec = 'bookings';
+        }
+        if ($id > 0) deleteBooking($id);
+        header('Location: admin.php?section=' . $returnSec . '&flash=Booking+deleted');
+        exit;
+    }
 
-    if ($act === 'add_calendar') {
+    if ($act === 'cancel_booking') {
+        $id = (int)($_POST['id'] ?? 0);
+        $returnSec = trim((string)($_POST['return_section'] ?? 'bookings'));
+        if (!in_array($returnSec, ['bookings', 'calendar', 'overview', 'day', 'week', 'month', 'blocked'], true)) {
+            $returnSec = 'bookings';
+        }
+        if ($id > 0) cancelBooking($id);
+        header('Location: admin.php?section=' . $returnSec . '&flash=Booking+cancelled');
+        exit;
+    }
         $roomId = trim((string)($_POST['room_id'] ?? ''));
         $platform = strtolower(trim((string)($_POST['platform'] ?? '')));
         $url = trim((string)($_POST['ical_url'] ?? ''));
@@ -1514,20 +1572,6 @@ $totalOccupied = count($propStatus) - $totalFree;
   </div>
 </div>
 
-<!-- Booking Detail Modal -->
-<div id="bkDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
-  <div style="background:#fff;border-radius:12px;width:min(520px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid #eef2ee;position:sticky;top:0;background:#fff;z-index:1">
-      <div>
-        <div id="bkMTitle" style="font-weight:700;font-size:1rem"></div>
-        <div id="bkMSub" style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem"></div>
-      </div>
-      <button onclick="document.getElementById('bkDetailModal').style.display='none'" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#999;line-height:1">✕</button>
-    </div>
-    <div id="bkMBody" style="padding:1.25rem"></div>
-  </div>
-</div>
-
 <!-- ══════════════════════════════════════════════
      UNIFIED CALENDAR (Day / Week / Month / Year)
 ════════════════════════════════════════════════ -->
@@ -1659,8 +1703,28 @@ $totalOccupied = count($propStatus) - $totalFree;
   <div class="day-section-hd">↘ Check-ins (<?= count($dayCheckins) ?>)</div>
   <?php if (empty($dayCheckins)): ?>
     <div class="day-empty">No check-ins on this date.</div>
-  <?php else: foreach ($dayCheckins as $b): ?>
-  <div class="guest-card checkin-card">
+  <?php else: foreach ($dayCheckins as $b):
+    $bJson = htmlspecialchars(json_encode([
+      'id'              => $b['id'],
+      'room_id'         => $b['room_id'],
+      'room_name'       => $b['room_name'],
+      'check_in'        => $b['check_in'],
+      'check_out'       => $b['check_out'],
+      'guest_name'      => $b['guest_name'],
+      'guest_phone'     => $b['guest_phone']     ?? '',
+      'whatsapp_number' => $b['whatsapp_number'] ?? '',
+      'guest_email'     => $b['guest_email']     ?? '',
+      'source'          => $b['source'],
+      'booking_ref'     => $b['booking_ref']     ?? '',
+      'amount'          => (float)($b['amount']      ?? 0),
+      'amount_paid'     => (float)($b['amount_paid'] ?? 0),
+      'payment_method'  => $b['payment_method']  ?? 'cash',
+      'payment_status'  => $b['payment_status']  ?? 'unpaid',
+      'status'          => $b['status'],
+      'notes'           => $b['notes']           ?? '',
+    ]), ENT_QUOTES);
+  ?>
+  <div class="guest-card checkin-card" onclick="showBookingModal(<?= $bJson ?>)" style="cursor:pointer" title="Click to view / edit / delete">
     <div class="gc-icon">↘</div>
     <div class="gc-body">
       <div class="gc-name"><?= htmlspecialchars($b['guest_name']) ?></div>
@@ -1686,8 +1750,28 @@ $totalOccupied = count($propStatus) - $totalFree;
   <div class="day-section-hd">• In-Stay (<?= count($dayStays) ?>)</div>
   <?php if (empty($dayStays)): ?>
     <div class="day-empty">No guests currently mid-stay on this date.</div>
-  <?php else: foreach ($dayStays as $b): ?>
-  <div class="guest-card stay-card">
+  <?php else: foreach ($dayStays as $b):
+    $bJson = htmlspecialchars(json_encode([
+      'id'              => $b['id'],
+      'room_id'         => $b['room_id'],
+      'room_name'       => $b['room_name'],
+      'check_in'        => $b['check_in'],
+      'check_out'       => $b['check_out'],
+      'guest_name'      => $b['guest_name'],
+      'guest_phone'     => $b['guest_phone']     ?? '',
+      'whatsapp_number' => $b['whatsapp_number'] ?? '',
+      'guest_email'     => $b['guest_email']     ?? '',
+      'source'          => $b['source'],
+      'booking_ref'     => $b['booking_ref']     ?? '',
+      'amount'          => (float)($b['amount']      ?? 0),
+      'amount_paid'     => (float)($b['amount_paid'] ?? 0),
+      'payment_method'  => $b['payment_method']  ?? 'cash',
+      'payment_status'  => $b['payment_status']  ?? 'unpaid',
+      'status'          => $b['status'],
+      'notes'           => $b['notes']           ?? '',
+    ]), ENT_QUOTES);
+  ?>
+  <div class="guest-card stay-card" onclick="showBookingModal(<?= $bJson ?>)" style="cursor:pointer" title="Click to view / edit / delete">
     <div class="gc-icon">🛏</div>
     <div class="gc-body">
       <div class="gc-name"><?= htmlspecialchars($b['guest_name']) ?></div>
@@ -1716,8 +1800,28 @@ $totalOccupied = count($propStatus) - $totalFree;
   <div class="day-section-hd">↗ Check-outs (<?= count($dayCheckouts) ?>)</div>
   <?php if (empty($dayCheckouts)): ?>
     <div class="day-empty">No check-outs on this date.</div>
-  <?php else: foreach ($dayCheckouts as $b): ?>
-  <div class="guest-card checkout-card">
+  <?php else: foreach ($dayCheckouts as $b):
+    $bJson = htmlspecialchars(json_encode([
+      'id'              => $b['id'],
+      'room_id'         => $b['room_id'],
+      'room_name'       => $b['room_name'],
+      'check_in'        => $b['check_in'],
+      'check_out'       => $b['check_out'],
+      'guest_name'      => $b['guest_name'],
+      'guest_phone'     => $b['guest_phone']     ?? '',
+      'whatsapp_number' => $b['whatsapp_number'] ?? '',
+      'guest_email'     => $b['guest_email']     ?? '',
+      'source'          => $b['source'],
+      'booking_ref'     => $b['booking_ref']     ?? '',
+      'amount'          => (float)($b['amount']      ?? 0),
+      'amount_paid'     => (float)($b['amount_paid'] ?? 0),
+      'payment_method'  => $b['payment_method']  ?? 'cash',
+      'payment_status'  => $b['payment_status']  ?? 'unpaid',
+      'status'          => $b['status'],
+      'notes'           => $b['notes']           ?? '',
+    ]), ENT_QUOTES);
+  ?>
+  <div class="guest-card checkout-card" onclick="showBookingModal(<?= $bJson ?>)" style="cursor:pointer" title="Click to view / edit / delete">
     <div class="gc-icon">↗</div>
     <div class="gc-body">
       <div class="gc-name"><?= htmlspecialchars($b['guest_name']) ?></div>
@@ -2034,8 +2138,27 @@ $totalOccupied = count($propStatus) - $totalFree;
             $col = sourceColor($src);
             $srcAbbr = strtoupper(substr($src,0,3));
             $cls2 = $isPast ? 'gantt-day-past booked-past' : '';
+            $bJson = htmlspecialchars(json_encode([
+              'id'              => $booking['id'],
+              'room_id'         => $booking['room_id'],
+              'room_name'       => $booking['room_name'],
+              'check_in'        => $booking['check_in'],
+              'check_out'       => $booking['check_out'],
+              'guest_name'      => $booking['guest_name'],
+              'guest_phone'     => $booking['guest_phone']     ?? '',
+              'whatsapp_number' => $booking['whatsapp_number'] ?? '',
+              'guest_email'     => $booking['guest_email']     ?? '',
+              'source'          => $booking['source'],
+              'booking_ref'     => $booking['booking_ref']     ?? '',
+              'amount'          => (float)($booking['amount']      ?? 0),
+              'amount_paid'     => (float)($booking['amount_paid'] ?? 0),
+              'payment_method'  => $booking['payment_method']  ?? 'cash',
+              'payment_status'  => $booking['payment_status']  ?? 'unpaid',
+              'status'          => $booking['status'],
+              'notes'           => $booking['notes']           ?? '',
+            ]), ENT_QUOTES);
         ?>
-          <td class="gantt-booking <?= $cls2 ?>" style="<?= $isPast?'opacity:.45':'' ?>" title="<?= htmlspecialchars($booking['guest_name']) ?> | <?= sourceName($src) ?> | <?= $booking['check_in'] ?>→<?= $booking['check_out'] ?>">
+          <td class="gantt-booking <?= $cls2 ?>" onclick="showBookingModal(<?= $bJson ?>)" style="cursor:pointer;<?= $isPast?'opacity:.45':'' ?>" title="<?= htmlspecialchars($booking['guest_name']) ?> | <?= sourceName($src) ?> | <?= $booking['check_in'] ?>→<?= $booking['check_out'] ?> (Click to view/edit)">
             <div class="gantt-bk-inner" style="background:<?= $col ?>">
               <span class="bk-guest"><?= htmlspecialchars(substr($booking['guest_name'],0,10)) ?></span>
               <span class="bk-src"><?= $srcAbbr ?></span>
@@ -2944,6 +3067,25 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
           $pstatus  = $bBalance <= 0 && $bTotal > 0 ? 'paid' : ($bPaid > 0 ? 'partial' : 'unpaid');
           $pdfUrl   = 'booking-pdf.php?id=' . $b['id'];
           $waNum    = $b['whatsapp_number'] ?: $b['guest_phone'];
+          $bJson    = htmlspecialchars(json_encode([
+              'id'              => $b['id'],
+              'room_id'         => $b['room_id'],
+              'room_name'       => $b['room_name'],
+              'check_in'        => $b['check_in'],
+              'check_out'       => $b['check_out'],
+              'guest_name'      => $b['guest_name'],
+              'guest_phone'     => $b['guest_phone']     ?? '',
+              'whatsapp_number' => $b['whatsapp_number'] ?? '',
+              'guest_email'     => $b['guest_email']     ?? '',
+              'source'          => $b['source'],
+              'booking_ref'     => $b['booking_ref']     ?? '',
+              'amount'          => $bTotal,
+              'amount_paid'     => $bPaid,
+              'payment_method'  => $b['payment_method']  ?? 'cash',
+              'payment_status'  => $b['payment_status']  ?? $pstatus,
+              'status'          => $b['status'],
+              'notes'           => $b['notes']           ?? '',
+          ]), ENT_QUOTES);
         ?>
         <tr data-room="<?= htmlspecialchars($b['room_name']) ?>" data-source="<?= htmlspecialchars($b['source']) ?>" data-status="<?= $b['status'] ?>" data-search="<?= htmlspecialchars(strtolower($b['guest_name'].' '.$b['room_name'].' '.($b['booking_ref']??''))) ?>">
           <td class="muted"><?= $b['id'] ?></td>
@@ -2952,7 +3094,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
           <td><?= $b['check_out'] ?></td>
           <td><?= nights($b['check_in'],$b['check_out']) ?></td>
           <td>
-            <div style="font-weight:600"><?= htmlspecialchars($b['guest_name']) ?></div>
+            <div style="font-weight:600;cursor:pointer;color:var(--primary-dark)" onclick="showBookingModal(<?= $bJson ?>)" title="View booking details"><?= htmlspecialchars($b['guest_name']) ?></div>
             <?php if ($b['guest_phone']): ?><div class="muted" style="font-size:.76rem"><?= htmlspecialchars($b['guest_phone']) ?></div><?php endif; ?>
             <?php if ($b['guest_email']): ?><div class="muted" style="font-size:.73rem"><?= htmlspecialchars($b['guest_email']) ?></div><?php endif; ?>
           </td>
@@ -2971,21 +3113,24 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
           </td>
           <td><span class="status-<?= $b['status'] ?>"><?= ucfirst($b['status']) ?></span></td>
           <td style="white-space:nowrap">
-            <a href="<?= $pdfUrl ?>" target="_blank" class="pdf-link" title="View / Download PDF">📄 PDF</a>
-            <?php if ($waNum): ?><a href="https://wa.me/<?= preg_replace('/\D/','',$waNum) ?>" target="_blank" class="wa-link" title="Open WhatsApp chat">💬</a><?php endif; ?>
+            <button type="button" class="btn btn-sm btn-primary" onclick="openEditBookingModal(<?= $bJson ?>)" title="Edit Booking / Change Dates">✏️ Edit</button>
+            <a href="<?= $pdfUrl ?>" target="_blank" class="btn btn-sm btn-grey" title="View / Download PDF">📄 PDF</a>
+            <?php if ($waNum): ?><a href="https://wa.me/<?= preg_replace('/\D/','',$waNum) ?>" target="_blank" class="btn btn-sm btn-grey" title="Open WhatsApp chat">💬</a><?php endif; ?>
             <?php if ($b['status']==='confirmed'): ?>
-            <form method="POST" style="display:inline" onsubmit="return confirm('Cancel this booking?')">
-    <?= csrfField() ?>
+            <form method="POST" style="display:inline" onsubmit="return confirm('Cancel booking #<?= $b['id'] ?> (<?= htmlspecialchars(addslashes($b['guest_name'])) ?>)?')">
+              <?= csrfField() ?>
               <input type="hidden" name="action" value="cancel_booking">
               <input type="hidden" name="id" value="<?= $b['id'] ?>">
-              <button type="submit" class="btn btn-warn btn-sm">Cancel</button>
+              <input type="hidden" name="return_section" value="bookings">
+              <button type="submit" class="btn btn-warn btn-sm" title="Cancel Booking">Cancel</button>
             </form>
             <?php endif; ?>
-            <form method="POST" style="display:inline" onsubmit="return confirm('Delete permanently?')">
-    <?= csrfField() ?>
+            <form method="POST" style="display:inline" onsubmit="return confirm('Delete booking #<?= $b['id'] ?> (<?= htmlspecialchars(addslashes($b['guest_name'])) ?>) permanently?')">
+              <?= csrfField() ?>
               <input type="hidden" name="action" value="delete_booking">
               <input type="hidden" name="id" value="<?= $b['id'] ?>">
-              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+              <input type="hidden" name="return_section" value="bookings">
+              <button type="submit" class="btn btn-danger btn-sm" title="Delete Booking Permanently">🗑️ Delete</button>
             </form>
           </td>
         </tr>
@@ -4186,6 +4331,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Booking detail modal ─────────────────────────────────────
 function showBookingModal(b) {
+  if (!b) return;
   const fmt = n => n > 0 ? '₹' + Number(n).toLocaleString('en-IN') : '—';
   const balance = Math.max(0, (b.amount||0) - (b.amount_paid||0));
   const payStatus = balance <= 0 && b.amount > 0
@@ -4203,11 +4349,15 @@ function showBookingModal(b) {
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const fmtDate = d => days[d.getUTCDay()] + ', ' + d.getUTCDate() + ' ' + months[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+  const csrfToken = <?= json_encode(csrfToken()) ?>;
+  const currentSection = <?= json_encode($section ?? 'bookings') ?>;
 
-  document.getElementById('bkMTitle').textContent = b.guest_name;
+  window._activeBookingData = b;
+
+  document.getElementById('bkMTitle').textContent = b.guest_name || 'Booking #' + b.id;
   document.getElementById('bkMSub').innerHTML =
     '<span style="background:' + srcColor + ';color:#fff;padding:.15rem .45rem;border-radius:4px;font-size:.72rem;font-weight:700">' + srcName + '</span>' +
-    '&nbsp; ' + b.room_name;
+    '&nbsp; ' + (b.room_name || '') + ' &nbsp;<span style="color:var(--text-muted)">#' + b.id + '</span>';
 
   document.getElementById('bkMBody').innerHTML = `
     <div class="bk-detail-grid">
@@ -4225,7 +4375,7 @@ function showBookingModal(b) {
       </div>
       <div>
         <div class="bk-lbl">Status</div>
-        <div class="bk-val">${b.status.charAt(0).toUpperCase()+b.status.slice(1)}</div>
+        <div class="bk-val"><span class="status-${b.status}">${b.status.charAt(0).toUpperCase()+b.status.slice(1)}</span></div>
       </div>
       ${b.guest_phone ? `<div><div class="bk-lbl">Phone</div><div class="bk-val"><a href="tel:${b.guest_phone}" style="color:var(--primary)">${b.guest_phone}</a></div></div>` : ''}
       ${b.guest_email ? `<div><div class="bk-lbl">Email</div><div class="bk-val"><a href="mailto:${b.guest_email}" style="color:var(--primary)">${b.guest_email}</a></div></div>` : ''}
@@ -4244,13 +4394,88 @@ function showBookingModal(b) {
       ${b.booking_ref ? `<div class="bk-detail-full"><div class="bk-lbl">Booking Reference</div><div class="bk-val">${b.booking_ref}</div></div>` : ''}
       ${b.notes ? `<div class="bk-detail-full"><div class="bk-lbl">Notes</div><div class="bk-val" style="font-weight:400;white-space:pre-wrap">${b.notes}</div></div>` : ''}
     </div>
-    <div style="display:flex;gap:.6rem;margin-top:1.25rem;flex-wrap:wrap">
-      ${b.guest_phone ? `<a href="https://wa.me/${b.guest_phone.replace(/\D/g,'')}" target="_blank" class="btn btn-grey btn-sm">💬 WhatsApp</a>` : ''}
-      <a href="booking-pdf.php?id=${b.id}" target="_blank" class="btn btn-grey btn-sm">📄 PDF Receipt</a>
-      <a href="admin.php?section=bookings" class="btn btn-grey btn-sm">✏️ Edit Booking</a>
+    <div style="display:flex;gap:.6rem;margin-top:1.25rem;flex-wrap:wrap;align-items:center;justify-content:space-between;border-top:1px solid #eef2ee;padding-top:1rem">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button type="button" class="btn btn-primary btn-sm" onclick="openEditBookingModal(window._activeBookingData)">✏️ Edit Booking &amp; Dates</button>
+        ${b.guest_phone ? `<a href="https://wa.me/${b.guest_phone.replace(/\D/g,'')}" target="_blank" class="btn btn-grey btn-sm">💬 WhatsApp</a>` : ''}
+        <a href="booking-pdf.php?id=${b.id}" target="_blank" class="btn btn-grey btn-sm">📄 PDF Receipt</a>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        ${b.status === 'confirmed' ? `
+        <form method="POST" action="admin.php?section=${currentSection}" style="display:inline" onsubmit="return confirm('Cancel booking #${b.id}?')">
+          <input type="hidden" name="csrf_token" value="${csrfToken}">
+          <input type="hidden" name="action" value="cancel_booking">
+          <input type="hidden" name="id" value="${b.id}">
+          <input type="hidden" name="return_section" value="${currentSection}">
+          <button type="submit" class="btn btn-warn btn-sm">❌ Cancel</button>
+        </form>` : ''}
+        <form method="POST" action="admin.php?section=${currentSection}" style="display:inline" onsubmit="return confirm('Delete booking #${b.id} (${b.guest_name ? b.guest_name.replace(/'/g, \"\\\\'\") : ''}) permanently?')">
+          <input type="hidden" name="csrf_token" value="${csrfToken}">
+          <input type="hidden" name="action" value="delete_booking">
+          <input type="hidden" name="id" value="${b.id}">
+          <input type="hidden" name="return_section" value="${currentSection}">
+          <button type="submit" class="btn btn-danger btn-sm">🗑️ Delete</button>
+        </form>
+      </div>
     </div>`;
 
-  document.getElementById('bkDetailModal').style.display = 'flex';
+  const detailModal = document.getElementById('bkDetailModal');
+  if (detailModal) detailModal.style.display = 'flex';
+}
+
+function openEditBookingModal(b) {
+  if (!b) return;
+  document.getElementById('editBkId').value = b.id || '';
+  document.getElementById('editModalTitle').textContent = '✏️ Edit Booking #' + (b.id || '');
+  if (document.getElementById('editBkRoom')) document.getElementById('editBkRoom').value = b.room_id || '';
+  if (document.getElementById('editBkCheckIn')) document.getElementById('editBkCheckIn').value = b.check_in || '';
+  if (document.getElementById('editBkCheckOut')) document.getElementById('editBkCheckOut').value = b.check_out || '';
+  if (document.getElementById('editBkStatus')) document.getElementById('editBkStatus').value = b.status || 'confirmed';
+  if (document.getElementById('editBkSource')) document.getElementById('editBkSource').value = b.source || 'direct';
+  if (document.getElementById('editBkGuestName')) document.getElementById('editBkGuestName').value = b.guest_name || '';
+  if (document.getElementById('editBkPhone')) document.getElementById('editBkPhone').value = b.guest_phone || '';
+  if (document.getElementById('editBkWa')) document.getElementById('editBkWa').value = b.whatsapp_number || b.guest_phone || '';
+  if (document.getElementById('editBkEmail')) document.getElementById('editBkEmail').value = b.guest_email || '';
+  if (document.getElementById('editBkRef')) document.getElementById('editBkRef').value = b.booking_ref || '';
+  if (document.getElementById('editBkAmount')) document.getElementById('editBkAmount').value = b.amount !== undefined ? b.amount : 0;
+  if (document.getElementById('editBkPaid')) document.getElementById('editBkPaid').value = b.amount_paid !== undefined ? b.amount_paid : 0;
+  if (document.getElementById('editBkPayMethod')) document.getElementById('editBkPayMethod').value = b.payment_method || 'cash';
+  if (document.getElementById('editBkNotes')) document.getElementById('editBkNotes').value = b.notes || '';
+
+  calcEditNights();
+  updateEditBalance();
+
+  const detailModal = document.getElementById('bkDetailModal');
+  if (detailModal) detailModal.style.display = 'none';
+
+  const editModal = document.getElementById('editBookingModal');
+  if (editModal) editModal.style.display = 'flex';
+}
+
+function closeEditBookingModal() {
+  const editModal = document.getElementById('editBookingModal');
+  if (editModal) editModal.style.display = 'none';
+}
+
+function calcEditNights() {
+  const ci = document.getElementById('editBkCheckIn')?.value;
+  const co = document.getElementById('editBkCheckOut')?.value;
+  const el = document.getElementById('editNightsDisplay');
+  if (!ci || !co || !el) return;
+  const diff = Math.round((new Date(co) - new Date(ci)) / 86400000);
+  if (diff > 0) { el.textContent = '(' + diff + ' night' + (diff !== 1 ? 's' : '') + ')'; }
+  else { el.textContent = ''; }
+}
+
+function updateEditBalance() {
+  const total = parseFloat(document.getElementById('editBkAmount')?.value) || 0;
+  const paid  = parseFloat(document.getElementById('editBkPaid')?.value)   || 0;
+  const bal   = Math.max(0, total - paid);
+  const el    = document.getElementById('editBkBalance');
+  if (el) {
+    el.value = bal > 0 ? '₹' + bal.toLocaleString('en-IN') + ' due' : (total > 0 ? '✓ Fully Paid' : '—');
+    el.style.color = bal > 0 ? 'var(--warn)' : (total > 0 ? '#16a34a' : 'var(--text-muted)');
+  }
 }
 
 // ── Navigation ──────────────────────────────────────────────
@@ -4535,6 +4760,138 @@ if ('serviceWorker' in navigator) {
 </script>
 
 <?php if (!empty($_SESSION['admin_logged_in'])): ?>
+<!-- Booking Detail Modal -->
+<div id="bkDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:#fff;border-radius:12px;width:min(540px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid #eef2ee;position:sticky;top:0;background:#fff;z-index:1">
+      <div>
+        <div id="bkMTitle" style="font-weight:700;font-size:1rem"></div>
+        <div id="bkMSub" style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem"></div>
+      </div>
+      <button type="button" onclick="document.getElementById('bkDetailModal').style.display='none'" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#999;line-height:1">✕</button>
+    </div>
+    <div id="bkMBody" style="padding:1.25rem"></div>
+  </div>
+</div>
+
+<!-- Edit Booking Modal -->
+<div id="editBookingModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9001;align-items:center;justify-content:center" onclick="if(event.target===this)closeEditBookingModal()">
+  <div style="background:#fff;border-radius:12px;width:min(640px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:1">
+      <div>
+        <div style="font-weight:700;font-size:1.05rem" id="editModalTitle">✏️ Edit Booking</div>
+        <div style="font-size:.78rem;color:var(--text-muted);margin-top:.1rem">Change dates, room, guest info, payment, or status</div>
+      </div>
+      <button type="button" onclick="closeEditBookingModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#999;line-height:1">✕</button>
+    </div>
+    <form method="POST" action="admin.php?section=<?= htmlspecialchars($section ?? 'bookings') ?>" style="padding:1.25rem">
+      <?= csrfField() ?>
+      <input type="hidden" name="action" value="edit_booking">
+      <input type="hidden" name="id" id="editBkId" value="">
+      <input type="hidden" name="return_section" value="<?= htmlspecialchars($section ?? 'bookings') ?>">
+
+      <div style="font-size:.8rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.5rem">Stay Details</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem;margin-bottom:1rem">
+        <div class="fld">
+          <label>Property</label>
+          <select name="room_id" id="editBkRoom" required>
+            <?php foreach ($rooms as $rid => $rname): ?>
+            <option value="<?= htmlspecialchars($rid) ?>"><?= htmlspecialchars($rname) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Check-in Date</label>
+          <input type="date" name="check_in" id="editBkCheckIn" required onchange="calcEditNights()">
+        </div>
+        <div class="fld">
+          <label>Check-out Date <span id="editNightsDisplay" style="color:var(--primary);font-weight:700;margin-left:.25rem"></span></label>
+          <input type="date" name="check_out" id="editBkCheckOut" required onchange="calcEditNights()">
+        </div>
+        <div class="fld">
+          <label>Status</label>
+          <select name="status" id="editBkStatus">
+            <option value="confirmed">Confirmed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Booking Source</label>
+          <select name="source" id="editBkSource">
+            <option value="direct">Direct (Website)</option>
+            <option value="razorpay">Direct (Razorpay)</option>
+            <option value="manual">Manual / Phone</option>
+            <option value="airbnb">Airbnb</option>
+            <option value="booking.com">Booking.com</option>
+            <option value="agoda">Agoda</option>
+            <option value="makemytrip">MakeMyTrip</option>
+            <option value="blocked">Blocked Date</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="font-size:.8rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.5rem">Guest Details</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem;margin-bottom:1rem">
+        <div class="fld">
+          <label>Guest Name</label>
+          <input type="text" name="guest_name" id="editBkGuestName" required placeholder="Guest Name">
+        </div>
+        <div class="fld">
+          <label>Phone Number</label>
+          <input type="tel" name="guest_phone" id="editBkPhone" placeholder="e.g. +91 9876543210">
+        </div>
+        <div class="fld">
+          <label>WhatsApp Number</label>
+          <input type="tel" name="whatsapp_number" id="editBkWa" placeholder="e.g. +91 9876543210">
+        </div>
+        <div class="fld">
+          <label>Email Address</label>
+          <input type="email" name="guest_email" id="editBkEmail" placeholder="guest@example.com">
+        </div>
+        <div class="fld">
+          <label>Booking Reference / OTA ID</label>
+          <input type="text" name="booking_ref" id="editBkRef" placeholder="e.g. HM12345678">
+        </div>
+      </div>
+
+      <div style="font-size:.8rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.5rem">Payment &amp; Pricing</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem;margin-bottom:1rem">
+        <div class="fld">
+          <label>Total Amount (₹)</label>
+          <input type="number" name="amount" id="editBkAmount" min="0" step="1" oninput="updateEditBalance()">
+        </div>
+        <div class="fld">
+          <label>Amount Paid (₹)</label>
+          <input type="number" name="amount_paid" id="editBkPaid" min="0" step="1" oninput="updateEditBalance()">
+        </div>
+        <div class="fld">
+          <label>Payment Method</label>
+          <select name="payment_method" id="editBkPayMethod">
+            <option value="cash">💵 Cash</option>
+            <option value="upi">📱 UPI / GPay / PhonePe</option>
+            <option value="bank_transfer">🏦 Bank Transfer</option>
+            <option value="online">💳 Online / Razorpay</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label>Balance Status</label>
+          <input type="text" id="editBkBalance" readonly style="background:#f7faf7;font-weight:700">
+        </div>
+      </div>
+
+      <div class="fld" style="margin-bottom:1.25rem">
+        <label>Notes &amp; Special Requests</label>
+        <textarea name="notes" id="editBkNotes" rows="2" placeholder="Special requests, arrival notes, allergy alerts..."></textarea>
+      </div>
+
+      <div style="display:flex;gap:.75rem;justify-content:flex-end;border-top:1px solid var(--border);padding-top:1rem;flex-wrap:wrap">
+        <button type="button" class="btn btn-grey" onclick="closeEditBookingModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Mobile hamburger + overlay (only when logged in) -->
 <button class="mob-menu-btn" id="mobMenuBtn" aria-label="Open menu">☰</button>
 <div class="mob-sidebar-overlay" id="mobOverlay"></div>

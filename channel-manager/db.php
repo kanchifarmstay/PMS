@@ -340,6 +340,50 @@ function deleteBooking(int $id): void {
     $stmt->execute([$id]);
 }
 
+function updateBooking(int $id, array $data): bool {
+    $db = getDB();
+    $stmt = $db->prepare("
+        UPDATE bookings SET
+            room_id = ?,
+            room_name = ?,
+            check_in = ?,
+            check_out = ?,
+            guest_name = ?,
+            guest_email = ?,
+            guest_phone = ?,
+            whatsapp_number = ?,
+            source = ?,
+            booking_ref = ?,
+            amount = ?,
+            amount_paid = ?,
+            payment_method = ?,
+            payment_status = ?,
+            status = ?,
+            notes = ?,
+            updated_at = datetime('now')
+        WHERE id = ?
+    ");
+    return $stmt->execute([
+        $data['room_id'],
+        $data['room_name'],
+        $data['check_in'],
+        $data['check_out'],
+        $data['guest_name'] ?? 'Guest',
+        $data['guest_email'] ?? '',
+        $data['guest_phone'] ?? '',
+        $data['whatsapp_number'] ?? '',
+        $data['source'] ?? 'direct',
+        $data['booking_ref'] ?? '',
+        $data['amount'] ?? 0,
+        $data['amount_paid'] ?? 0,
+        $data['payment_method'] ?? 'cash',
+        $data['payment_status'] ?? 'unpaid',
+        $data['status'] ?? 'confirmed',
+        $data['notes'] ?? '',
+        $id,
+    ]);
+}
+
 function cancelBooking(int $id): void {
     $stmt = getDB()->prepare("UPDATE bookings SET status='cancelled', updated_at=datetime('now') WHERE id=?");
     $stmt->execute([$id]);
