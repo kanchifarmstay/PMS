@@ -77,11 +77,12 @@ function runCalendarSync(?callable $fetcher = null): array
 function outputSyncResults(array $results, bool $json): void
 {
     if ($json) {
+        $activeBlocks = (int)getDB()->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn();
         header('Content-Type: application/json');
         echo json_encode([
             'results'=>$results,
             'sync_time'=>date('c'),
-            'total_blocks'=>array_sum(array_column($results, 'blocks')),
+            'total_blocks'=>$activeBlocks,
         ], JSON_UNESCAPED_SLASHES);
         return;
     }

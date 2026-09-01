@@ -705,6 +705,10 @@ test('manual sync persists structured results and admin consumes the active-bloc
     assertContains("\$_SESSION['last_sync_results']", $sync);
     assertContains('total_blocks', $admin);
     assertNotContains('total_new', $admin);
+    assertContains('showToast(', $admin);
+    assertContains('aria-live="polite"', $admin);
+    assertContains("sessionStorage.setItem('kfsSyncToast'", $admin);
+    assertNotContains("alert('Sync", $admin);
 });
 
 test('web server rules deny private data and contain no embedded calendar token', function (): void {

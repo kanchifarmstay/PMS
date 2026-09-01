@@ -551,6 +551,24 @@ a { color: inherit; text-decoration: none; }
 .content { flex:1; overflow-y:auto; padding:1.5rem 1.75rem; }
 .flash { background:#e8f5e9; color:#1b5e20; border:1px solid #a5d6a7; border-radius:8px; padding:.65rem 1rem; margin-bottom:1.25rem; font-size:.88rem; font-weight:500; }
 
+/* Toast notifications */
+.toast-container { position:fixed; top:18px; right:18px; z-index:10000; display:flex; flex-direction:column; gap:.65rem; width:min(390px,calc(100vw - 32px)); pointer-events:none; }
+.toast { --toast-color:var(--info); display:grid; grid-template-columns:auto 1fr auto; gap:.7rem; align-items:start; background:#fff; border:1px solid var(--border); border-left:4px solid var(--toast-color); border-radius:10px; padding:.8rem .85rem; box-shadow:0 12px 32px rgba(20,45,25,.18); pointer-events:auto; animation:toastIn .22s ease-out; }
+.toast.toast-success { --toast-color:#2e7d32; }
+.toast.toast-warning { --toast-color:#d97706; }
+.toast.toast-error { --toast-color:#c62828; }
+.toast.toast-info { --toast-color:#01579b; }
+.toast-icon { width:25px; height:25px; border-radius:50%; display:grid; place-items:center; background:color-mix(in srgb,var(--toast-color) 12%,white); color:var(--toast-color); font-size:.78rem; font-weight:800; }
+.toast-title { color:var(--text); font-size:.86rem; font-weight:750; line-height:1.25; }
+.toast-message { color:var(--text-muted); font-size:.78rem; line-height:1.4; margin-top:.15rem; }
+.toast-close { border:0; background:none; color:#829087; cursor:pointer; font-size:1rem; line-height:1; padding:.15rem; }
+.toast-close:hover { color:var(--text); }
+.toast.is-leaving { animation:toastOut .18s ease-in forwards; }
+@keyframes toastIn { from { opacity:0; transform:translateX(18px); } to { opacity:1; transform:translateX(0); } }
+@keyframes toastOut { from { opacity:1; transform:translateX(0); } to { opacity:0; transform:translateX(18px); } }
+@media (max-width:600px) { .toast-container { top:12px; right:16px; } }
+@media (prefers-reduced-motion:reduce) { .toast,.toast.is-leaving { animation:none; } }
+
 /* Stat cards */
 .stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; margin-bottom:1.5rem; }
 .stat-card { background:var(--card); border-radius:12px; padding:1.25rem 1.35rem; box-shadow:0 1px 4px rgba(0,0,0,.06); border:1px solid var(--border); }
@@ -4211,6 +4229,7 @@ if ($lastSyncResults):
   📞 <span>Log Direct Booking</span>
   <span class="fab-shortcut">Ctrl+Shift+B</span>
 </button>
+<div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 <?php endif; ?>
 
 <script>
@@ -4236,9 +4255,63 @@ function selectBulkPlatform(pid) {
   const tab = document.getElementById('bpTab_' + pid.replace('.', '_'));
   if (tab) tab.style.opacity = '1';
 }
+function showToast(message, type = 'success', title = '', duration = 5000) {
+  const container = document.getElementById('toastContainer');
+  if (!container) return null;
+  const styles = {
+    success: {icon:'✓', title:'Success'}, warning: {icon:'!', title:'Attention'},
+    error: {icon:'×', title:'Something went wrong'}, info: {icon:'i', title:'Update'}
+  };
+  const kind = styles[type] ? type : 'info';
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-' + kind;
+  toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+
+  const icon = document.createElement('span');
+  icon.className = 'toast-icon';
+  icon.textContent = styles[kind].icon;
+  const body = document.createElement('div');
+  const heading = document.createElement('div');
+  heading.className = 'toast-title';
+  heading.textContent = title || styles[kind].title;
+  const copy = document.createElement('div');
+  copy.className = 'toast-message';
+  copy.textContent = message;
+  body.append(heading, copy);
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'toast-close';
+  close.setAttribute('aria-label', 'Dismiss notification');
+  close.textContent = '×';
+
+  let timer;
+  const dismiss = () => {
+    clearTimeout(timer);
+    toast.classList.add('is-leaving');
+    setTimeout(() => toast.remove(), 190);
+  };
+  close.addEventListener('click', dismiss);
+  toast.append(icon, body, close);
+  container.appendChild(toast);
+  timer = setTimeout(dismiss, Math.max(1800, duration));
+  return toast;
+}
+
+function queueToastForReload(details) {
+  try { sessionStorage.setItem('kfsSyncToast', JSON.stringify(details)); } catch (_) {}
+}
+
 // init
 document.addEventListener('DOMContentLoaded', () => {
   if (document.getElementById('bulkPlatform')) selectBulkPlatform('airbnb');
+  try {
+    const queued = sessionStorage.getItem('kfsSyncToast');
+    if (queued) {
+      sessionStorage.removeItem('kfsSyncToast');
+      const details = JSON.parse(queued);
+      showToast(details.message, details.type, details.title, details.duration || 6000);
+    }
+  } catch (_) {}
 });
 
 // ── Booking detail modal ─────────────────────────────────────
@@ -4321,7 +4394,7 @@ function showBookingModal(b) {
           <input type="hidden" name="return_section" value="${currentSection}">
           <button type="submit" class="btn btn-warn btn-sm">❌ Cancel</button>
         </form>` : ''}
-        <form method="POST" action="admin.php?section=${currentSection}" style="display:inline" onsubmit="return confirm('Delete booking #${b.id} (${b.guest_name ? b.guest_name.replace(/'/g, \"\\\\'\") : ''}) permanently?')">
+        <form method="POST" action="admin.php?section=${currentSection}" style="display:inline" onsubmit="return confirm('Delete booking #${b.id} permanently?')">
           <input type="hidden" name="csrf_token" value="${csrfToken}">
           <input type="hidden" name="action" value="delete_booking">
           <input type="hidden" name="id" value="${b.id}">
@@ -4400,27 +4473,42 @@ function goTo(section) {
 }
 
 // ── Sync ────────────────────────────────────────────────────
-function runSync() {
+let syncInProgress = false;
+async function runSync() {
+  if (syncInProgress) return;
+  syncInProgress = true;
   document.querySelectorAll('#syncBtn,#syncBtn2').forEach(b => { b.disabled=true; b.textContent='Syncing…'; });
-  fetch('sync.php', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: new URLSearchParams({csrf_token: <?= json_encode(csrfToken()) ?>})
-  })
-    .then(r => r.json())
-    .then(d => {
-      const total = d.total_blocks ?? 0;
-      const errors = (d.results||[]).filter(r=>!r.success);
-      if (errors.length) {
-        alert('Sync done with errors:\n' + errors.map(e=>e.platform+': '+e.error).join('\n'));
-      }
-      // Reload into Channels to show results table
-      window.location.href = 'admin.php?section=channels&flash=Sync+complete+—+' + total + '+active+blocks';
-    })
-    .catch(e => {
-      document.querySelectorAll('#syncBtn,#syncBtn2').forEach(b => { b.disabled=false; b.textContent='⟳ Sync Now'; });
-      alert('Sync failed — check your internet connection.');
+  showToast('Checking all connected OTA calendars…', 'info', 'Sync started', 2500);
+  try {
+    const response = await fetch('sync.php', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({csrf_token: <?= json_encode(csrfToken()) ?>})
     });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'The server could not complete the sync.');
+
+    const results = Array.isArray(data.results) ? data.results : [];
+    const errors = results.filter(result => !result.success);
+    const succeeded = results.length - errors.length;
+    const activeBlocks = Number(data.total_blocks || 0);
+    const blockLabel = activeBlocks === 1 ? 'active OTA block' : 'active OTA blocks';
+    const details = errors.length
+      ? {
+          type:'warning', title:'Sync completed with warnings', duration:8000,
+          message:`${succeeded} of ${results.length} calendars synced. ${errors.length} failed; see the results below.`
+        }
+      : {
+          type:'success', title:'OTA sync complete', duration:6000,
+          message:`${results.length} calendars synced successfully · ${activeBlocks} ${blockLabel}.`
+        };
+    queueToastForReload(details);
+    window.location.href = 'admin.php?section=channels';
+  } catch (error) {
+    syncInProgress = false;
+    document.querySelectorAll('#syncBtn,#syncBtn2').forEach(b => { b.disabled=false; b.textContent='⟳ Sync Now'; });
+    showToast(error.message || 'Check your connection and try again.', 'error', 'OTA sync failed', 8000);
+  }
 }
 
 // ── Booking search / filter ──────────────────────────────────
