@@ -466,7 +466,7 @@ test('parent and component bookings propagate into related iCal exports', functi
     assertSame([['2030-10-05','2030-10-06']], array_map(static fn($e)=>[$e['check_in'],$e['check_out']], $groupEvents));
 });
 
-test('same-platform blocks propagate to related listings but not back to their source listing', function (): void {
+test('same-platform blocks are not exported back through related listings', function (): void {
     resetAvailabilityData();
     $db = getDB();
     $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
@@ -475,11 +475,28 @@ test('same-platform blocks propagate to related listings but not back to their s
     $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out) VALUES (?,?,?,?,?,?)")
        ->execute([$calendarId, 'white-villa', 'airbnb', 'same-platform', '2030-10-10', '2030-10-12']);
 
-    assertSame([], collectAvailabilityEvents('white-villa', 'airbnb', '2030-01-01'));
-    foreach (['white-villa-full-floor', 'kanchi-farm-stay'] as $target) {
-        $events = collectAvailabilityEvents($target, 'airbnb', '2030-01-01');
-        assertSame([['2030-10-10','2030-10-12']], array_map(static fn($e)=>[$e['check_in'],$e['check_out']], $events));
+    foreach (['white-villa', 'white-villa-full-floor', 'kanchi-farm-stay'] as $target) {
+        assertSame([], collectAvailabilityEvents($target, 'airbnb', '2030-01-01'));
     }
+});
+
+test('shared Airbnb unavailable echoes are removed without deleting reservations', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    foreach (['wooden-villa', 'tent'] as $roomId) {
+        $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+           ->execute([$roomId, 'airbnb', "https://example.com/{$roomId}.ics"]);
+        $calendarId = (int)$db->lastInsertId();
+        $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+           ->execute([$calendarId, $roomId, 'airbnb', 'shared-echo', '2030-10-10', '2030-10-12', 'Airbnb (Not available)']);
+    }
+    $calendarId = (int)$db->query("SELECT id FROM external_calendars WHERE room_id='tent'")->fetchColumn();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$calendarId, 'tent', 'airbnb', 'real-reservation', '2030-10-15', '2030-10-16', 'Reserved']);
+
+    assertSame(2, removeSharedAirbnbEchoBlocks($db));
+    $remaining = $db->query("SELECT room_id, external_uid, summary FROM external_blocks")->fetchAll();
+    assertSame([['room_id'=>'tent', 'external_uid'=>'real-reservation', 'summary'=>'Reserved']], $remaining);
 });
 
 $apiServicePath = dirname(__DIR__) . '/channel-manager/api.php';

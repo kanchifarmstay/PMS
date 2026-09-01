@@ -67,6 +67,10 @@ function runCalendarSync(?callable $fetcher = null): array
             syncOneCalendar($calendar, $fetcher)
         );
     }
+    // A linked/imported Airbnb block can be echoed with the same UID into
+    // several listing feeds. Remove those echoes only after every active
+    // calendar has refreshed so genuine single-listing blocks remain intact.
+    removeSharedAirbnbEchoBlocks();
     return $results;
 }
 

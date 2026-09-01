@@ -48,7 +48,7 @@ maintenance files as defence in depth.
 4. Import that destination-specific URL into the corresponding OTA extranet.
 5. Run **Sync Now**, then verify a known OTA block appears on both the room and any dependent parent inventory.
 
-Whole-property inventory blocks every component. White Villa Full Floor and its two component rooms block each other. A destination feed excludes a block imported from the same OTA for that exact source listing, while still propagating it to dependent listings on that OTA.
+Whole-property inventory blocks every component. White Villa Full Floor and its two component rooms block each other. Destination feeds never send a booking or block back to the OTA it originated from, including through dependent listings; this prevents imported calendar events from circulating through the OTA and returning as false whole-property blocks.
 
 ## Scheduled sync and payments
 

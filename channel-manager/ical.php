@@ -125,6 +125,32 @@ function applyIcalSnapshot(array $calendar, array $blocks, ?PDO $db = null): voi
     }
 }
 
+/**
+ * Remove Airbnb calendar echoes that have been copied into multiple listing
+ * feeds. Airbnb labels imported/linked availability as "Airbnb (Not
+ * available)" and reuses the same UID across those feeds. Keeping every copy
+ * turns a component block into a whole-property block when parent inventory is
+ * expanded. Genuine reservation events use a different summary and remain.
+ */
+function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
+{
+    $db ??= getDB();
+    $stmt = $db->prepare("DELETE FROM external_blocks
+        WHERE lower(platform) = 'airbnb'
+          AND lower(trim(summary)) = 'airbnb (not available)'
+          AND EXISTS (
+              SELECT 1
+              FROM external_blocks AS duplicate
+              WHERE lower(duplicate.platform) = lower(external_blocks.platform)
+                AND duplicate.external_uid = external_blocks.external_uid
+                AND duplicate.check_in = external_blocks.check_in
+                AND duplicate.check_out = external_blocks.check_out
+                AND duplicate.room_id != external_blocks.room_id
+          )");
+    $stmt->execute();
+    return $stmt->rowCount();
+}
+
 function icalEscapeText(string $value): string
 {
     return str_replace(['\\', ';', ',', "\r\n", "\r", "\n"], ['\\\\', '\\;', '\\,', '\\n', '\\n', '\\n'], $value);
@@ -168,8 +194,10 @@ function collectAvailabilityEvents(string $roomId, string $destination, ?string 
         WHERE room_id IN ({$ph}) AND status='confirmed' AND check_out >= ?";
     $params = array_merge($rooms, [$today]);
     if ($destination !== 'generic') {
-        $bookingSql .= ' AND NOT (lower(source) = ? AND room_id = ?)';
-        array_push($params, $destination, $roomId);
+        // Never send an OTA-origin booking back to that OTA through a related
+        // listing. OTAs re-export imported blocks, creating a feedback loop.
+        $bookingSql .= ' AND lower(source) != ?';
+        $params[] = $destination;
     }
     $stmt = $db->prepare($bookingSql . ' ORDER BY check_in, check_out');
     $stmt->execute($params);
@@ -186,8 +214,8 @@ function collectAvailabilityEvents(string $roomId, string $destination, ?string 
         WHERE room_id IN ({$ph}) AND check_out >= ?";
     $params = array_merge($rooms, [$today]);
     if ($destination !== 'generic') {
-        $blockSql .= ' AND NOT (lower(platform) = ? AND room_id = ?)';
-        array_push($params, $destination, $roomId);
+        $blockSql .= ' AND lower(platform) != ?';
+        $params[] = $destination;
     }
     $stmt = $db->prepare($blockSql . ' ORDER BY check_in, check_out');
     $stmt->execute($params);
