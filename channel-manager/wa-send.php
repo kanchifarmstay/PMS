@@ -6,9 +6,10 @@
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/whatsapp.php';
 
-session_start();
+startSecureSession();
 header('Content-Type: application/json');
 
 if (empty($_SESSION['admin_logged_in'])) {
@@ -19,6 +20,7 @@ if (empty($_SESSION['admin_logged_in'])) {
 
 $raw  = file_get_contents('php://input');
 $data = json_decode($raw, true) ?? [];
+requireValidCsrfToken($_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($data['csrf_token'] ?? null));
 
 $convId = (int)($data['conversation_id'] ?? 0);
 $body   = trim($data['body'] ?? '');

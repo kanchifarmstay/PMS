@@ -1,32 +1,22 @@
 <?php
-/**
- * Public Availability API
- *
- * GET /channel-manager/availability-api.php?room=wooden-villa
- *
- * Returns JSON: { "blocked": [["2025-02-01","2025-02-04"], ...] }
- * Each element is a [check_in, check_out] pair (check_out is the departure day,
- * which IS available for a new check-in).
- */
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Cache-Control: no-store, no-cache, must-revalidate');
-header('Pragma: no-cache');
-header('Expires: 0');
+declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/booking-service.php';
+require_once __DIR__ . '/api.php';
 
-$roomId = trim($_GET['room'] ?? '');
-$rooms  = ROOM_IDS;
+sendJsonHeaders('GET, OPTIONS');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit;
 
-if (!$roomId || !isset($rooms[$roomId])) {
-    http_response_code(404);
-    echo json_encode(['error' => 'Room not found']);
-    exit;
+try {
+    $roomId = trim((string)($_GET['room'] ?? ''));
+    if (!isValidRoomId($roomId)) jsonResponse(['error'=>'Room not found.'], 404);
+    $ranges = getBlockedRangesForRoom($roomId);
+    jsonResponse([
+        'room'=>$roomId,
+        'blocked'=>array_map(static fn(array $range): array => [$range['check_in'], $range['check_out']], $ranges),
+    ]);
+} catch (Throwable) {
+    jsonResponse(['error'=>'Availability is temporarily unavailable.'], 500);
 }
-
-$ranges  = getBlockedRanges($roomId);
-$blocked = array_map(fn($r) => [$r['check_in'], $r['check_out']], $ranges);
-
-echo json_encode(['room' => $roomId, 'blocked' => $blocked]);

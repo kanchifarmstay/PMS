@@ -4,27 +4,36 @@
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/booking-service.php';
 require_once __DIR__ . '/whatsapp.php';
 require_once __DIR__ . '/demand-engine.php';
 
-session_start();
+startSecureSession();
 
 // ── Auth ─────────────────────────────────────────────────────
 $loginError = '';
 if (($_POST['action'] ?? '') === 'login') {
-    if ($_POST['password'] === ADMIN_PASSWORD) {
+    requireValidCsrfToken($_POST['csrf_token'] ?? null);
+    if (verifyAdminPassword((string)($_POST['password'] ?? ''))) {
         $_SESSION['admin_logged_in'] = true;
+        session_regenerate_id(true);
         header('Location: admin.php'); exit;
     }
     $loginError = 'Incorrect password.';
 }
-if (($_GET['action'] ?? '') === 'logout') {
-    session_destroy(); header('Location: admin.php'); exit;
-}
-
 // ── POST handlers (authenticated) ────────────────────────────
 if (!empty($_SESSION['admin_logged_in'])) {
     $act = $_POST['action'] ?? '';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        requireValidCsrfToken($_POST['csrf_token'] ?? null);
+    }
+
+    if ($act === 'logout') {
+        $_SESSION = [];
+        session_destroy();
+        header('Location: admin.php'); exit;
+    }
 
     if ($act === 'add_booking') {
         $rid    = $_POST['room_id'];
@@ -50,7 +59,11 @@ if (!empty($_SESSION['admin_logged_in'])) {
             'notes'           => trim($_POST['notes'] ?? ''),
             'status'          => 'confirmed',
         ];
-        $id = addBooking($data);
+        try {
+            $id = createConfirmedBooking($data);
+        } catch (Throwable $e) {
+            header('Location: admin.php?section=bookings&flash=' . urlencode($e->getMessage())); exit;
+        }
         if ($id) {
             sendWhatsAppNotification(buildBookingMessage(array_merge($data, ['id' => $id])));
             // Send confirmation to guest if WhatsApp number provided and Meta API configured
@@ -104,7 +117,11 @@ if (!empty($_SESSION['admin_logged_in'])) {
             'status'    => 'confirmed',
             'amount'    => 0,
         ];
-        addBooking($data);
+        try {
+            createConfirmedBooking($data);
+        } catch (Throwable $e) {
+            header('Location: admin.php?section=calendar&view=month&flash=' . urlencode($e->getMessage())); exit;
+        }
         header('Location: admin.php?section=calendar&view=month&flash=Date+blocked+across+all+channels'); exit;
     }
 
@@ -112,7 +129,13 @@ if (!empty($_SESSION['admin_logged_in'])) {
     if ($act === 'cancel_booking')  { cancelBooking((int)$_POST['id']);  header('Location: admin.php?section=bookings&flash=Cancelled'); exit; }
 
     if ($act === 'add_calendar') {
-        addExternalCalendar($_POST['room_id'], strtolower(trim($_POST['platform'])), trim($_POST['ical_url']));
+        $roomId = trim((string)($_POST['room_id'] ?? ''));
+        $platform = strtolower(trim((string)($_POST['platform'] ?? '')));
+        $url = trim((string)($_POST['ical_url'] ?? ''));
+        if (!isValidRoomId($roomId) || !in_array($platform, SUPPORTED_ICAL_PLATFORMS, true) || !isSafeCalendarUrl($url)) {
+            header('Location: admin.php?section=channels&flash=Invalid+calendar+details'); exit;
+        }
+        addExternalCalendar($roomId, $platform, $url);
         header('Location: admin.php?section=channels&flash=Calendar+added'); exit;
     }
     if ($act === 'delete_calendar') { deleteExternalCalendar((int)$_POST['id']); header('Location: admin.php?section=channels&flash=Removed'); exit; }
@@ -123,8 +146,8 @@ if (!empty($_SESSION['admin_logged_in'])) {
         $added    = 0;
         foreach ($urls as $roomId => $url) {
             $url = trim($url);
-            if (!$url || !filter_var($url, FILTER_VALIDATE_URL)) continue;
-            if (!isset(ROOM_IDS[$roomId])) continue;
+            if (!$url || !isSafeCalendarUrl($url)) continue;
+            if (!isValidRoomId($roomId) || !in_array($platform, SUPPORTED_ICAL_PLATFORMS, true)) continue;
             addExternalCalendar($roomId, $platform, $url);
             $added++;
         }
@@ -225,9 +248,10 @@ if (!empty($_SESSION['admin_logged_in'])) {
     $waUnread     = getWAUnreadTotal();
     $waConvs      = getWAConversations();
 
-    $confirmed  = array_filter($allBookings, fn($b) => $b['status'] === 'confirmed');
-    $upcoming   = array_filter($confirmed,   fn($b) => $b['check_out'] >= date('Y-m-d'));
-    $thisMonth  = array_filter($confirmed,   fn($b) => substr($b['check_in'],0,7) === date('Y-m'));
+    $confirmedBookings = array_values(array_filter($allBookings, fn($b) => $b['status'] === 'confirmed'));
+    $confirmed = expandCalendarEntriesToRelatedInventory(array_merge($confirmedBookings, getExternalBlockCalendarEntries()));
+    $upcoming   = array_filter($confirmedBookings, fn($b) => $b['check_out'] >= date('Y-m-d'));
+    $thisMonth  = array_filter($confirmedBookings, fn($b) => substr($b['check_in'],0,7) === date('Y-m'));
 
     $totalRev   = array_sum(array_column(
         array_filter($thisMonth, fn($b) => in_array($b['source'], ['direct','razorpay'])),
@@ -235,23 +259,23 @@ if (!empty($_SESSION['admin_logged_in'])) {
     ));
 
     $totalNights = 0;
-    foreach ($confirmed as $b) {
+    foreach ($confirmedBookings as $b) {
         $n = max(0, (int)ceil((strtotime($b['check_out']) - strtotime($b['check_in'])) / 86400));
         $totalNights += $n;
     }
     $occupancy = count($rooms) > 0 ? min(100, round($totalNights / (count($rooms) * 30) * 100)) : 0;
 
     $byPlatform = [];
-    foreach ($confirmed as $b) {
+    foreach ($confirmedBookings as $b) {
         $src = $b['source'] ?? 'direct';
         $byPlatform[$src] = ($byPlatform[$src] ?? 0) + 1;
     }
     arsort($byPlatform);
 
     $nextWeek  = date('Y-m-d', strtotime('+7 days'));
-    $arrivals  = array_values(array_filter($upcoming, fn($b) => $b['check_in'] <= $nextWeek && $b['check_in'] >= date('Y-m-d')));
+    $arrivals  = array_values(array_filter($upcoming, fn($b) => empty($b['is_external_block']) && $b['check_in'] <= $nextWeek && $b['check_in'] >= date('Y-m-d')));
     usort($arrivals, fn($a,$b) => strcmp($a['check_in'], $b['check_in']));
-    $departures = array_values(array_filter($upcoming, fn($b) => $b['check_out'] <= $nextWeek && $b['check_out'] >= date('Y-m-d')));
+    $departures = array_values(array_filter($upcoming, fn($b) => empty($b['is_external_block']) && $b['check_out'] <= $nextWeek && $b['check_out'] >= date('Y-m-d')));
     usort($departures, fn($a,$b) => strcmp($a['check_out'], $b['check_out']));
 
     // Gantt 60 days
@@ -273,23 +297,15 @@ if (!empty($_SESSION['admin_logged_in'])) {
 
     // iCal export URLs
     $icalUrls = [];
-    foreach ($rooms as $rid => $_) {
-        $icalUrls[$rid] = SITE_URL . '/channel-manager/ical-export.php?room=' . urlencode($rid) . '&token=' . urlencode(ICAL_TOKEN);
+    foreach (SUPPORTED_ICAL_PLATFORMS as $destination) {
+        foreach ($rooms as $rid => $_) {
+            $icalUrls[$destination][$rid] = SITE_URL . '/channel-manager/ical-export.php?room=' . urlencode($rid)
+                . '&destination=' . urlencode($destination) . '&token=' . urlencode(ICAL_TOKEN);
+        }
     }
 
-    // ── Background auto-sync every 15 minutes ────────────────────
-    // Fires cron.php in the background so Airbnb/Booking.com bookings
-    // are imported automatically whenever the admin is active.
-    $lastAutoSync = getSetting('last_auto_sync', '');
-    $autoSyncAge  = $lastAutoSync ? (time() - strtotime($lastAutoSync)) : PHP_INT_MAX;
-    if ($autoSyncAge > 900 && !empty($extCals)) {
-        setSetting('last_auto_sync', date('Y-m-d H:i:s'));
-        $ch = curl_init(SITE_URL . '/channel-manager/cron.php?token=' . CRON_SECRET);
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => false, CURLOPT_TIMEOUT_MS => 500, CURLOPT_NOSIGNAL => 1]);
-        @curl_exec($ch);
-        curl_close($ch);
-    }
-    $nextSyncIn = $lastAutoSync ? max(0, 900 - (time() - strtotime($lastAutoSync))) : 0;
+    $syncTimes = array_values(array_filter(array_column($extCals, 'last_synced')));
+    $lastAutoSync = $syncTimes === [] ? '' : max($syncTimes);
 
     // Pending suggestions count for badge
     $pendingSuggestions = getPricingSuggestions('pending');
@@ -1129,7 +1145,9 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
     </div>
     <?php if ($loginError): ?><div class="login-err"><?= htmlspecialchars($loginError) ?></div><?php endif; ?>
     <form method="POST">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="login">
+      <input type="hidden" name="username" value="admin" autocomplete="username">
       <label>Admin Password</label>
       <input type="password" name="password" autofocus autocomplete="current-password" placeholder="Enter password">
       <button type="submit" class="btn-login">Sign In →</button>
@@ -1173,7 +1191,11 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
   </nav>
   <div class="sidebar-bottom">
     <a href="/">← View website</a><br>
-    <a href="?action=logout" style="color:#fca5a5">Logout</a>
+    <form method="POST" style="display:inline">
+      <?= csrfField() ?>
+      <input type="hidden" name="action" value="logout">
+      <button type="submit" style="border:0;background:none;padding:0;color:#fca5a5;cursor:pointer">Logout</button>
+    </form>
   </div>
 </aside>
 
@@ -1242,7 +1264,7 @@ $weekRev = array_sum(array_column(
   <div class="stat-card">
     <div class="stat-icon">📋</div>
     <a class="stat-link" href="admin.php?section=bookings" title="View all upcoming bookings">
-      <div class="stat-val"><?= count(array_filter($confirmed, fn($b) => $b['check_out'] >= date('Y-m-d') && $b['source'] !== 'blocked')) ?><span class="stat-arrow">→</span></div>
+      <div class="stat-val"><?= count(array_filter($confirmedBookings, fn($b) => $b['check_out'] >= date('Y-m-d') && $b['source'] !== 'blocked')) ?><span class="stat-arrow">→</span></div>
     </a>
     <div class="stat-lbl">Active / Upcoming Bookings</div>
   </div>
@@ -2094,7 +2116,7 @@ $totalOccupied = count($propStatus) - $totalFree;
   }
   // Year stats
   $yrTotal = 0; $yrRev = 0; $yrNights = 0;
-  foreach ($confirmed as $b) {
+  foreach ($confirmedBookings as $b) {
     if (substr($b['check_in'],0,4) == $calYearView && $b['source'] !== 'blocked') {
       $yrTotal++; $yrRev += $b['amount'];
       $yrNights += max(0,(int)ceil((strtotime($b['check_out'])-strtotime($b['check_in']))/86400));
@@ -2253,6 +2275,7 @@ function srcShort(string $src): string {
   </div>
   <div class="panel-bd" id="blkFormPanel">
     <form method="POST">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="add_booking">
       <input type="hidden" name="source" value="blocked">
       <input type="hidden" name="guest_name" value="Blocked">
@@ -2693,6 +2716,7 @@ function srcShort(string $src): string {
           </td>
           <td style="white-space:nowrap">
             <form method="POST" style="display:inline" onsubmit="return confirm('Remove this block? Dates will reopen on all platforms within 15 minutes.')">
+    <?= csrfField() ?>
               <input type="hidden" name="action" value="delete_booking">
               <input type="hidden" name="id" value="<?= $b['id'] ?>">
               <button type="submit" class="btn btn-warn btn-sm">🗑 Remove</button>
@@ -2733,6 +2757,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
   <div class="panel-hd">
     <h3>🥇 Upcoming High-Demand Dates <span class="sub">Next 365 days</span></h3>
     <form method="POST" style="display:inline">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="reseed_events">
       <button type="submit" class="btn btn-gold btn-sm">⟳ Refresh Events</button>
     </form>
@@ -2775,6 +2800,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
     <div style="display:flex;gap:.75rem;flex-wrap:wrap">
       <button class="btn btn-gold" onclick="goTo('pricing')">Review Pricing Suggestions →</button>
       <form method="POST" style="display:inline">
+    <?= csrfField() ?>
         <input type="hidden" name="action" value="generate_suggestions">
         <button type="submit" class="btn btn-grey">⚡ Generate New Suggestions</button>
       </form>
@@ -2797,6 +2823,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
   </div>
   <div class="panel-bd" id="addBookingBody">
     <form method="POST" id="addBookingForm">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="add_booking">
       <input type="hidden" name="wa_conversation_id" id="waConvId" value="">
 
@@ -2948,12 +2975,14 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
             <?php if ($waNum): ?><a href="https://wa.me/<?= preg_replace('/\D/','',$waNum) ?>" target="_blank" class="wa-link" title="Open WhatsApp chat">💬</a><?php endif; ?>
             <?php if ($b['status']==='confirmed'): ?>
             <form method="POST" style="display:inline" onsubmit="return confirm('Cancel this booking?')">
+    <?= csrfField() ?>
               <input type="hidden" name="action" value="cancel_booking">
               <input type="hidden" name="id" value="<?= $b['id'] ?>">
               <button type="submit" class="btn btn-warn btn-sm">Cancel</button>
             </form>
             <?php endif; ?>
             <form method="POST" style="display:inline" onsubmit="return confirm('Delete permanently?')">
+    <?= csrfField() ?>
               <input type="hidden" name="action" value="delete_booking">
               <input type="hidden" name="id" value="<?= $b['id'] ?>">
               <button type="submit" class="btn btn-danger btn-sm">Delete</button>
@@ -3027,6 +3056,7 @@ $otaLinks = [
   </div>
   <div class="panel-bd" style="padding:0">
     <form method="POST">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="update_base_rate">
       <div class="tbl-wrap">
         <table class="tbl" style="min-width:700px">
@@ -3148,6 +3178,7 @@ $otaLinks = [
   </div>
   <div class="panel-bd">
     <form method="POST">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="save_discount_rules">
       <div class="tbl-wrap">
         <table class="tbl">
@@ -3211,10 +3242,12 @@ $otaLinks = [
       <p style="font-size:.85rem;color:var(--text-muted)">Re-seed Muhuratham, festival, holiday, and bridge-holiday dates, then generate pricing suggestions for all rooms.</p>
     </div>
     <form method="POST" style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="generate_suggestions">
       <button type="submit" class="btn btn-gold">⚡ Generate Suggestions</button>
     </form>
     <form method="POST">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="reseed_events">
       <button type="submit" class="btn btn-grey btn-sm">🔄 Re-seed Events Only</button>
     </form>
@@ -3230,6 +3263,7 @@ $otaLinks = [
       <div class="sub">Review and approve pricing changes before they take effect</div>
     </div>
     <form method="POST">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="approve_all_suggestions">
       <button type="submit" class="btn btn-success" onclick="return confirm('Approve all <?= $pendingCount ?> suggestions?')">✓ Approve All</button>
     </form>
@@ -3249,6 +3283,7 @@ $otaLinks = [
         </div>
         <div class="sc-actions" style="margin-top:.5rem">
           <form method="POST" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
+    <?= csrfField() ?>
             <input type="hidden" name="action" value="approve_suggestion">
             <input type="hidden" name="id" value="<?= $s['id'] ?>">
             <input type="hidden" name="suggested_price" value="<?= $s['suggested_price'] ?>">
@@ -3256,6 +3291,7 @@ $otaLinks = [
             <button type="submit" class="btn btn-success btn-sm">✓ Approve</button>
           </form>
           <form method="POST">
+    <?= csrfField() ?>
             <input type="hidden" name="action" value="dismiss_suggestion">
             <input type="hidden" name="id" value="<?= $s['id'] ?>">
             <button type="submit" class="btn btn-grey btn-sm">✕ Dismiss</button>
@@ -3514,8 +3550,8 @@ $pct = $totalSlots > 0 ? round($connected / $totalSlots * 100) : 0;
         <div style="height:6px;border-radius:3px;width:<?= $pct ?>%;background:<?= $pct >= 75 ? '#38a169' : '#d97706' ?>"></div>
       </div>
       <div style="font-size:.78rem;color:#4a5568;margin-top:.3rem">
-        Last synced: <strong><?= $lastAutoSync ? date('d M, g:i A', strtotime($lastAutoSync)) : 'will run on next page load' ?></strong>
-        <?php if ($nextSyncIn > 60): ?> · Next in ~<?= ceil($nextSyncIn/60) ?>m<?php endif; ?>
+        Last synced: <strong><?= $lastAutoSync ? date('d M, g:i A', strtotime($lastAutoSync)) : 'never' ?></strong>
+        · Automatic sync runs from the server cron schedule
       </div>
       <?php endif; ?>
     </div>
@@ -3610,7 +3646,7 @@ $pct = $totalSlots > 0 ? round($connected / $totalSlots * 100) : 0;
               <li>Click <strong>Copy link</strong> → paste URL in the field below for that room</li>
             </ol>
             <div style="background:#dbeafe;border-radius:5px;padding:.35rem .5rem;margin-top:.4rem;font-size:.77rem">
-              The URL looks like: <code>https://admin.booking.com/hotel/hoteladmin/ical.html?t=…</code>
+              Booking.com provides a complete HTTPS export URL. Treat it as a secret and paste it only into the PMS.
             </div>
           </div>
 
@@ -3658,6 +3694,7 @@ $pct = $totalSlots > 0 ? round($connected / $totalSlots * 100) : 0;
 
     <!-- Bulk URL input table -->
     <form method="POST" action="admin.php?section=channels" id="bulkConnectForm">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="bulk_add_calendars">
       <input type="hidden" name="platform" id="bulkPlatformInput" value="airbnb">
       <div class="tbl-wrap">
@@ -3763,8 +3800,8 @@ $pct = $totalSlots > 0 ? round($connected / $totalSlots * 100) : 0;
 
     <!-- CRON SETUP BOX -->
     <div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:10px;padding:1rem;font-size:.82rem">
-      <strong>⚡ Faster sync? Set up Hostinger Cron (optional but recommended)</strong><br>
-      <span style="color:#4a5568">Without cron, auto-sync fires when you open the admin. With cron, it runs every 15 min even when you're offline.</span><br>
+      <strong>⚡ Required: set up the server cron for automatic synchronization</strong><br>
+      <span style="color:#4a5568">The admin's Sync Now button is manual. The cron must run every 15–30 minutes to keep OTA availability current while you are offline.</span><br>
       <div style="margin-top:.6rem">
         <strong>Option A — Hostinger hPanel:</strong> Advanced → Cron Jobs → Add new → schedule <code>*/15 * * * *</code> → command:<br>
         <code style="background:#edf2f7;padding:2px 6px;border-radius:4px;display:inline-block;margin:.3rem 0">/usr/local/bin/php <?= rtrim($_SERVER['DOCUMENT_ROOT'] ?? '/home/u997938990/domains/kanchifarmstay.com/public_html', '/') ?>/channel-manager/cron.php</code><br>
@@ -3784,6 +3821,7 @@ $pct = $totalSlots > 0 ? round($connected / $totalSlots * 100) : 0;
   </div>
   <div class="panel-bd">
     <form method="POST">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="add_calendar">
       <div class="form-grid">
         <div class="fld">
@@ -3801,12 +3839,11 @@ $pct = $totalSlots > 0 ? round($connected / $totalSlots * 100) : 0;
             <option value="booking.com">Booking.com</option>
             <option value="agoda">Agoda</option>
             <option value="makemytrip">MakeMyTrip</option>
-            <option value="other">Other</option>
           </select>
         </div>
         <div class="fld" style="grid-column:span 2">
           <label>iCal URL (from the platform's "Export calendar" / "Export iCal" option)</label>
-          <input type="url" name="ical_url" required placeholder="https://www.airbnb.com/calendar/ical/...">
+          <input type="url" name="ical_url" required placeholder="https://calendar-provider.example/export.ics">
         </div>
       </div>
       <button type="submit" class="btn btn-primary" style="margin-top:.85rem">➕ Connect Channel</button>
@@ -3843,6 +3880,7 @@ $pct = $totalSlots > 0 ? round($connected / $totalSlots * 100) : 0;
           </td>
           <td>
             <form method="POST" onsubmit="return confirm('Remove this channel?')">
+    <?= csrfField() ?>
               <input type="hidden" name="action" value="delete_calendar">
               <input type="hidden" name="id" value="<?= $cal['id'] ?>">
               <button type="submit" class="btn btn-danger btn-sm">Remove</button>
@@ -3868,14 +3906,14 @@ if ($lastSyncResults):
   </div>
   <div class="tbl-wrap">
     <table class="tbl">
-      <thead><tr><th>Platform</th><th>Room</th><th>Status</th><th>New Bookings</th><th>Error</th></tr></thead>
+      <thead><tr><th>Platform</th><th>Room</th><th>Status</th><th>Active Blocks</th><th>Error</th></tr></thead>
       <tbody>
         <?php foreach ($lastSyncResults as $r): ?>
         <tr>
           <td><?= badge($r['platform']) ?></td>
           <td style="font-weight:600"><?= htmlspecialchars(ROOM_IDS[$r['room_id']] ?? $r['room_id']) ?></td>
           <td><?php if ($r['success']): ?><span class="status-confirmed">✓ OK</span><?php else: ?><span class="status-cancelled">✗ Failed</span><?php endif; ?></td>
-          <td><?= (int)$r['imported'] ?> new</td>
+          <td><?= (int)$r['blocks'] ?></td>
           <td class="muted"><?= htmlspecialchars($r['error'] ?? '') ?></td>
         </tr>
         <?php endforeach; ?>
@@ -3893,15 +3931,18 @@ if ($lastSyncResults):
 <div class="panel">
   <div class="panel-hd"><h3>📤 Your iCal Export URLs</h3><span class="sub">Paste these into Airbnb, Booking.com, Agoda, MakeMyTrip to block your dates automatically</span></div>
   <div class="panel-bd">
-    <div class="ical-list">
-      <?php foreach ($rooms as $rid => $rname): ?>
-      <div class="ical-row">
-        <span class="ical-room-lbl"><?= htmlspecialchars($rname) ?></span>
-        <span class="ical-url-box" id="url-<?= htmlspecialchars($rid) ?>"><?= htmlspecialchars($icalUrls[$rid]) ?></span>
-        <button class="btn btn-copy" onclick="copyUrl('<?= htmlspecialchars($rid) ?>')">Copy</button>
+    <?php foreach (SUPPORTED_ICAL_PLATFORMS as $destination): ?>
+      <h4 style="margin:1rem 0 .5rem">For <?= htmlspecialchars(ucfirst($destination)) ?></h4>
+      <div class="ical-list">
+        <?php foreach ($rooms as $rid => $rname): $urlId = $destination . '-' . $rid; ?>
+        <div class="ical-row">
+          <span class="ical-room-lbl"><?= htmlspecialchars($rname) ?></span>
+          <span class="ical-url-box" id="url-<?= htmlspecialchars($urlId) ?>"><?= htmlspecialchars($icalUrls[$destination][$rid]) ?></span>
+          <button class="btn btn-copy" onclick="copyUrl(<?= htmlspecialchars(json_encode($urlId), ENT_QUOTES) ?>)">Copy</button>
+        </div>
+        <?php endforeach; ?>
       </div>
-      <?php endforeach; ?>
-    </div>
+    <?php endforeach; ?>
   </div>
 </div>
 
@@ -3948,6 +3989,7 @@ if ($lastSyncResults):
   </div>
   <div class="panel-bd" style="display:none">
     <form method="POST">
+    <?= csrfField() ?>
       <input type="hidden" name="action" value="wa_add_manual">
       <div class="form-row-3">
         <div class="fld"><label>Phone (with country code)</label><input type="tel" name="phone" placeholder="919876543210" required></div>
@@ -4027,6 +4069,7 @@ if ($lastSyncResults):
       <div class="wa-thread-actions">
         <!-- Status changer -->
         <form method="POST" style="display:inline">
+    <?= csrfField() ?>
           <input type="hidden" name="action" value="wa_update_status">
           <input type="hidden" name="conversation_id" value="<?= $activeConv['id'] ?>">
           <select name="status" onchange="this.form.submit()" style="border:1px solid var(--border);border-radius:6px;padding:.3rem .5rem;font-size:.78rem">
@@ -4085,6 +4128,7 @@ if ($lastSyncResults):
         <?php endforeach; ?>
       </div>
       <form method="POST" id="replyForm" onsubmit="return sendReply(event)">
+    <?= csrfField() ?>
         <input type="hidden" name="action" value="wa_reply">
         <input type="hidden" name="conversation_id" value="<?= $activeConv['id'] ?>">
         <div class="wa-composer-row">
@@ -4115,8 +4159,11 @@ if ($lastSyncResults):
 <script>
 // ── Bulk platform connect ────────────────────────────────────
 function selectBulkPlatform(pid) {
-  document.getElementById('bulkPlatform').value      = pid;
-  document.getElementById('bulkPlatformInput').value = pid;
+  const selector = document.getElementById('bulkPlatform');
+  const input = document.getElementById('bulkPlatformInput');
+  if (!selector || !input) return;
+  selector.value = pid;
+  input.value = pid;
   // Show correct guide
   document.querySelectorAll('.platform-guide').forEach(el => el.style.display = 'none');
   const guideId = 'guide_' + pid.replace('.', '_');
@@ -4133,7 +4180,9 @@ function selectBulkPlatform(pid) {
   if (tab) tab.style.opacity = '1';
 }
 // init
-document.addEventListener('DOMContentLoaded', () => selectBulkPlatform('airbnb'));
+document.addEventListener('DOMContentLoaded', () => {
+  if (document.getElementById('bulkPlatform')) selectBulkPlatform('airbnb');
+});
 
 // ── Booking detail modal ─────────────────────────────────────
 function showBookingModal(b) {
@@ -4216,16 +4265,20 @@ function goTo(section) {
 // ── Sync ────────────────────────────────────────────────────
 function runSync() {
   document.querySelectorAll('#syncBtn,#syncBtn2').forEach(b => { b.disabled=true; b.textContent='Syncing…'; });
-  fetch('sync.php?run=1')
+  fetch('sync.php', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({csrf_token: <?= json_encode(csrfToken()) ?>})
+  })
     .then(r => r.json())
     .then(d => {
-      const total = d.total_new ?? 0;
+      const total = d.total_blocks ?? 0;
       const errors = (d.results||[]).filter(r=>!r.success);
       if (errors.length) {
         alert('Sync done with errors:\n' + errors.map(e=>e.platform+': '+e.error).join('\n'));
       }
       // Reload into Channels to show results table
-      window.location.href = 'admin.php?section=channels&flash=Sync+complete+—+' + total + '+new+bookings+imported';
+      window.location.href = 'admin.php?section=channels&flash=Sync+complete+—+' + total + '+active+blocks';
     })
     .catch(e => {
       document.querySelectorAll('#syncBtn,#syncBtn2').forEach(b => { b.disabled=false; b.textContent='⟳ Sync Now'; });

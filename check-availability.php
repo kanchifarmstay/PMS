@@ -1,63 +1,32 @@
 <?php
-/**
- * Availability checker — called before initiating Razorpay payment.
- * Returns whether the requested dates are free for a given room.
- *
- * POST body: { roomId, checkIn, checkOut }
- * Response:  { available: true } | { available: false, message: "..." }
- */
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
+declare(strict_types=1);
 
 require_once __DIR__ . '/channel-manager/config.php';
 require_once __DIR__ . '/channel-manager/db.php';
+require_once __DIR__ . '/channel-manager/booking-service.php';
+require_once __DIR__ . '/channel-manager/api.php';
 
-$input = json_decode(file_get_contents('php://input'), true);
+sendJsonHeaders('POST, OPTIONS');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit;
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') jsonResponse(['error'=>'Method not allowed.'], 405);
 
-$roomId   = trim($input['roomId']   ?? '');
-$checkIn  = trim($input['checkIn']  ?? '');
-$checkOut = trim($input['checkOut'] ?? '');
-
-// Basic validation
-if (!$roomId || !$checkIn || !$checkOut) {
-    http_response_code(400);
-    echo json_encode(['available' => false, 'message' => 'Missing required fields.']);
-    exit;
-}
-
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkIn) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $checkOut)) {
-    http_response_code(400);
-    echo json_encode(['available' => false, 'message' => 'Invalid date format.']);
-    exit;
-}
-
-if ($checkOut <= $checkIn) {
-    echo json_encode(['available' => false, 'message' => 'Check-out must be after check-in.']);
-    exit;
-}
-
-// Check for overlapping confirmed bookings
-// Overlap condition: existing.check_in < requested.check_out AND existing.check_out > requested.check_in
-$db   = getDB();
-$stmt = $db->prepare("
-    SELECT COUNT(*) as cnt FROM bookings
-    WHERE room_id = ?
-      AND status = 'confirmed'
-      AND check_in  < ?
-      AND check_out > ?
-");
-$stmt->execute([$roomId, $checkOut, $checkIn]);
-$row = $stmt->fetch();
-
-if ($row['cnt'] > 0) {
-    echo json_encode([
-        'available' => false,
-        'message'   => 'Sorry, these dates are not available. Please choose different dates.'
+try {
+    $input = readJsonRequest();
+    $roomId = trim((string)($input['roomId'] ?? ''));
+    $checkIn = trim((string)($input['checkIn'] ?? ''));
+    $checkOut = trim((string)($input['checkOut'] ?? ''));
+    $adults = max(1, (int)($input['adults'] ?? 1));
+    $children = max(0, (int)($input['children'] ?? 0));
+    $quote = calculateQuote($roomId, $checkIn, $checkOut, $adults, $children);
+    $available = isInventoryAvailable($roomId, $checkIn, $checkOut);
+    jsonResponse([
+        'available'=>$available,
+        'message'=>$available ? '' : 'These dates are no longer available.',
+        'quote'=>$available ? $quote : null,
+        'payment_configured'=>paymentIsConfigured(),
     ]);
-} else {
-    echo json_encode(['available' => true]);
+} catch (InvalidArgumentException $e) {
+    jsonResponse(['available'=>false, 'error'=>$e->getMessage()], 422);
+} catch (Throwable) {
+    jsonResponse(['available'=>false, 'error'=>'Availability could not be checked.'], 500);
 }

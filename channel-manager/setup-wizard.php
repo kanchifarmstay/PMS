@@ -5,8 +5,9 @@
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/security.php';
 
-session_start();
+startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) {
     header('Location: admin.php');
     exit;
@@ -17,12 +18,13 @@ $msgType = '';
 
 // Handle form submission — save a new calendar
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    requireValidCsrfToken($_POST['csrf_token'] ?? null);
     if ($_POST['action'] === 'add_calendar') {
         $roomId   = trim($_POST['room_id']   ?? '');
         $platform = strtolower(trim($_POST['platform'] ?? ''));
         $url      = trim($_POST['ical_url']  ?? '');
 
-        if ($roomId && $platform && $url && filter_var($url, FILTER_VALIDATE_URL)) {
+        if (isValidRoomId($roomId) && in_array($platform, SUPPORTED_ICAL_PLATFORMS, true) && isSafeCalendarUrl($url)) {
             addExternalCalendar($roomId, $platform, $url);
             $msg     = "Calendar connected! Run your first sync below or wait for the cron job.";
             $msgType = 'success';
@@ -30,6 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $msg     = "Please fill in all fields and ensure the URL is valid.";
             $msgType = 'error';
         }
+    }
+
+    if ($_POST['action'] === 'delete_calendar') {
+        deleteExternalCalendar((int)($_POST['cal_id'] ?? 0));
+        $msg = 'Calendar removed.';
+        $msgType = 'success';
     }
 
     if ($_POST['action'] === 'test_sync') {
@@ -42,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 // syncOneCalendar is already defined in sync.php
                 $res = syncOneCalendar($cal);
                 if ($res['success']) {
-                    $msg = "Sync OK — {$res['imported']} new booking(s) imported.";
+                    $msg = "Sync OK — {$res['blocks']} active availability block(s).";
                     $msgType = 'success';
                 } else {
                     $msg = "Sync failed: " . htmlspecialchars($res['error']);
@@ -56,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 $rooms     = ROOM_IDS;
 $calendars = getExternalCalendars();
-$platforms = ['airbnb','booking.com','agoda','makemytrip','direct'];
+$platforms = SUPPORTED_ICAL_PLATFORMS;
 
 $cronCmd = 'php ' . escapeshellarg(__DIR__ . '/cron.php');
 ?>
@@ -188,7 +196,7 @@ input:focus,select:focus{border-color:#4299e1;box-shadow:0 0 0 3px rgba(66,153,2
                     <li>Copy the <strong>webcal://...</strong> URL</li>
                     <li>Replace <code>webcal://</code> with <code>https://</code></li>
                 </ol>
-                <div class="tip">💡 The URL looks like: <br><code>https://www.airbnb.com/calendar/ical/XXXXXXX.ics?s=XXXXX</code></div>
+                <div class="tip">💡 Paste the complete HTTPS export URL supplied by Airbnb.</div>
             </div>
 
             <div class="guide-box">
@@ -201,7 +209,7 @@ input:focus,select:focus{border-color:#4299e1;box-shadow:0 0 0 3px rgba(66,153,2
                     <li>Click <strong>"iCal link"</strong></li>
                     <li>Copy the full URL shown</li>
                 </ol>
-                <div class="tip">💡 The URL looks like: <br><code>https://ical.booking.com/v1/export?t=XXXXXXXX</code></div>
+                <div class="tip">💡 Paste the complete HTTPS export URL supplied by Booking.com.</div>
             </div>
 
             <div class="guide-box">
@@ -236,6 +244,7 @@ input:focus,select:focus{border-color:#4299e1;box-shadow:0 0 0 3px rgba(66,153,2
         <p class="card-sub">Paste the iCal URL you copied above. Add one row per room per platform.</p>
 
         <form method="POST">
+    <?= csrfField() ?>
             <input type="hidden" name="action" value="add_calendar">
             <div class="form-row-3">
                 <div>
@@ -258,7 +267,7 @@ input:focus,select:focus{border-color:#4299e1;box-shadow:0 0 0 3px rgba(66,153,2
                 </div>
                 <div>
                     <label>iCal URL (paste from platform)</label>
-                    <input type="url" name="ical_url" placeholder="https://www.airbnb.com/calendar/ical/..." required>
+                    <input type="url" name="ical_url" placeholder="https://calendar-provider.example/export.ics" required>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary">Connect Calendar</button>
@@ -292,11 +301,17 @@ input:focus,select:focus{border-color:#4299e1;box-shadow:0 0 0 3px rgba(66,153,2
                     <td><span class="badge badge-active"><?= $cal['is_active'] ? '● Active' : 'Paused' ?></span></td>
                     <td>
                         <form method="POST" style="display:inline">
+    <?= csrfField() ?>
                             <input type="hidden" name="action" value="test_sync">
                             <input type="hidden" name="cal_id" value="<?= $cal['id'] ?>">
                             <button type="submit" class="btn btn-green" style="padding:6px 14px;font-size:.8rem">▶ Test Sync</button>
                         </form>
-                        <a href="admin.php?action=delete_calendar&id=<?= $cal['id'] ?>" class="btn" style="padding:6px 14px;font-size:.8rem;background:#fff5f5;color:#c53030;border:1px solid #fed7d7" onclick="return confirm('Remove this calendar?')">Remove</a>
+                        <form method="POST" style="display:inline" onsubmit="return confirm('Remove this calendar?')">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="action" value="delete_calendar">
+                            <input type="hidden" name="cal_id" value="<?= (int)$cal['id'] ?>">
+                            <button type="submit" class="btn" style="padding:6px 14px;font-size:.8rem;background:#fff5f5;color:#c53030;border:1px solid #fed7d7">Remove</button>
+                        </form>
                     </td>
                 </tr>
                 <?php endforeach; ?>

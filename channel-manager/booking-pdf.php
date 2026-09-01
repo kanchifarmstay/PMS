@@ -7,8 +7,9 @@
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/security.php';
 
-session_start();
+startSecureSession();
 
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { http_response_code(400); die('Missing booking ID.'); }
@@ -16,8 +17,8 @@ if (!$id) { http_response_code(400); die('Missing booking ID.'); }
 // Auth: admin session OR token param (HMAC-signed)
 $isAdmin = !empty($_SESSION['admin_logged_in']);
 $token   = $_GET['token'] ?? '';
-$expected = hash_hmac('sha256', 'pdf-' . $id, ICAL_TOKEN);
-$isToken = hash_equals($expected, $token);
+$expected = DOCUMENT_SIGNING_SECRET === '' ? '' : hash_hmac('sha256', 'pdf-' . $id, DOCUMENT_SIGNING_SECRET);
+$isToken = $expected !== '' && $token !== '' && hash_equals($expected, $token);
 
 if (!$isAdmin && !$isToken) {
     http_response_code(403);
@@ -33,7 +34,7 @@ $paid    = (float)$b['amount_paid'];
 $total   = (float)$b['amount'];
 
 // Public signed URL (for WhatsApp link)
-$pdfToken = hash_hmac('sha256', 'pdf-' . $id, ICAL_TOKEN);
+$pdfToken = DOCUMENT_SIGNING_SECRET === '' ? '' : hash_hmac('sha256', 'pdf-' . $id, DOCUMENT_SIGNING_SECRET);
 $selfUrl  = SITE_URL . '/channel-manager/booking-pdf.php?id=' . $id . '&token=' . $pdfToken;
 
 function fmtDate(string $d): string {
