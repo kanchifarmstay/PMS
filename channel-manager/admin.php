@@ -1226,25 +1226,26 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
   <nav class="sidebar-nav">
     <?php
     $navItems = [
-      'dashboard' => ['📊', 'Dashboard',        0],
-      'calendar'  => ['📅', 'Calendar',         0],
-      'bookings'  => ['📋', 'Bookings',          0],
-      'blocked'   => ['🚫', 'Blocked Dates',     0],
-      'demand'    => ['🥇', 'High-Demand Dates', 0],
-      'wa_inbox'  => ['💬', 'WA Inbox',          $waUnread],
-      'pricing'   => ['💡', 'Pricing',           $pendingCount],
-      'analytics' => ['📈', 'Analytics',         0],
-      'channels'  => ['🔗', 'Channels',          0],
-      'export'    => ['📤', 'iCal Export',       0],
+      'dashboard' => ['📊', 'Dashboard',        'admin.php?section=dashboard', 0],
+      'calendar'  => ['📅', 'Calendar',         'admin.php?section=calendar&view=day&date=' . date('Y-m-d'), 0],
+      'bookings'  => ['📋', 'Bookings',          'admin.php?section=bookings', 0],
+      'blocked'   => ['🚫', 'Blocked Dates',     'admin.php?section=blocked', 0],
+      'demand'    => ['🥇', 'High-Demand Dates', 'admin.php?section=demand', 0],
+      'wa_inbox'  => ['💬', 'WA Inbox',          'admin.php?section=wa_inbox', $waUnread],
+      'pricing'   => ['💡', 'Pricing',           'admin.php?section=pricing', $pendingCount],
+      'analytics' => ['📈', 'Analytics',         'admin.php?section=analytics', 0],
+      'channels'  => ['🔗', 'Channels',          'admin.php?section=channels', 0],
+      'export'    => ['📤', 'iCal Export',       'admin.php?section=export', 0],
     ];
-    foreach ($navItems as $key => [$icon, $label, $cnt]):
+    $currentSec = $section ?? 'dashboard';
+    $navActive = in_array($currentSec, ['day','week','overview','calendar']) ? 'calendar' : $currentSec;
+    foreach ($navItems as $key => [$icon, $label, $url, $cnt]):
     ?>
-      <?php $navActive = in_array($section,['day','week','overview']) ? 'calendar' : $section; ?>
-      <div class="nav-item <?= $navActive===$key?'active':'' ?>" onclick="goTo('<?= $key ?>')">
+      <a href="<?= $url ?>" class="nav-item <?= $navActive === $key ? 'active' : '' ?>">
         <span class="nav-icon"><?= $icon ?></span>
         <?= $label ?>
         <?php if ($cnt > 0): ?><span class="nav-badge"><?= $cnt ?></span><?php endif; ?>
-      </div>
+      </a>
     <?php endforeach; ?>
   </nav>
   <div class="sidebar-bottom">
@@ -1456,7 +1457,7 @@ $totalOccupied = count($propStatus) - $totalFree;
   <div class="panel-hd" style="background:#fffbeb"><h3>💡 <?= $pendingCount ?> Pricing Suggestions Pending</h3></div>
   <div class="panel-bd" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
     <p style="font-size:.85rem;color:var(--text-muted);margin:0;flex:1">Review AI-generated pricing recommendations based on Muhurathams, festivals &amp; holidays.</p>
-    <button class="btn btn-gold" onclick="goTo('pricing')">Review Suggestions →</button>
+    <a href="admin.php?section=pricing" class="btn btn-gold">Review Suggestions →</a>
   </div>
 </div>
 <?php endif; ?>
@@ -2921,7 +2922,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
       High-demand dates are used to auto-generate pricing suggestions. Visit Pricing to review and approve rate increases for these dates.
     </p>
     <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-      <button class="btn btn-gold" onclick="goTo('pricing')">Review Pricing Suggestions →</button>
+      <a href="admin.php?section=pricing" class="btn btn-gold">Review Pricing Suggestions →</a>
       <form method="POST" style="display:inline">
     <?= csrfField() ?>
         <input type="hidden" name="action" value="generate_suggestions">
