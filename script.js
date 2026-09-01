@@ -20,6 +20,7 @@ const rooms = [
             "assets/images/wooden-villa-bathroom.png"
         ],
         price: "₹3,000 / night",
+        weekendPrice: "₹3,500 / night",
         numericPrice: 3000,
         capacity: "3 Adults, 1 Child",
         size: "512 sqft",
@@ -41,6 +42,7 @@ const rooms = [
             "assets/images/white-villa-4.jpg"
         ],
         price: "₹2,000 / night",
+        weekendPrice: "₹2,500 / night",
         numericPrice: 2000,
         capacity: "2 Adults, 1 Child",
         size: "300 sqft",
@@ -83,6 +85,7 @@ const rooms = [
             "assets/images/white-villa-4.jpg"
         ],
         price: "₹2,500 / night",
+        weekendPrice: "₹3,000 / night",
         numericPrice: 2500,
         capacity: "4 Adults, 2 Children",
         size: "Full 1st Floor (500 sqft)",
@@ -124,6 +127,7 @@ const rooms = [
             "assets/images/tranquil-retreat-4.jpg"
         ],
         price: "₹2,500 / night",
+        weekendPrice: "₹3,000 / night",
         numericPrice: 2500,
         capacity: "4 Adults, 2 Children",
         size: "450 sqft",
@@ -148,6 +152,7 @@ const rooms = [
             "assets/images/wooden-cottage-8.jpg"
         ],
         price: "₹3,000 / night",
+        weekendPrice: "₹3,500 / night",
         numericPrice: 3000,
         capacity: "3 Adults, 1 Child",
         size: "Contact for details",
@@ -215,8 +220,8 @@ const rooms = [
             "assets/images/treehouse-1.jpg",
             "assets/images/treehouse-2.jpg"
         ],
-        price: "Contact Us",
-        numericPrice: 0,
+        price: "₹1,500 / night",
+        numericPrice: 1500,
         capacity: "2 Guests",
         size: "Treetop Cabin",
         airbnbUrl: "contact.html",
@@ -547,7 +552,9 @@ function loadRoomDetails() {
 
         // Price
         const price = document.getElementById('room-price');
-        if (price) price.innerText = room.price;
+        if (price) {
+            price.innerText = room.weekendPrice ? `${room.price} | Weekend ${room.weekendPrice}` : room.price;
+        }
 
         // Capacity
         const cap = document.getElementById('room-capacity');
@@ -1333,6 +1340,7 @@ function renderAccommodations() {
                 <div class="room-meta">
                     <span>👥 ${room.capacity}</span>
                     <span>🏷️ ${room.price}</span>
+                    ${room.weekendPrice ? `<span>🗓️ Weekend ${room.weekendPrice}</span>` : ''}
                 </div>
                 <a href="room-details.html?id=${room.id}" class="btn btn-outline-dark">
                     View Details
