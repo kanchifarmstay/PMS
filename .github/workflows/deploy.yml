@@ -23,6 +23,12 @@
 #      version, which would have published .env.example and tests/run.php into a
 #      public web root.
 #
+#
+# --checksum IS REQUIRED, NOT AN OPTIMISATION. A fresh actions/checkout always has
+# new mtimes, and rsync's default quick-check is size+mtime - so without it EVERY
+# deploy re-transfers all ~48MB, rewrites every live PHP file, and drops a full 48MB
+# copy into backups/pre-<sha>/. Measured on run 33602572229: 136 files / 48,005,861
+# bytes transferred when NOTHING had changed. With --checksum that run is 0 files.
 # Backups use rsync --backup-dir, so only files this deploy actually OVERWRITES are
 # archived, under domains/kanchifarmstay.com/backups/pre-<sha>/. A full copy of
 # public_html is 274MB and would bloat the account within a few deploys.
@@ -67,7 +73,7 @@ jobs:
 
       - name: Deploy via rsync
         run: |
-          rsync -rlptz --itemize-changes --stats \
+          rsync -rlptz --checksum --itemize-changes --stats \
             --backup --backup-dir="../backups/pre-${GITHUB_SHA::7}" \
             --exclude='.git' --exclude='.git/**' \
             --exclude='.github' --exclude='.github/**' \
