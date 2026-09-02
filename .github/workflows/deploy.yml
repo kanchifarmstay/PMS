@@ -1,28 +1,93 @@
+# Deploy kanchifarmstay.com to Hostinger shared hosting over SSH + rsync.
+#
+# Replaces an FTP-based workflow that failed 9/9 runs because secrets.FTP_PASSWORD
+# was never set. SSH was chosen over FTP because: the credentials and payload are
+# encrypted, no FTP account has to be created in hPanel, and rsync can target one
+# absolute path - the account serves 11 domains, so a wrong path publishes over
+# somebody else's live site.
+#
+# THREE THINGS HERE ARE LOAD-BEARING. Read before editing:
+#
+#   1. THERE IS NO --delete, DELIBERATELY. Three sets of files live on the server
+#      and NOT in this repo, and --delete would destroy them:
+#        * assets/videos/hero-video.MP4  - git holds only a 4KB macOS `._` stub
+#        * robots.txt / sitemap.xml      - now committed, but historically server-only
+#        * channel-manager/cron.log, cron.lock, .last_demand_seed - live cron state
+#      Consequence: a file deleted from git is NOT removed from the server. Remove
+#      it by hand. That is the accepted trade for never deleting booking-side state.
+#
+#   2. assets/videos/** IS EXCLUDED. The repo's `._hero-video.MP4` is an AppleDouble
+#      stub, not the video. Syncing it would replace a real 200MB+ asset with 4KB.
+#
+#   3. docs/, tests/ and .env.example ARE EXCLUDED. local-dir was `./` in the FTP
+#      version, which would have published .env.example and tests/run.php into a
+#      public web root.
+#
+# Backups use rsync --backup-dir, so only files this deploy actually OVERWRITES are
+# archived, under domains/kanchifarmstay.com/backups/pre-<sha>/. A full copy of
+# public_html is 274MB and would bloat the account within a few deploys.
+
 name: Deploy to Hostinger
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'tests/**'
+      - '**.md'
+  workflow_dispatch:
+
+# Never let two deploys rsync into the same directory at once.
+concurrency:
+  group: deploy-hostinger
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Deploy via FTP to Hostinger
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: 82.112.239.19
-          username: u997938990.kanchifarmstay.com
-          password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: /public_html/
-          local-dir: ./
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            .github/**
-            README.md
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.KFS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.KFS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Verify connection
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -p "${{ secrets.KFS_SSH_PORT }}" \
+            -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "${{ secrets.KFS_SSH_USER }}@${{ secrets.KFS_SSH_HOST }}" \
+            'test -d domains/kanchifarmstay.com/public_html && echo "target OK on $(hostname)"'
+
+      - name: Deploy via rsync
+        run: |
+          rsync -rlptz --itemize-changes --stats \
+            --backup --backup-dir="../backups/pre-${GITHUB_SHA::7}" \
+            --exclude='.git' --exclude='.git/**' \
+            --exclude='.github' --exclude='.github/**' \
+            --exclude='docs' --exclude='docs/**' \
+            --exclude='tests' --exclude='tests/**' \
+            --exclude='node_modules' --exclude='node_modules/**' \
+            --exclude='assets/videos/**' \
+            --exclude='._*' --exclude='**/._*' --exclude='.DS_Store' \
+            --exclude='.gitignore' --exclude='.env.example' \
+            --exclude='DEPLOYMENT.md' --exclude='README.md' --exclude='serve.ps1' \
+            -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.KFS_SSH_PORT }} -o StrictHostKeyChecking=yes -o BatchMode=yes" \
+            ./ "${{ secrets.KFS_SSH_USER }}@${{ secrets.KFS_SSH_HOST }}:domains/kanchifarmstay.com/public_html/"
+
+      - name: Smoke test the live site
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 https://kanchifarmstay.com/)
+          echo "homepage HTTP $code"
+          [ "$code" = "200" ] || { echo "::error::homepage returned $code after deploy"; exit 1; }
+          for p in accommodations.html room-details.html contact.html; do
+            c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "https://kanchifarmstay.com/$p")
+            echo "/$p HTTP $c"
+            [ "$c" = "200" ] || { echo "::error::/$p returned $c"; exit 1; }
+          done
