@@ -1,0 +1,10 @@
+User-agent: *
+Disallow: /channel-manager/
+Disallow: /check-availability.php
+Disallow: /create_order.php
+Disallow: /confirm_booking.php
+
+# Allow Google to crawl the price feed (required for Hotel Ads)
+Allow: /channel-manager/price-feed.php
+
+Sitemap: https://kanchifarmstay.com/sitemap.xml
