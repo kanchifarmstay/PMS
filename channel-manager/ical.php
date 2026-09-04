@@ -151,6 +151,103 @@ function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
     return $stmt->rowCount();
 }
 
+/**
+ * Remove OTA blocks that are echoes of one of our own bookings.
+ *
+ * A confirmed booking is published to every OTA listing that contains the room.
+ * The OTA imports that block and re-exports it under its own UID, so it returns
+ * to us as an "unavailable" block - and Airbnb, whose listings are calendar
+ * linked, returns it on EVERY listing feed including the whole-property one.
+ * That listing id is the parent of all ten rooms, so one component booking
+ * imported onto it closes the entire property.
+ *
+ * A block is our own echo when its dates match, exactly, a confirmed booking on
+ * a related room that did not itself come from that platform. Those dates are
+ * already held by the booking, so dropping the echo cannot oversell them.
+ *
+ * This is deliberately independent of removeSharedAirbnbEchoBlocks(): that sweep
+ * only fires when a twin copy is present, so its result depended on how many
+ * feeds happened to answer in a given run. When only the whole-property feed
+ * returned the event there was no twin, the copy survived, and the site showed
+ * every room as booked - which is why availability flickered between "whole
+ * property closed" and "nothing blocked" every fifteen minutes.
+ */
+/**
+ * Drop an imported block sitting on parent inventory when the same block is also
+ * present on one of that parent's own components.
+ *
+ * A parent id - `kanchi-farm-stay`, `white-villa-full-floor` - is an expansion of
+ * its components, and relatedInventoryIds() maps every component up to it, so a
+ * block imported onto a parent closes every room underneath it. When an OTA
+ * returns the same UID and dates on both a parent listing feed and a component
+ * feed, the component copy is the specific one and the parent copy merely widens
+ * it to the whole property. Dropping the parent copy leaves the room that is
+ * actually taken blocked and the rest sellable.
+ *
+ * This reads no summary text, unlike removeSharedAirbnbEchoBlocks(), so it holds
+ * for every platform: booking.com and agoda do not use Airbnb's "Airbnb (Not
+ * available)" wording, and their reservations cannot be told from their blocks by
+ * wording at all, so that sweep can never be pointed at them.
+ *
+ * A parent block with NO component twin is deliberately left in place. On those
+ * listings it may be a real whole-property reservation, and there is no evidence
+ * here to say otherwise - over-blocking is the safe direction, and
+ * removeOwnBookingEchoBlocks() already covers the case where the dates are ones
+ * we published ourselves.
+ */
+function removeParentInventoryEchoBlocks(?PDO $db = null): int
+{
+    $db ??= getDB();
+    $removed = 0;
+    foreach (INVENTORY_COMPONENTS as $parent => $components) {
+        if ($components === []) continue;
+        $ph = implode(',', array_fill(0, count($components), '?'));
+        $stmt = $db->prepare("DELETE FROM external_blocks
+            WHERE room_id = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM external_blocks AS component
+                  WHERE lower(component.platform) = lower(external_blocks.platform)
+                    AND component.external_uid = external_blocks.external_uid
+                    AND component.check_in = external_blocks.check_in
+                    AND component.check_out = external_blocks.check_out
+                    AND component.room_id IN ({$ph})
+              )");
+        $stmt->execute(array_merge([$parent], $components));
+        $removed += $stmt->rowCount();
+    }
+    return $removed;
+}
+
+function removeOwnBookingEchoBlocks(?PDO $db = null): int
+{
+    $db ??= getDB();
+    $rows = $db->query('SELECT id, room_id, platform, check_in, check_out FROM external_blocks')->fetchAll();
+    $echoes = [];
+    foreach ($rows as $row) {
+        $rooms = relatedInventoryIds((string)$row['room_id']);
+        if ($rooms === []) continue;
+        $ph = implode(',', array_fill(0, count($rooms), '?'));
+        $stmt = $db->prepare("SELECT 1 FROM bookings
+            WHERE status='confirmed'
+              AND lower(source) != ?
+              AND check_in = ?
+              AND check_out = ?
+              AND room_id IN ({$ph})
+            LIMIT 1");
+        $stmt->execute(array_merge([
+            strtolower((string)$row['platform']),
+            (string)$row['check_in'],
+            (string)$row['check_out'],
+        ], $rooms));
+        if ($stmt->fetchColumn()) $echoes[] = (int)$row['id'];
+    }
+    if ($echoes === []) return 0;
+    $ph = implode(',', array_fill(0, count($echoes), '?'));
+    $db->prepare("DELETE FROM external_blocks WHERE id IN ({$ph})")->execute($echoes);
+    return count($echoes);
+}
+
 function icalEscapeText(string $value): string
 {
     return str_replace(['\\', ';', ',', "\r\n", "\r", "\n"], ['\\\\', '\\;', '\\,', '\\n', '\\n', '\\n'], $value);
