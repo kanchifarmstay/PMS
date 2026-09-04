@@ -71,6 +71,10 @@ function runCalendarSync(?callable $fetcher = null): array
     // several listing feeds. Remove those echoes only after every active
     // calendar has refreshed so genuine single-listing blocks remain intact.
     removeSharedAirbnbEchoBlocks();
+    // A lone echo has no twin to match, so it survives the sweep above. Drop
+    // anything whose dates we already hold ourselves, which does not depend on
+    // how many feeds answered this run.
+    removeOwnBookingEchoBlocks();
     return $results;
 }
 

@@ -538,6 +538,78 @@ test('shared Airbnb unavailable echoes are removed without deleting reservations
     assertSame([['room_id'=>'tent', 'external_uid'=>'real-reservation', 'summary'=>'Reserved']], $remaining);
 });
 
+test('a lone whole-property echo of our own booking is removed', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    addBooking([
+        'room_id'=>'wooden-cottage', 'room_name'=>ROOM_IDS['wooden-cottage'],
+        'check_in'=>'2030-10-10', 'check_out'=>'2030-10-12',
+        'guest_name'=>'Cottage Guest', 'source'=>'manual',
+    ]);
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['kanchi-farm-stay', 'airbnb', 'https://example.com/group.ics']);
+    $calendarId = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$calendarId, 'kanchi-farm-stay', 'airbnb', 'lone-echo', '2030-10-10', '2030-10-12', 'Airbnb (Not available)']);
+
+    // Only the whole-property feed returned the event, so there is no twin and
+    // the shared-UID sweep cannot see it. This is the state the live calendar
+    // was flickering into: one component booking closing all ten rooms.
+    assertSame(0, removeSharedAirbnbEchoBlocks($db));
+    foreach (['tent', 'natures-nest', 'white-villa'] as $room) {
+        assertFalse(
+            isInventoryAvailable($room, '2030-10-10', '2030-10-12'),
+            "expected {$room} to be closed by the whole-property echo"
+        );
+    }
+
+    assertSame(1, removeOwnBookingEchoBlocks($db));
+    assertSame(0, (int)$db->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn());
+    foreach (['tent', 'natures-nest', 'white-villa'] as $room) {
+        assertTrue(
+            isInventoryAvailable($room, '2030-10-10', '2030-10-12'),
+            "expected {$room} to be bookable once the echo is dropped"
+        );
+    }
+    // The booking that started the round trip still blocks its own room.
+    assertFalse(isInventoryAvailable('wooden-cottage', '2030-10-10', '2030-10-12'));
+});
+
+test('an OTA block that matches no booking of ours is kept', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['kanchi-farm-stay', 'airbnb', 'https://example.com/group-genuine.ics']);
+    $calendarId = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$calendarId, 'kanchi-farm-stay', 'airbnb', 'genuine-block', '2030-11-01', '2030-11-03', 'Airbnb (Not available)']);
+
+    assertSame(0, removeOwnBookingEchoBlocks($db));
+    assertSame(1, (int)$db->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn());
+    assertFalse(isInventoryAvailable('tent', '2030-11-01', '2030-11-03'));
+});
+
+test('a block is not an echo of a booking that came from the same platform', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    addBooking([
+        'room_id'=>'wooden-cottage', 'room_name'=>ROOM_IDS['wooden-cottage'],
+        'check_in'=>'2030-12-01', 'check_out'=>'2030-12-03',
+        'guest_name'=>'Airbnb Guest', 'source'=>'airbnb', 'is_sync_imported'=>1,
+    ]);
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['wooden-cottage', 'airbnb', 'https://example.com/cottage.ics']);
+    $calendarId = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$calendarId, 'wooden-cottage', 'airbnb', 'airbnb-own', '2030-12-01', '2030-12-03', 'Airbnb (Not available)']);
+
+    // The booking came from Airbnb, so the block is that same reservation, not a
+    // round trip of ours. applyIcalSnapshot() clears imported bookings on every
+    // run, so the block stays as the durable record.
+    assertSame(0, removeOwnBookingEchoBlocks($db));
+    assertSame(1, (int)$db->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn());
+});
+
 $apiServicePath = dirname(__DIR__) . '/channel-manager/api.php';
 if (is_file($apiServicePath)) require_once $apiServicePath;
 

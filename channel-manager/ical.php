@@ -151,6 +151,56 @@ function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
     return $stmt->rowCount();
 }
 
+/**
+ * Remove OTA blocks that are echoes of one of our own bookings.
+ *
+ * A confirmed booking is published to every OTA listing that contains the room.
+ * The OTA imports that block and re-exports it under its own UID, so it returns
+ * to us as an "unavailable" block - and Airbnb, whose listings are calendar
+ * linked, returns it on EVERY listing feed including the whole-property one.
+ * That listing id is the parent of all ten rooms, so one component booking
+ * imported onto it closes the entire property.
+ *
+ * A block is our own echo when its dates match, exactly, a confirmed booking on
+ * a related room that did not itself come from that platform. Those dates are
+ * already held by the booking, so dropping the echo cannot oversell them.
+ *
+ * This is deliberately independent of removeSharedAirbnbEchoBlocks(): that sweep
+ * only fires when a twin copy is present, so its result depended on how many
+ * feeds happened to answer in a given run. When only the whole-property feed
+ * returned the event there was no twin, the copy survived, and the site showed
+ * every room as booked - which is why availability flickered between "whole
+ * property closed" and "nothing blocked" every fifteen minutes.
+ */
+function removeOwnBookingEchoBlocks(?PDO $db = null): int
+{
+    $db ??= getDB();
+    $rows = $db->query('SELECT id, room_id, platform, check_in, check_out FROM external_blocks')->fetchAll();
+    $echoes = [];
+    foreach ($rows as $row) {
+        $rooms = relatedInventoryIds((string)$row['room_id']);
+        if ($rooms === []) continue;
+        $ph = implode(',', array_fill(0, count($rooms), '?'));
+        $stmt = $db->prepare("SELECT 1 FROM bookings
+            WHERE status='confirmed'
+              AND lower(source) != ?
+              AND check_in = ?
+              AND check_out = ?
+              AND room_id IN ({$ph})
+            LIMIT 1");
+        $stmt->execute(array_merge([
+            strtolower((string)$row['platform']),
+            (string)$row['check_in'],
+            (string)$row['check_out'],
+        ], $rooms));
+        if ($stmt->fetchColumn()) $echoes[] = (int)$row['id'];
+    }
+    if ($echoes === []) return 0;
+    $ph = implode(',', array_fill(0, count($echoes), '?'));
+    $db->prepare("DELETE FROM external_blocks WHERE id IN ({$ph})")->execute($echoes);
+    return count($echoes);
+}
+
 function icalEscapeText(string $value): string
 {
     return str_replace(['\\', ';', ',', "\r\n", "\r", "\n"], ['\\\\', '\\;', '\\,', '\\n', '\\n', '\\n'], $value);
