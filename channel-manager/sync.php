@@ -74,6 +74,10 @@ function runCalendarSync(?callable $fetcher = null): array
     // A lone echo has no twin to match, so it survives the sweep above. Drop
     // anything whose dates we already hold ourselves, which does not depend on
     // how many feeds answered this run.
+    // A parent-level block closes every room beneath it, and on booking.com and
+    // agoda no wording distinguishes a block from a reservation. Drop the parent
+    // copy only where a component feed carries the same block.
+    removeParentInventoryEchoBlocks();
     removeOwnBookingEchoBlocks();
     return $results;
 }

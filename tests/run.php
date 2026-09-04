@@ -610,6 +610,66 @@ test('a block is not an echo of a booking that came from the same platform', fun
     assertSame(1, (int)$db->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn());
 });
 
+test('a parent-inventory block is dropped when a component carries the same one', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    // booking.com, not Airbnb: no summary wording separates its blocks from its
+    // reservations, so the Airbnb sweep can never be pointed at this feed.
+    foreach (['kanchi-farm-stay', 'natures-nest'] as $roomId) {
+        $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+           ->execute([$roomId, 'booking.com', "https://example.com/{$roomId}-bdc.ics"]);
+        $calendarId = (int)$db->lastInsertId();
+        $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+           ->execute([$calendarId, $roomId, 'booking.com', 'bdc-shared', '2030-09-04', '2030-09-06', 'CLOSED']);
+    }
+
+    assertSame(0, removeSharedAirbnbEchoBlocks($db), 'the Airbnb sweep must not touch another platform');
+    assertSame(1, removeParentInventoryEchoBlocks($db));
+
+    $remaining = $db->query('SELECT room_id FROM external_blocks')->fetchAll(PDO::FETCH_COLUMN);
+    assertSame(['natures-nest'], $remaining);
+    assertFalse(isInventoryAvailable('natures-nest', '2030-09-04', '2030-09-06'));
+    foreach (['tent', 'wooden-cottage', 'white-villa'] as $room) {
+        assertTrue(
+            isInventoryAvailable($room, '2030-09-04', '2030-09-06'),
+            "expected {$room} to stay sellable once the parent copy is dropped"
+        );
+    }
+});
+
+test('the full-floor parent is narrowed to its component too', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    foreach (['white-villa-full-floor', 'white-villa'] as $roomId) {
+        $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+           ->execute([$roomId, 'agoda', "https://example.com/{$roomId}-agoda.ics"]);
+        $calendarId = (int)$db->lastInsertId();
+        $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+           ->execute([$calendarId, $roomId, 'agoda', 'agoda-shared', '2030-09-10', '2030-09-12', 'Blocked']);
+    }
+
+    assertSame(1, removeParentInventoryEchoBlocks($db));
+    assertFalse(isInventoryAvailable('white-villa', '2030-09-10', '2030-09-12'));
+    assertTrue(isInventoryAvailable('white-villa-room-2', '2030-09-10', '2030-09-12'));
+});
+
+test('a parent-inventory block with no component twin is kept', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['kanchi-farm-stay', 'agoda', 'https://example.com/group-agoda.ics']);
+    $calendarId = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$calendarId, 'kanchi-farm-stay', 'agoda', 'group-only', '2030-09-20', '2030-09-22', 'Blocked']);
+
+    // Nothing here says this is not a real whole-property reservation, so it
+    // stands. Over-blocking is the safe direction; underblocking sells a room twice.
+    assertSame(0, removeParentInventoryEchoBlocks($db));
+    assertSame(0, removeOwnBookingEchoBlocks($db));
+    assertSame(1, (int)$db->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn());
+    assertFalse(isInventoryAvailable('tent', '2030-09-20', '2030-09-22'));
+});
+
 $apiServicePath = dirname(__DIR__) . '/channel-manager/api.php';
 if (is_file($apiServicePath)) require_once $apiServicePath;
 

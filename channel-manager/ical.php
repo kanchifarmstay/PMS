@@ -172,6 +172,53 @@ function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
  * every room as booked - which is why availability flickered between "whole
  * property closed" and "nothing blocked" every fifteen minutes.
  */
+/**
+ * Drop an imported block sitting on parent inventory when the same block is also
+ * present on one of that parent's own components.
+ *
+ * A parent id - `kanchi-farm-stay`, `white-villa-full-floor` - is an expansion of
+ * its components, and relatedInventoryIds() maps every component up to it, so a
+ * block imported onto a parent closes every room underneath it. When an OTA
+ * returns the same UID and dates on both a parent listing feed and a component
+ * feed, the component copy is the specific one and the parent copy merely widens
+ * it to the whole property. Dropping the parent copy leaves the room that is
+ * actually taken blocked and the rest sellable.
+ *
+ * This reads no summary text, unlike removeSharedAirbnbEchoBlocks(), so it holds
+ * for every platform: booking.com and agoda do not use Airbnb's "Airbnb (Not
+ * available)" wording, and their reservations cannot be told from their blocks by
+ * wording at all, so that sweep can never be pointed at them.
+ *
+ * A parent block with NO component twin is deliberately left in place. On those
+ * listings it may be a real whole-property reservation, and there is no evidence
+ * here to say otherwise - over-blocking is the safe direction, and
+ * removeOwnBookingEchoBlocks() already covers the case where the dates are ones
+ * we published ourselves.
+ */
+function removeParentInventoryEchoBlocks(?PDO $db = null): int
+{
+    $db ??= getDB();
+    $removed = 0;
+    foreach (INVENTORY_COMPONENTS as $parent => $components) {
+        if ($components === []) continue;
+        $ph = implode(',', array_fill(0, count($components), '?'));
+        $stmt = $db->prepare("DELETE FROM external_blocks
+            WHERE room_id = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM external_blocks AS component
+                  WHERE lower(component.platform) = lower(external_blocks.platform)
+                    AND component.external_uid = external_blocks.external_uid
+                    AND component.check_in = external_blocks.check_in
+                    AND component.check_out = external_blocks.check_out
+                    AND component.room_id IN ({$ph})
+              )");
+        $stmt->execute(array_merge([$parent], $components));
+        $removed += $stmt->rowCount();
+    }
+    return $removed;
+}
+
 function removeOwnBookingEchoBlocks(?PDO $db = null): int
 {
     $db ??= getDB();
