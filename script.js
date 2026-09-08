@@ -10,7 +10,7 @@ const rooms = [
         name: "Wooden Villa",
         shortDescription: "Unique rooftop villa with panoramic views and private terrace.",
         fullDescription: "Perched on the top floor, the Wooden Villa offers a unique stay experience. This 'penthouse' style accommodation features rustic wooden architecture and opens onto a private terrace with sweeping views of the farm.",
-        amenities: ["Private Terrace", "Panoramic View", "Rustic Interiors", "King Bed", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        amenities: ["Private Terrace", "Panoramic View", "Rustic Interiors", "King Bed", "Outdoor Seating", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/wooden-villa-swing-3.jpg",
         images: [
             "assets/images/wooden-villa-swing-3.jpg",
@@ -32,7 +32,7 @@ const rooms = [
         name: "White Villa — Room 1",
         shortDescription: "A luxurious white-themed villa offering elegance and serenity.",
         fullDescription: "White Villa Room 1 is located on the first floor of the villa. It stands as a beacon of elegance amidst the green farm. With its pristine white architecture and spacious interiors, it offers a luxurious stay for those who appreciate style and comfort.",
-        amenities: ["King Size Bed", "Private Entrance", "Modern Interiors", "Air Conditioning", "Large Windows", "Attached Bathroom", "TV in Hall", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        amenities: ["King Size Bed", "Private Entrance", "Modern Interiors", "Air Conditioning", "Large Windows", "Attached Bathroom", "TV in Hall", "Outdoor Seating", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/white-villa-main-hero.jpg",
         images: [
             "assets/images/white-villa-main-hero.jpg",
@@ -54,7 +54,7 @@ const rooms = [
         name: "White Villa — Room 2",
         shortDescription: "A cozy room in the White Villa, perfect for a comfortable and affordable stay.",
         fullDescription: "White Villa Room 2 is located on the first floor of the villa, with the bathroom conveniently situated on the ground floor. It offers the same elegant white architecture and serene surroundings as Room 1, in a cozy and comfortable setting. Ideal for an affordable yet stylish farm stay.",
-        amenities: ["Double Bed", "Private Entrance", "Modern Interiors", "Air Conditioning", "Large Windows", "Bathroom on Ground Floor", "TV in Hall", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        amenities: ["Double Bed", "Private Entrance", "Modern Interiors", "Air Conditioning", "Large Windows", "Bathroom on Ground Floor", "TV in Hall", "Outdoor Seating", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/white-villa-main-hero.jpg",
         images: [
             "assets/images/white-villa-3.jpg",
@@ -74,8 +74,8 @@ const rooms = [
         id: 'white-villa-full-floor',
         name: "White Villa — Full 1st Floor",
         shortDescription: "Exclusive booking of the entire first floor with 2 rooms, hall, balcony and terrace access.",
-        fullDescription: "Experience the entire first floor of the White Villa — includes both Room 1 and Room 2, a shared hall with TV, balcony, and terrace access. Room 1 features an attached bathroom while a second common bathroom serves the floor. Perfect for families or groups looking for a private, spacious stay with modern comforts. Enjoy access to the outdoor pool, lush garden, dining, and Wi-Fi.",
-        amenities: ["2 Rooms", "1 Attached Bathroom", "1 Common Bathroom", "TV in Hall", "Balcony", "Terrace Access", "Outdoor Pool", "Dining", "Air Conditioning", "Private Entrance", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        fullDescription: "Experience the entire first floor of the White Villa — includes both Room 1 and Room 2, a shared hall with TV, balcony, and terrace access. Room 1 features an attached bathroom while a second common bathroom serves the floor. Perfect for families or groups looking for a private, spacious stay with modern comforts. Enjoy access to the outdoor plunge pool, lush garden, dining, and Wi-Fi.",
+        amenities: ["2 Rooms", "1 Attached Bathroom", "1 Common Bathroom", "TV in Hall", "Balcony", "Terrace Access", "Outdoor Plunge Pool", "Dining", "Air Conditioning", "Private Entrance", "Outdoor Seating", "WiFi", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/white-villa-main-hero.jpg",
         images: [
             "assets/images/white-villa-main-hero.jpg",
@@ -97,7 +97,7 @@ const rooms = [
         name: "Nature's Nest",
         shortDescription: "A cozy retreat offering a blend of rustic charm and modern comfort.",
         fullDescription: "Nature's Nest is perfect for couples or small families. Featuring a comfortable queen-sized bed and views of the surrounding greenery, it offers a peaceful respite from the bustle of city life.",
-        amenities: ["Queen Size Bed", "Garden View", "Air Conditioning", "Attached Bathroom", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        amenities: ["Queen Size Bed", "Garden View", "Air Conditioning", "Attached Bathroom", "Outdoor Seating", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/natures-nest-main.jpg",
         images: [
             "assets/images/natures-nest-main.jpg",
@@ -117,7 +117,7 @@ const rooms = [
         name: "Tranquil Retreat",
         shortDescription: "Spacious suite in the main farmhouse with access to verandas.",
         fullDescription: "The Tranquil Retreat suite offers an expansive layout within the main farmhouse structure. It features premium furnishings, a king-sized bed, and direct access to the breezy verandas.",
-        amenities: ["King Size Bed", "Spacious Living Area", "Work Desk", "Air Conditioning", "Veranda Access", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        amenities: ["King Size Bed", "Spacious Living Area", "Work Desk", "Air Conditioning", "Veranda Access", "Outdoor Seating", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/tranquil-retreat-main.jpg",
         images: [
             "assets/images/tranquil-retreat-main.jpg",
@@ -138,8 +138,8 @@ const rooms = [
         id: 'wooden-cottage',
         name: "Wooden Cottage",
         shortDescription: "Get away from it all when you stay under the stars.",
-        fullDescription: "A group of friends created this place as an escape from buzzing city life. A perfect peaceful getaway without gadgets with friends and family. Features a private pool and farm stay setting.",
-        amenities: ["King Bed", "Kitchen", "Private Pool", "Air Conditioning", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        fullDescription: "A group of friends created this place as an escape from buzzing city life. A perfect peaceful getaway without gadgets with friends and family. Features a private plunge pool and farm stay setting.",
+        amenities: ["King Bed", "Kitchen", "Private Plunge Pool", "Air Conditioning", "Outdoor Seating", "WiFi", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/wooden-cottage-1.jpg",
         images: [
             "assets/images/wooden-cottage-1.jpg",
@@ -164,7 +164,7 @@ const rooms = [
         name: "KanchiFarmStay (Group Booking)",
         shortDescription: "Exclusive booking of the entire farm stay for large groups and private events.",
         fullDescription: "Experience the ultimate private getaway by booking the entire Kanchi Farm Stay. Perfect for large family gatherings, corporate retreats, or special events. Enjoy exclusive access to all our villas, cottages, common areas, dining hall, and sprawling gardens without any other guests.",
-        amenities: ["Exclusive Access", "All Bedrooms", "Dining Hall", "Full Kitchen", "Private Grounds", "Event Space", "Campfire", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        amenities: ["Exclusive Access", "All Bedrooms", "Dining Hall", "Full Kitchen", "Private Grounds", "Event Space", "Campfire", "Outdoor Seating", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/farm-hero.jpg",
         images: [
             "assets/images/farm-hero.jpg",
@@ -192,7 +192,7 @@ const rooms = [
         name: "Tent",
         shortDescription: "Sleep under the stars in our comfortable farm stay tent.",
         fullDescription: "Sleep under the stars and wake up to the sound of nature in our spacious tent. It provides all the rustic charm of camping without sacrificing comfort. Perfect for adventurous couples or friends looking for a unique farm stay experience close to nature.",
-        amenities: ["Comfortable Beds", "Shared Bathroom Access", "Campfire Access", "Star Gazing", "Fan", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        amenities: ["Comfortable Beds", "Shared Bathroom Access", "Campfire Access", "Star Gazing", "Fan", "Outdoor Seating", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/tent-accommodation-3.jpg",
         images: [
             "assets/images/tent-new-1.jpg",
@@ -214,7 +214,7 @@ const rooms = [
         name: "Tree House",
         shortDescription: "A unique treetop experience — climb up and sleep among the branches.",
         fullDescription: "Our Tree House is a one-of-a-kind stay built among the trees of the farm. Accessible by a bamboo ladder, it offers a thrilling yet peaceful retreat for adventurers who want to feel truly connected to nature. Wake up to birdsong and a canopy view unlike anything else.",
-        amenities: ["Unique Treetop Setting", "Bamboo Ladder Access", "Star Gazing", "Campfire Access", "Farm Views", "Nature Immersion", "Outdoor Seating", "WiFi", "Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        amenities: ["Unique Treetop Setting", "Bamboo Ladder Access", "Star Gazing", "Campfire Access", "Farm Views", "Nature Immersion", "Outdoor Seating", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
         image: "assets/images/treehouse-1.jpg",
         images: [
             "assets/images/treehouse-1.jpg",
