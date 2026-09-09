@@ -313,6 +313,13 @@ if (!empty($_SESSION['admin_logged_in'])) {
 
     $confirmedBookings = array_values(array_filter($allBookings, fn($b) => $b['status'] === 'confirmed'));
     $confirmed = expandCalendarEntriesToRelatedInventory(array_merge($confirmedBookings, getExternalBlockCalendarEntries()));
+    // $confirmed answers "is this room available", NOT "who booked". It also
+    // carries derived inventory copies (a White Villa - Full 1st Floor booking
+    // also blocks Room 1 and Room 2) and synthetic group-threshold rows.
+    // Anything that lists guests, counts arrivals or sums money must use
+    // $realBookings: one full-floor booking is three rows in $confirmed, and
+    // summing their amounts charged the guest's 2,500 three times over.
+    $realBookings = array_values(array_filter($confirmed, fn($b) => empty($b['is_derived_inventory'])));
     $upcoming   = array_filter($confirmedBookings, fn($b) => $b['check_out'] >= date('Y-m-d'));
     $thisMonth  = array_filter($confirmedBookings, fn($b) => substr($b['check_in'],0,7) === date('Y-m'));
 
@@ -1634,9 +1641,9 @@ $totalOccupied = count($propStatus) - $totalFree;
   $prevDay = date('Y-m-d', strtotime($dayDate . ' -1 day'));
   $nextDay = date('Y-m-d', strtotime($dayDate . ' +1 day'));
   $isToday = $dayDate === date('Y-m-d');
-  $dayCheckins  = array_values(array_filter($confirmed, fn($b) => $b['check_in']  === $dayDate));
-  $dayCheckouts = array_values(array_filter($confirmed, fn($b) => $b['check_out'] === $dayDate));
-  $dayStays     = array_values(array_filter($confirmed, fn($b) => $dayDate > $b['check_in'] && $dayDate < $b['check_out']));
+  $dayCheckins  = array_values(array_filter($realBookings, fn($b) => $b['check_in']  === $dayDate));
+  $dayCheckouts = array_values(array_filter($realBookings, fn($b) => $b['check_out'] === $dayDate));
+  $dayStays     = array_values(array_filter($realBookings, fn($b) => $dayDate > $b['check_in'] && $dayDate < $b['check_out']));
   $dayRevenue   = array_sum(array_column($dayCheckins, 'amount'));
   $dayDemand    = $demandByDate[$dayDate] ?? [];
 ?>
@@ -1699,14 +1706,31 @@ $totalOccupied = count($propStatus) - $totalFree;
       <thead><tr><th>Room</th><th>Status</th><th>Guest</th><th>Phone</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Source</th><th>Amount</th></tr></thead>
       <tbody>
         <?php foreach ($rooms as $rid => $rname):
-          // Find booking for this room on this day
+          // Find the entry holding this room on this day. Prefer a real booking
+          // over a derived block, so a room that is genuinely booked never
+          // reads as merely blocked by something else.
           $rb = null;
           foreach ($confirmed as $b) {
-            if ($b['room_id']===$rid && $dayDate >= $b['check_in'] && $dayDate < $b['check_out']) { $rb=$b; break; }
+            if ($b['room_id']!==$rid || $dayDate < $b['check_in'] || $dayDate >= $b['check_out']) continue;
+            if ($rb === null || (!empty($rb['is_derived_inventory']) && empty($b['is_derived_inventory']))) $rb = $b;
+            if (empty($rb['is_derived_inventory'])) break;
+          }
+          // A derived row is NOT a booking of this room - it is this room being
+          // held by a booking of overlapping inventory. Presenting it as a
+          // check-in with its own amount reported one full-floor booking as
+          // three separate 2,500 arrivals.
+          $rbDerived = $rb && !empty($rb['is_derived_inventory']);
+          $rbOrigin  = '';
+          if ($rbDerived) {
+            $originId = (string)($rb['inventory_origin_room_id'] ?? '');
+            $rbOrigin = !empty($rb['is_group_threshold'])
+              ? 'the whole-property hold'
+              : (ROOM_IDS[$originId] ?? $originId);
           }
           $status = '';
           $statusStyle = '';
-          if ($rb) {
+          if ($rbDerived) { $status='Blocked'; $statusStyle='color:#b45309;font-weight:600'; }
+          elseif ($rb) {
             if ($rb['check_in'] === $dayDate) { $status='Check-in'; $statusStyle='color:#16a34a;font-weight:700'; }
             elseif ($rb['check_out'] === date('Y-m-d', strtotime($dayDate.' +1 day'))) { $status='Last Night'; $statusStyle='color:#e65100;font-weight:700'; }
             else { $status='Occupied'; $statusStyle='color:#3b82f6;font-weight:600'; }
@@ -1717,6 +1741,9 @@ $totalOccupied = count($propStatus) - $totalFree;
           <td>
             <?php if ($rb): ?>
               <span style="<?= $statusStyle ?>"><?= $status ?></span>
+              <?php if ($rbDerived && $rbOrigin !== ''): ?>
+                <div class="muted" style="font-size:.7rem">via <?= htmlspecialchars($rbOrigin) ?></div>
+              <?php endif; ?>
             <?php else: ?>
               <span style="color:var(--text-muted)">Free</span>
             <?php endif; ?>
@@ -1727,7 +1754,9 @@ $totalOccupied = count($propStatus) - $totalFree;
           <td><?= $rb ? $rb['check_out'] : '—' ?></td>
           <td><?= $rb ? nights($rb['check_in'],$rb['check_out']) : '—' ?></td>
           <td><?= $rb ? badge($rb['source']) : '' ?></td>
-          <td><?= $rb && $rb['amount']>0 ? fmt($rb['amount']) : '—' ?></td>
+          <?php // The amount belongs to the one booking that earned it, never to
+                // the rooms it also holds. ?>
+          <td><?= $rb && !$rbDerived && $rb['amount']>0 ? fmt($rb['amount']) : '—' ?></td>
         </tr>
         <?php endforeach; ?>
       </tbody>
@@ -1895,7 +1924,7 @@ $totalOccupied = count($propStatus) - $totalFree;
         $dayCheckins  = [];
         $dayCheckouts = [];
         $dayStays     = [];
-        foreach ($confirmed as $b) {
+        foreach ($realBookings as $b) {
           if ($b['check_in'] === $dateStr) $dayCheckins[] = $b;
           if ($b['check_out'] === $dateStr) $dayCheckouts[] = $b;
           if ($dateStr > $b['check_in'] && $dateStr < $b['check_out']) $dayStays[] = $b;
@@ -1932,9 +1961,9 @@ $totalOccupied = count($propStatus) - $totalFree;
         <tbody>
           <?php for ($d = 0; $d < 7; $d++):
             $dateStr = date('Y-m-d', strtotime("+$d days", $weekStartTs));
-            $ci = array_filter($confirmed, fn($b) => $b['check_in'] === $dateStr);
-            $co = array_filter($confirmed, fn($b) => $b['check_out'] === $dateStr);
-            $st = array_filter($confirmed, fn($b) => $dateStr > $b['check_in'] && $dateStr < $b['check_out']);
+            $ci = array_filter($realBookings, fn($b) => $b['check_in'] === $dateStr);
+            $co = array_filter($realBookings, fn($b) => $b['check_out'] === $dateStr);
+            $st = array_filter($realBookings, fn($b) => $dateStr > $b['check_in'] && $dateStr < $b['check_out']);
             $dem = $demandByDate[$dateStr] ?? [];
           ?>
           <tr <?= $dateStr===date('Y-m-d')?'style="background:#f0faf3"':'' ?>>
@@ -1978,12 +2007,7 @@ $totalOccupied = count($propStatus) - $totalFree;
   $nextYearM   = $calMonth+1 > 12 ? $calYear+1 : $calYear;
   $monthBookingDates = [];
   $monthBookingRooms = [];
-  foreach ($confirmed as $b) {
-    // Real bookings only. $confirmed also carries derived inventory copies (a
-    // White Villa room booking also blocks the full floor) and the synthetic
-    // group-threshold rows, so counting every entry would report three rooms
-    // booked on a night where one guest booked one room.
-    if (!empty($b['is_derived_inventory'])) continue;
+  foreach ($realBookings as $b) {
     $ci = strtotime($b['check_in']); $co = strtotime($b['check_out']);
     for ($t=$ci; $t<$co; $t+=86400) {
       if (date('n',$t)==$calMonth && date('Y',$t)==$calYear) {
