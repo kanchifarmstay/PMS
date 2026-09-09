@@ -415,6 +415,24 @@ function sourceName(string $s): string {
         default                  => ucfirst($s),
     };
 }
+// Compact room label for the month calendar cells, where the full ROOM_IDS
+// name ("White Villa - Full 1st Floor") does not fit. A room added to
+// ROOM_IDS but not listed here still renders, with its full name.
+function roomShort(string $roomId): string {
+    return match($roomId) {
+        'wooden-villa'           => 'Wooden Villa',
+        'white-villa'            => 'White Villa 1',
+        'white-villa-room-2'     => 'White Villa 2',
+        'white-villa-full-floor' => 'White Villa Floor',
+        'natures-nest'           => "Nature's Nest",
+        'tranquil-retreat'       => 'Tranquil Retreat',
+        'wooden-cottage'         => 'Wooden Cottage',
+        'kanchi-farm-stay'       => 'Whole Property',
+        'tent'                   => 'Tent',
+        'tree-house'             => 'Tree House',
+        default                  => ROOM_IDS[$roomId] ?? $roomId,
+    };
+}
 function badge(string $s): string {
     $c = sourceColor($s);
     return "<span class='badge' style='background:$c'>".htmlspecialchars(sourceName($s))."</span>";
@@ -1959,14 +1977,20 @@ $totalOccupied = count($propStatus) - $totalFree;
   $nextMonth   = $calMonth+1 > 12 ? 1  : $calMonth+1;
   $nextYearM   = $calMonth+1 > 12 ? $calYear+1 : $calYear;
   $monthBookingDates = [];
-  $monthBookingSrc   = [];
+  $monthBookingRooms = [];
   foreach ($confirmed as $b) {
+    // Real bookings only. $confirmed also carries derived inventory copies (a
+    // White Villa room booking also blocks the full floor) and the synthetic
+    // group-threshold rows, so counting every entry would report three rooms
+    // booked on a night where one guest booked one room.
+    if (!empty($b['is_derived_inventory'])) continue;
     $ci = strtotime($b['check_in']); $co = strtotime($b['check_out']);
     for ($t=$ci; $t<$co; $t+=86400) {
       if (date('n',$t)==$calMonth && date('Y',$t)==$calYear) {
         $ds = date('Y-m-d',$t);
         $monthBookingDates[$ds] = true;
-        $monthBookingSrc[$ds][] = $b['source'];
+        // Keyed by room so a day lists each room once.
+        $monthBookingRooms[$ds][$b['room_id']] = $b;
       }
     }
   }
@@ -1993,28 +2017,39 @@ $totalOccupied = count($propStatus) - $totalFree;
       <tbody>
       <?php
         $col = 0; echo '<tr>';
-        for ($i=1; $i<$startDow; $i++) { echo '<td style="padding:.25rem;height:80px;border:1px solid var(--border);background:#fafafa"></td>'; $col++; }
+        for ($i=1; $i<$startDow; $i++) { echo '<td style="padding:.25rem;height:104px;border:1px solid var(--border);background:#fafafa"></td>'; $col++; }
         for ($day=1; $day<=$daysInMonth; $day++) {
           $ds = sprintf('%04d-%02d-%02d', $calYear, $calMonth, $day);
           $isToday = $ds === date('Y-m-d');
           $hasBk   = isset($monthBookingDates[$ds]);
           $isDem   = !empty($demandByDate[$ds]);
           $isPast  = $ds < date('Y-m-d');
-          $srcs    = $monthBookingSrc[$ds] ?? [];
-          $topSrc  = $srcs[0] ?? null;
+          $bkRooms = $monthBookingRooms[$ds] ?? [];
+          $bkCount = count($bkRooms);
           $bgCell  = $isToday ? '#f0faf3' : ($isPast ? '#fafafa' : '#fff');
-          $topColor = $topSrc ? sourceColor($topSrc) : 'transparent';
           echo '<td onclick="window.location.href=\''.htmlspecialchars($calBase).'&view=day&date='.$ds.'\'" '
-            .'style="padding:.25rem;height:80px;border:1px solid var(--border);background:'.$bgCell.';cursor:pointer;vertical-align:top;transition:background .12s" '
+            .'style="padding:.25rem;height:104px;border:1px solid var(--border);background:'.$bgCell.';cursor:pointer;vertical-align:top;transition:background .12s" '
             .'onmouseover="this.style.background=\'#f0faf3\'" onmouseout="this.style.background=\''.$bgCell.'\'">';
           // Day number pill
           $numStyle = $isToday ? 'background:var(--primary);color:#fff;border-radius:50%;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem' : 'font-size:.8rem;font-weight:'.($hasBk?'700':'400').';color:'.($isPast?'var(--text-muted)':'var(--text)').'';
+          echo '<div style="display:flex;align-items:center;justify-content:space-between;gap:2px">';
           echo '<div style="'.$numStyle.'">'.$day.'</div>';
-          // Colored bar for bookings
-          if ($hasBk) {
-            foreach (array_unique($srcs) as $s) {
-              echo '<div style="margin-top:2px;padding:1px 4px;border-radius:3px;background:'.sourceColor($s).';color:#fff;font-size:.62rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'.sourceName($s).'</div>';
-            }
+          // No denominator: white-villa-full-floor and kanchi-farm-stay are
+          // composite listings, so count($rooms) is not a room capacity.
+          if ($bkCount) echo '<span style="font-size:.58rem;font-weight:700;color:var(--text-muted)">'.$bkCount.' rm'.($bkCount>1?'s':'').'</span>';
+          echo '</div>';
+          // One bar per room booked that night, still coloured by the channel
+          // it came from, so the colour legend below stays true.
+          $shownRooms = 0;
+          foreach ($bkRooms as $bkRid => $bkB) {
+            if ($shownRooms >= 3) break;
+            $bkSrc = $bkB['source'] ?? 'direct';
+            $bkTip = ($rooms[$bkRid] ?? $bkRid).' - '.sourceName($bkSrc).' - '.($bkB['guest_name'] ?? '');
+            echo '<div title="'.htmlspecialchars($bkTip).'" style="margin-top:2px;padding:1px 4px;border-radius:3px;background:'.sourceColor($bkSrc).';color:#fff;font-size:.62rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'.htmlspecialchars(roomShort((string)$bkRid)).'</div>';
+            $shownRooms++;
+          }
+          if ($bkCount > $shownRooms) {
+            echo '<div style="margin-top:1px;font-size:.58rem;font-weight:600;color:var(--text-muted)">+'.($bkCount-$shownRooms).' more</div>';
           }
           // Demand badge
           if ($isDem) {
@@ -2027,7 +2062,7 @@ $totalOccupied = count($propStatus) - $totalFree;
         }
         // Fill trailing cells
         $rem = 7 - ($col % 7);
-        if ($rem < 7) for ($i=0; $i<$rem; $i++) echo '<td style="padding:.25rem;height:80px;border:1px solid var(--border);background:#fafafa"></td>';
+        if ($rem < 7) for ($i=0; $i<$rem; $i++) echo '<td style="padding:.25rem;height:104px;border:1px solid var(--border);background:#fafafa"></td>';
         echo '</tr>';
       ?>
       </tbody>
@@ -2038,6 +2073,7 @@ $totalOccupied = count($propStatus) - $totalFree;
         <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:<?= $col2 ?>;margin-right:.3rem"></span><?= $lbl2 ?></span>
       <?php endforeach; ?>
       <span>⭐ = Demand event</span>
+      <span style="font-weight:600;color:var(--text)">Bar label = room booked; bar colour = channel</span>
     </div>
   </div>
 </div>
