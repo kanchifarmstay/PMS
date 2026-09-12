@@ -120,6 +120,7 @@ const rooms = [
             "assets/images/natures-nest-bathroom.jpg"
         ],
         price: "₹2,500 / night",
+        weekendPrice: "₹3,000 / night",
         numericPrice: 2500,
         capacity: "4 Adults, 2 Children",
         size: "300 sqft",
