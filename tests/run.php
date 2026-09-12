@@ -1005,6 +1005,22 @@ test('transaction guards do not depend on PDO::inTransaction()', function (): vo
     }
 });
 
+test('requiring the demand engine does not run it', function (): void {
+    // cron.php requires demand-engine.php, and its entry-point block fired on
+    // any CLI process that required it - so a command-line sync re-seeded
+    // events and generated a fresh batch of suggestions every run.
+    $source = (string)file_get_contents(dirname(__DIR__) . '/channel-manager/demand-engine.php');
+    assertContains('$demandEngineIsEntryPoint', $source);
+    assertTrue(
+        strpos($source, 'realpath((string)($_SERVER[') < strpos($source, "php_sapi_name() === 'cli'"),
+        'the entry-point check must gate the CLI branch'
+    );
+    // Requiring it here would have seeded events if the guard were missing.
+    $before = (int)getDB()->query('SELECT COUNT(*) FROM pricing_suggestions')->fetchColumn();
+    require_once dirname(__DIR__) . '/channel-manager/demand-engine.php';
+    assertSame($before, (int)getDB()->query('SELECT COUNT(*) FROM pricing_suggestions')->fetchColumn());
+});
+
 test('stored timestamps are read as UTC', function (): void {
     // SQLite writes datetime('now') in UTC and the app runs in Asia/Kolkata, so
     // strtotime() on a raw stored value reported every sync 5h30m stale.

@@ -247,7 +247,12 @@ function generatePricingSuggestions(): int {
 }
 
 // ── CLI / cron entry point ─────────────────────────────────────
-if (php_sapi_name() === 'cli' || (isset($_GET['run']) && $_GET['run'] === '1')) {
+// Only when this file IS the script being run. It used to fire on any CLI
+// process that merely required it - which includes cron.php - so a command-line
+// sync silently re-seeded demand events and generated a fresh batch of pricing
+// suggestions every time, bypassing cron's own once-a-day guard.
+$demandEngineIsEntryPoint = realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__;
+if ($demandEngineIsEntryPoint && (php_sapi_name() === 'cli' || (isset($_GET['run']) && $_GET['run'] === '1'))) {
     $seeded = seedDemandEvents();
     $suggested = generatePricingSuggestions();
     echo json_encode(['seeded_events' => $seeded, 'suggestions_generated' => $suggested]);
