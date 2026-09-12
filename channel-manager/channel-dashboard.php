@@ -72,9 +72,11 @@ function sc(string $src, array $map): array {
 
 // ── Query: all bookings overlapping next 14 days ───────────────
 $db = getDB();
+// status='confirmed', matching isInventoryAvailable(). "not cancelled" drew a
+// grid that disagreed with what the site would actually sell.
 $stmt = $db->prepare("
     SELECT * FROM bookings
-    WHERE status != 'cancelled'
+    WHERE status = 'confirmed'
       AND check_in  <= :e
       AND check_out > :s
     ORDER BY check_in, room_id
@@ -87,7 +89,7 @@ $bookings = expandCalendarEntriesToRelatedInventory($bookings);
 // ── Query: ALL upcoming bookings (for the list below the grid) ─
 $upcomingStmt = $db->prepare("
     SELECT * FROM bookings
-    WHERE status != 'cancelled'
+    WHERE status = 'confirmed'
       AND check_out > :today
     ORDER BY check_in ASC
     LIMIT 60

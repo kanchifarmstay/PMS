@@ -297,7 +297,7 @@ input:focus,select:focus{border-color:#4299e1;box-shadow:0 0 0 3px rgba(66,153,2
                 <tr>
                     <td><?= htmlspecialchars($rooms[$cal['room_id']] ?? $cal['room_id']) ?></td>
                     <td><span class="badge badge-<?= strtolower(str_replace('.','',explode('.',$cal['platform'])[0])) ?>"><?= htmlspecialchars(ucfirst($cal['platform'])) ?></span></td>
-                    <td><?= $cal['last_synced'] ? date('d M H:i', strtotime($cal['last_synced'])) : '<span class="status-none">Never</span>' ?></td>
+                    <td><?php $wizSynced = kfsDbTimestamp($cal['last_synced'] ?? null); ?><?= $wizSynced !== null ? date('d M H:i', $wizSynced) : '<span class="status-none">Never</span>' ?></td>
                     <td><span class="badge badge-active"><?= $cal['is_active'] ? '● Active' : 'Paused' ?></span></td>
                     <td>
                         <form method="POST" style="display:inline">

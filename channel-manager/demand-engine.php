@@ -6,6 +6,7 @@
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/booking-service.php';
 
 // ── Shubh Muhuratham dates 2025-2026 ──────────────────────────
 // Source: Tamil Panchangam — Wedding/Muhurathams
@@ -183,9 +184,11 @@ function generatePricingSuggestions(): int {
     $rooms  = ROOM_IDS;
     $count  = 0;
 
-    // Get all room base prices
+    // The rate a guest is actually quoted, not just what has been typed into the
+    // rates screen. Reading room_rates alone meant that with nothing saved every
+    // room had a base of 0 and the generator silently produced no suggestions.
     $rates = [];
-    foreach (getRoomRates() as $r) $rates[$r['room_id']] = (float)$r['base_price'];
+    foreach (array_keys($rooms) as $rid) $rates[$rid] = (float)roomPricing($rid)['weekday'];
 
     // Demand events from today to +180 days
     $events = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+180 days')));
@@ -222,7 +225,7 @@ function generatePricingSuggestions(): int {
             : date('d M', strtotime($cluster['date_from'])) . '–' . date('d M Y', strtotime($cluster['date_to']));
 
         foreach ($rooms as $rid => $rname) {
-            $base = $rates[$rid] ?? 2500;
+            $base = $rates[$rid] ?? 0.0;
             if ($base <= 0) continue;
             $suggested = round($base * (1 + $pct/100), -2);
             $reason = "Event Detected: $label ($dateRange). Suggesting +{$pct}% price increase.";

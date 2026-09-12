@@ -248,7 +248,7 @@ if (is_file($bookingServicePath)) require_once $bookingServicePath;
 function resetAvailabilityData(): void
 {
     $db = getDB();
-    foreach (['payment_orders', 'booking_holds', 'external_blocks', 'bookings', 'external_calendars'] as $table) {
+    foreach (['payment_orders', 'booking_holds', 'external_blocks', 'bookings', 'external_calendars', 'rate_overrides', 'pricing_suggestions', 'room_rates'] as $table) {
         try { $db->exec("DELETE FROM {$table}"); } catch (Throwable) { /* table not implemented yet */ }
     }
 }
@@ -519,16 +519,28 @@ test('same-platform blocks are not exported back through related listings', func
     }
 });
 
-test('shared Airbnb unavailable echoes are removed without deleting reservations', function (): void {
-    resetAvailabilityData();
-    $db = getDB();
-    foreach (['wooden-villa', 'tent'] as $roomId) {
+function seedSharedAirbnbEcho(PDO $db, array $rooms, string $checkIn, string $checkOut, string $uid = 'shared-echo'): void
+{
+    foreach ($rooms as $roomId) {
         $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
-           ->execute([$roomId, 'airbnb', "https://example.com/{$roomId}.ics"]);
+           ->execute([$roomId, 'airbnb', "https://example.com/{$roomId}-{$uid}.ics"]);
         $calendarId = (int)$db->lastInsertId();
         $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
-           ->execute([$calendarId, $roomId, 'airbnb', 'shared-echo', '2030-10-10', '2030-10-12', 'Airbnb (Not available)']);
+           ->execute([$calendarId, $roomId, 'airbnb', $uid, $checkIn, $checkOut, 'Airbnb (Not available)']);
     }
+}
+
+test('shared Airbnb echoes of a booking we hold are removed, reservations are not', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    // Airbnb fans a block out across linked listings because we published this
+    // booking to them in the first place. That is what makes the copies echoes.
+    addBooking([
+        'room_id'=>'wooden-villa', 'room_name'=>ROOM_IDS['wooden-villa'],
+        'check_in'=>'2030-10-10', 'check_out'=>'2030-10-12',
+        'guest_name'=>'Villa Guest', 'source'=>'phone',
+    ]);
+    seedSharedAirbnbEcho($db, ['wooden-villa', 'tent'], '2030-10-10', '2030-10-12');
     $calendarId = (int)$db->query("SELECT id FROM external_calendars WHERE room_id='tent'")->fetchColumn();
     $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
        ->execute([$calendarId, 'tent', 'airbnb', 'real-reservation', '2030-10-15', '2030-10-16', 'Reserved']);
@@ -536,6 +548,57 @@ test('shared Airbnb unavailable echoes are removed without deleting reservations
     assertSame(2, removeSharedAirbnbEchoBlocks($db));
     $remaining = $db->query("SELECT room_id, external_uid, summary FROM external_blocks")->fetchAll();
     assertSame([['room_id'=>'tent', 'external_uid'=>'real-reservation', 'summary'=>'Reserved']], $remaining);
+});
+
+test('an unexplained shared Airbnb block keeps every room closed', function (): void {
+    // The live failure of 2026-09-12: Airbnb blocked 2027-09-12 on three
+    // listings, the sweep deleted all three copies because each had a twin, and
+    // the site quoted and took payment for all three rooms. Nothing on our side
+    // accounts for these nights, so nothing may be dropped.
+    resetAvailabilityData();
+    $db = getDB();
+    seedSharedAirbnbEcho($db, ['natures-nest', 'tranquil-retreat', 'white-villa'], '2030-11-20', '2030-11-21');
+
+    assertSame(0, removeSharedAirbnbEchoBlocks($db));
+    assertSame(3, (int)$db->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn());
+    foreach (['natures-nest', 'tranquil-retreat', 'white-villa'] as $room) {
+        assertFalse(
+            isInventoryAvailable($room, '2030-11-20', '2030-11-21'),
+            "expected {$room} to stay closed while the block is unexplained"
+        );
+    }
+});
+
+test('a partly explained shared Airbnb block keeps the night we cannot account for', function (): void {
+    // A two-night echo against a one-night booking. Dropping it would sell the
+    // second night, which nothing is holding.
+    resetAvailabilityData();
+    $db = getDB();
+    addBooking([
+        'room_id'=>'wooden-villa', 'room_name'=>ROOM_IDS['wooden-villa'],
+        'check_in'=>'2030-12-01', 'check_out'=>'2030-12-02',
+        'guest_name'=>'One Night', 'source'=>'phone',
+    ]);
+    seedSharedAirbnbEcho($db, ['natures-nest', 'tranquil-retreat'], '2030-12-01', '2030-12-03');
+
+    assertSame(0, removeSharedAirbnbEchoBlocks($db));
+    assertFalse(isInventoryAvailable('natures-nest', '2030-12-02', '2030-12-03'));
+});
+
+test('a genuine Airbnb reservation on one listing explains its echoes on the others', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['wooden-cottage', 'airbnb', 'https://example.com/cottage.ics']);
+    $reservedCalendar = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$reservedCalendar, 'wooden-cottage', 'airbnb', 'res-1', '2030-12-10', '2030-12-11', 'Reserved']);
+    seedSharedAirbnbEcho($db, ['natures-nest', 'tent'], '2030-12-10', '2030-12-11', 'echo-of-res-1');
+
+    assertSame(2, removeSharedAirbnbEchoBlocks($db));
+    // The reservation itself is never touched, so its own room stays closed.
+    assertFalse(isInventoryAvailable('wooden-cottage', '2030-12-10', '2030-12-11'));
+    assertTrue(isInventoryAvailable('natures-nest', '2030-12-10', '2030-12-11'));
 });
 
 test('a lone whole-property echo of our own booking is removed', function (): void {
@@ -857,6 +920,146 @@ test('admin authentication and mutations use secure sessions and CSRF protection
     assertContains("'&destination='", $source);
     assertNotContains('ADMIN_PASSWORD', $source);
     assertNotContains('?action=logout', $source);
+});
+
+test('a saved weekday rate never overwrites the weekend rate', function (): void {
+    resetAvailabilityData();
+    // ROOM_PRICING's uplift must survive the rates screen. Saving one number
+    // used to write it over both, flattening every weekend in the property.
+    $before = roomPricing('natures-nest');
+    assertTrue($before['weekend'] > $before['weekday'], 'fixture room should have a weekend uplift');
+
+    upsertRoomRate('natures-nest', 2800.0, null);
+    $after = roomPricing('natures-nest');
+    assertSame(2800.0, (float)$after['weekday']);
+    assertSame((float)$before['weekend'], (float)$after['weekend'], 'the weekend rate must be untouched');
+
+    upsertRoomRate('natures-nest', 2800.0, 3600.0);
+    $both = roomPricing('natures-nest');
+    assertSame(2800.0, (float)$both['weekday']);
+    assertSame(3600.0, (float)$both['weekend']);
+
+    // A weekend is never quietly cheaper than the weekday it sits next to.
+    upsertRoomRate('natures-nest', 5000.0, 3000.0);
+    assertSame(5000.0, (float)roomPricing('natures-nest')['weekend']);
+    resetAvailabilityData();
+});
+
+test('approving a pricing suggestion changes what a guest is quoted', function (): void {
+    resetAvailabilityData();
+    $db = getDB();
+    // Fri 2030-11-08 and Sat 2030-11-09 are weekend nights, so this also proves
+    // an override beats the weekend rate rather than being added to it.
+    $standard = calculateQuote('natures-nest', '2030-11-08', '2030-11-10', 2, 1);
+    addPricingSuggestion([
+        'room_id'=>'natures-nest', 'date_from'=>'2030-11-08', 'date_to'=>'2030-11-09',
+        'current_price'=>2500, 'suggested_price'=>4000, 'suggestion_pct'=>60,
+        'reason'=>'Test event', 'demand_level'=>'high',
+    ]);
+    $id = (int)$db->query('SELECT id FROM pricing_suggestions ORDER BY id DESC LIMIT 1')->fetchColumn();
+
+    approveSuggestion($id, 4000.0, 'applied by test');
+    $repriced = calculateQuote('natures-nest', '2030-11-08', '2030-11-10', 2, 1);
+    assertSame(8000.0, (float)$repriced['base_total'], 'both nights should bill at the approved price');
+    assertSame(2, (int)$repriced['override_nights']);
+    assertTrue((float)$repriced['total'] > (float)$standard['total']);
+
+    // Nights outside the suggestion keep the standard rate.
+    $untouched = calculateQuote('natures-nest', '2030-11-11', '2030-11-12', 2, 1);
+    assertSame(0, (int)$untouched['override_nights']);
+
+    assertSame(2, unapplySuggestion($id));
+    $reverted = calculateQuote('natures-nest', '2030-11-08', '2030-11-10', 2, 1);
+    assertSame((float)$standard['total'], (float)$reverted['total'], 'undo must restore the standard rate');
+    assertSame('pending', (string)$db->query("SELECT status FROM pricing_suggestions WHERE id={$id}")->fetchColumn());
+    resetAvailabilityData();
+});
+
+test('transaction guards do not depend on PDO::inTransaction()', function (): void {
+    // PHP 8.1 (production) reports false from inTransaction() after
+    // exec('BEGIN IMMEDIATE'); PHP 8.5 (these tests) reports true. Guards built
+    // on it rolled back nothing in production and could not see a nested BEGIN.
+    $db = getDB();
+    assertSame(0, kfsTransactionDepth());
+    $outer = kfsBeginTransaction($db);
+    assertTrue($outer, 'the first caller owns the transaction');
+    assertSame(1, kfsTransactionDepth());
+    $inner = kfsBeginTransaction($db);
+    assertFalse($inner, 'a nested caller must not issue a second BEGIN');
+    kfsCommitTransaction($db, $inner);
+    assertSame(1, kfsTransactionDepth(), 'a nested caller must not commit');
+    kfsCommitTransaction($db, $outer);
+    assertSame(0, kfsTransactionDepth());
+
+    // And a rollback actually rolls back.
+    kfsBeginTransaction($db);
+    $db->exec("INSERT INTO settings (key, value) VALUES ('kfs_tx_probe','1')");
+    kfsRollbackTransaction($db);
+    assertSame(false, $db->query("SELECT value FROM settings WHERE key='kfs_tx_probe'")->fetchColumn());
+    assertSame(0, kfsTransactionDepth());
+
+    // The guards are gone from every source that manages a transaction.
+    foreach (['db.php', 'ical.php', 'sync.php', 'booking-service.php', 'payment-service.php'] as $file) {
+        $source = (string)file_get_contents(dirname(__DIR__) . '/channel-manager/' . $file);
+        assertNotContains('$db->inTransaction()', $source, "{$file} still asks the driver");
+    }
+});
+
+test('stored timestamps are read as UTC', function (): void {
+    // SQLite writes datetime('now') in UTC and the app runs in Asia/Kolkata, so
+    // strtotime() on a raw stored value reported every sync 5h30m stale.
+    $db = getDB();
+    $stored = (string)$db->query("SELECT datetime('now')")->fetchColumn();
+    $age = time() - (int)kfsDbTimestamp($stored);
+    assertTrue($age >= -5 && $age <= 5, "expected a fresh timestamp, got {$age}s of drift");
+    assertSame(null, kfsDbTimestamp(null));
+    assertSame(null, kfsDbTimestamp(''));
+});
+
+test('a sync stores its snapshots and sweeps in one transaction', function (): void {
+    $sync = (string)file_get_contents(dirname(__DIR__) . '/channel-manager/sync.php');
+    // Fetching must happen before the write lock is taken: thirty feeds take
+    // about ten seconds, and holding the database for that long blocks booking.
+    assertContains('prepareOneCalendar(', $sync);
+    assertContains('kfsBeginTransaction($db)', $sync);
+    assertTrue(
+        strpos($sync, 'kfsBeginTransaction($db)') < strpos($sync, 'removeSharedAirbnbEchoBlocks($db)'),
+        'the sweeps must run inside the snapshot transaction'
+    );
+    assertTrue(
+        strpos($sync, 'prepareOneCalendar($calendar, $fetcher);') < strpos($sync, 'kfsBeginTransaction($db)'),
+        'every feed must be fetched before the write lock is taken'
+    );
+    assertContains('withSyncLock(', $sync);
+    assertContains('LOCK_NB', $sync);
+    // applyIcalSnapshot must never fetch: a network call inside the write
+    // transaction is what the split exists to prevent.
+    assertNotContains('fetchCalendarUrl', (string)file_get_contents(dirname(__DIR__) . '/channel-manager/ical.php'));
+});
+
+test('sync failures are visible to a human', function (): void {
+    $admin = (string)file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php');
+    // last_status and last_error were written by every sync and displayed
+    // nowhere, so a feed broken for weeks still showed a green tick.
+    assertContains("last_status", $admin);
+    assertContains("last_error", $admin);
+    assertContains('kfsDbTimestamp(', $admin);
+    assertNotContains("strtotime(\$cal['last_synced'])", $admin);
+});
+
+test('the oversell-prone getBlockedRanges is gone', function (): void {
+    // It read bookings only - no OTA blocks, no holds - and sat one letter from
+    // getBlockedRangesForRoom().
+    assertFalse(function_exists('getBlockedRanges'), 'getBlockedRanges() must not exist');
+    assertTrue(function_exists('getBlockedRangesForRoom'));
+});
+
+test('synthetic calendar ids cannot collide', function (): void {
+    // external_blocks is deleted and re-inserted every sync, so its
+    // AUTOINCREMENT climbs by about a thousand a day.
+    $service = (string)file_get_contents(dirname(__DIR__) . '/channel-manager/booking-service.php');
+    assertContains('-1_000_000_000 - (int)$row[', $service);
+    assertNotContains('-2_000_000 - $index', $service);
 });
 
 test('cron uses configured authentication, a non-blocking lock, and one sync pass', function (): void {

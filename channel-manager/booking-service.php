@@ -210,7 +210,7 @@ function createBookingHold(array $data): array
     if ($amount <= 0) throw new InvalidArgumentException('Amount must be positive.');
 
     $db = getDB();
-    $db->exec('BEGIN IMMEDIATE');
+    $owned = kfsBeginTransaction($db);
     try {
         cleanupExpiredHolds($db);
         if (!isInventoryAvailable($roomId, $checkIn, $checkOut, null, null, $db)) {
@@ -226,10 +226,10 @@ function createBookingHold(array $data): array
             trim((string)$data['guest_name']), trim((string)$data['guest_email']), trim((string)$data['guest_phone']),
             max(1, (int)($data['adults'] ?? 1)), max(0, (int)($data['children'] ?? 0)), $amount, $expiresAt,
         ]);
-        $db->exec('COMMIT');
+        kfsCommitTransaction($db, $owned);
         return ['token'=>$token, 'expires_at'=>$expiresAt, 'amount'=>$amount];
     } catch (Throwable $e) {
-        if ($db->inTransaction()) $db->exec('ROLLBACK');
+        kfsRollbackTransaction($db, $owned);
         throw $e;
     }
 }
@@ -247,7 +247,7 @@ function createConfirmedBooking(array $data): int
     validateStay($roomId, $checkIn, $checkOut);
 
     $db = getDB();
-    $db->exec('BEGIN IMMEDIATE');
+    $owned = kfsBeginTransaction($db);
     try {
         cleanupExpiredHolds($db);
         if (!isInventoryAvailable($roomId, $checkIn, $checkOut, null, null, $db)) {
@@ -260,10 +260,10 @@ function createConfirmedBooking(array $data): int
         $data['status'] = 'confirmed';
         $id = addBooking($data);
         if (!$id) throw new DomainException('This booking already exists.');
-        $db->exec('COMMIT');
+        kfsCommitTransaction($db, $owned);
         return $id;
     } catch (Throwable $e) {
-        if ($db->inTransaction()) $db->exec('ROLLBACK');
+        kfsRollbackTransaction($db, $owned);
         throw $e;
     }
 }
@@ -283,7 +283,7 @@ function updateConfirmedBooking(int $id, array $data): void
     validateStay($roomId, $checkIn, $checkOut, true);
 
     $db = getDB();
-    $db->exec('BEGIN IMMEDIATE');
+    $owned = kfsBeginTransaction($db);
     try {
         cleanupExpiredHolds($db);
         if ($status === 'confirmed' && !isInventoryAvailable($roomId, $checkIn, $checkOut, $id, null, $db)) {
@@ -308,9 +308,9 @@ function updateConfirmedBooking(int $id, array $data): void
         $data['notes'] = trim((string)($data['notes'] ?? $existing['notes']));
 
         updateBooking($id, $data);
-        $db->exec('COMMIT');
+        kfsCommitTransaction($db, $owned);
     } catch (Throwable $e) {
-        if ($db->inTransaction()) $db->exec('ROLLBACK');
+        kfsRollbackTransaction($db, $owned);
         throw $e;
     }
 }
@@ -320,13 +320,20 @@ function roomPricing(string $roomId, ?PDO $db = null): array
     if (!isset(ROOM_PRICING[$roomId])) throw new InvalidArgumentException('Unknown room.');
     $pricing = ROOM_PRICING[$roomId];
     $db ??= getDB();
-    $stmt = $db->prepare('SELECT base_price FROM room_rates WHERE room_id=?');
+    $stmt = $db->prepare('SELECT base_price, weekend_price FROM room_rates WHERE room_id=?');
     $stmt->execute([$roomId]);
-    $saved = (float)($stmt->fetchColumn() ?: 0);
-    if ($saved > 0) {
-        $pricing['weekday'] = $saved;
-        $pricing['weekend'] = $saved;
-    }
+    $row = $stmt->fetch() ?: [];
+    $savedWeekday = (float)($row['base_price'] ?? 0);
+    $savedWeekend = (float)($row['weekend_price'] ?? 0);
+    // Each saved rate overrides ONLY its own kind of night. Until 2026-09-12 a
+    // single saved base_price was written over both, so saving rates in admin
+    // silently flattened every weekend uplift in ROOM_PRICING.
+    if ($savedWeekday > 0) $pricing['weekday'] = $savedWeekday;
+    if ($savedWeekend > 0) $pricing['weekend'] = $savedWeekend;
+    // A weekend is never cheaper than a weekday here; without this, saving a
+    // weekday rate above the configured weekend one would quietly discount
+    // Friday and Saturday.
+    if ((float)$pricing['weekend'] < (float)$pricing['weekday']) $pricing['weekend'] = $pricing['weekday'];
     return $pricing;
 }
 
@@ -337,15 +344,26 @@ function calculateQuote(string $roomId, string $checkIn, string $checkOut, int $
     if ($adults < 1 || $adults > $pricing['max_adults']) throw new InvalidArgumentException('Invalid number of adults.');
     if ($children < 0 || $children > $pricing['max_children']) throw new InvalidArgumentException('Invalid number of children.');
 
+    // Nights an approved pricing suggestion has repriced. Keyed by the date the
+    // night starts on; an override wins over both weekday and weekend rates.
+    $overrides = getRateOverrides($roomId, $checkIn, $checkOut);
+
     $cursor = new DateTimeImmutable($checkIn);
     $end = new DateTimeImmutable($checkOut);
     $weekdayNights = 0;
     $weekendNights = 0;
+    $overrideNights = 0;
     $baseTotal = 0.0;
     while ($cursor < $end) {
+        $night = $cursor->format('Y-m-d');
         $isWeekend = in_array((int)$cursor->format('N'), WEEKEND_ISO_DAYS, true);
-        if ($isWeekend) { $weekendNights++; $baseTotal += (float)$pricing['weekend']; }
-        else { $weekdayNights++; $baseTotal += (float)$pricing['weekday']; }
+        if ($isWeekend) $weekendNights++; else $weekdayNights++;
+        if (isset($overrides[$night])) {
+            $baseTotal += (float)$overrides[$night];
+            $overrideNights++;
+        } else {
+            $baseTotal += (float)($isWeekend ? $pricing['weekend'] : $pricing['weekday']);
+        }
         $cursor = $cursor->modify('+1 day');
     }
     $nights = $weekdayNights + $weekendNights;
@@ -355,6 +373,7 @@ function calculateQuote(string $roomId, string $checkIn, string $checkOut, int $
     return [
         'room_id'=>$roomId, 'check_in'=>$checkIn, 'check_out'=>$checkOut,
         'nights'=>$nights, 'weekday_nights'=>$weekdayNights, 'weekend_nights'=>$weekendNights,
+        'override_nights'=>$overrideNights,
         'adults'=>$adults, 'children'=>$children, 'base_total'=>$baseTotal,
         'extra_adults'=>$extraAdults, 'extra_children'=>$extraChildren,
         'extra_total'=>(float)$extraTotal, 'total'=>(float)($baseTotal + $extraTotal),
@@ -401,7 +420,12 @@ function getExternalBlockCalendarEntries(?string $fromDate = null, ?string $toDa
     $stmt->execute($params);
 
     return array_map(static fn(array $row): array => [
-        'id'=>-1_000_000 - (int)$row['id'],
+        // Synthetic id for a row that is not a booking. external_blocks is
+        // deleted and re-inserted every sync, so its AUTOINCREMENT climbs by
+        // ~1,000/day; the old -1_000_000 - id reached the group-threshold band
+        // at -2_000_000 in under three years. The bands are now disjoint for
+        // any id SQLite can produce.
+        'id'=>-1_000_000_000 - (int)$row['id'],
         'room_id'=>$row['room_id'],
         'room_name'=>ROOM_IDS[$row['room_id']] ?? $row['room_id'],
         'check_in'=>$row['check_in'], 'check_out'=>$row['check_out'],
@@ -442,7 +466,7 @@ function expandCalendarEntriesToRelatedInventory(array $entries): array
         $toDate = max(array_column($validEntries, 'check_out'));
         foreach (groupThresholdRangesFromRows($validEntries, $fromDate, $toDate) as $index => $range) {
             $expanded[] = [
-                'id'=>-2_000_000 - $index,
+                'id'=>-1_000 - $index,
                 'room_id'=>GROUP_INVENTORY_ID, 'room_name'=>ROOM_IDS[GROUP_INVENTORY_ID],
                 'check_in'=>$range['check_in'], 'check_out'=>$range['check_out'],
                 'guest_name'=>GROUP_BOOKING_THRESHOLD . '+ rooms occupied',

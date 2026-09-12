@@ -218,8 +218,11 @@ if (!empty($_SESSION['admin_logged_in'])) {
     }
 
     if ($act === 'update_base_rate') {
-        foreach ($_POST['rates'] as $rid => $price) {
-            upsertRoomRate($rid, (float)$price);
+        $weekendPosted = $_POST['weekend_rates'] ?? [];
+        foreach (($_POST['rates'] ?? []) as $rid => $price) {
+            if (!isValidRoomId((string)$rid)) continue;
+            $weekend = array_key_exists($rid, $weekendPosted) ? (float)$weekendPosted[$rid] : null;
+            upsertRoomRate((string)$rid, (float)$price, $weekend);
         }
         // Also save platform rates if submitted together
         foreach ($_POST['platform_rates'] ?? [] as $rid => $platforms) {
@@ -265,6 +268,11 @@ if (!empty($_SESSION['admin_logged_in'])) {
         $approvedPrice = (float)($_POST['approved_price'] ?? $_POST['suggested_price']);
         approveSuggestion((int)$_POST['id'], $approvedPrice, trim($_POST['notes'] ?? ''));
         header('Location: admin.php?section=pricing&flash=Suggestion+approved'); exit;
+    }
+
+    if ($act === 'unapply_suggestion') {
+        $removed = unapplySuggestion((int)$_POST['id']);
+        header('Location: admin.php?section=pricing&flash=' . urlencode("Undone — {$removed} night(s) back to the standard rate")); exit;
     }
 
     if ($act === 'dismiss_suggestion') {
@@ -376,14 +384,20 @@ if (!empty($_SESSION['admin_logged_in'])) {
 
     $syncTimes = array_values(array_filter(array_column($extCals, 'last_synced')));
     $lastAutoSync = $syncTimes === [] ? '' : max($syncTimes);
+    // last_status / last_error were recorded by every sync since the channel
+    // manager was built and displayed nowhere, so a feed that had been failing
+    // for weeks still showed a green tick and an old timestamp.
+    $failedCalendars = array_values(array_filter($extCals, static fn(array $cal): bool => ($cal['last_status'] ?? '') === 'error'));
 
     // Pending suggestions count for badge
     $pendingSuggestions = getPricingSuggestions('pending');
     $pendingCount = count($pendingSuggestions);
 
     // Room rates map
+    // The rate a guest is actually quoted on a weekday, not just what has been
+    // typed into the rates screen - an unsaved room used to report 0 here.
     $ratesMap = [];
-    foreach (getRoomRates() as $r) $ratesMap[$r['room_id']] = $r['base_price'];
+    foreach (array_keys(ROOM_IDS) as $rid) $ratesMap[$rid] = (float)roomPricing($rid)['weekday'];
 
     // Platform rates map  [room_id][platform] => rate
     $platformRates  = getPlatformRates();
@@ -3198,7 +3212,8 @@ $otaLinks = [
           <thead>
             <tr>
               <th style="min-width:160px">Property</th>
-              <th style="text-align:center">Base Rate<br><span style="font-weight:400;font-size:.7rem;color:var(--text-muted)">₹/night</span></th>
+              <th style="text-align:center">Weekday Rate<br><span style="font-weight:400;font-size:.7rem;color:var(--text-muted)">₹/night, Sun–Thu</span></th>
+              <th style="text-align:center">Weekend Rate<br><span style="font-weight:400;font-size:.7rem;color:var(--text-muted)">₹/night, Fri–Sat</span></th>
               <?php foreach ($platforms as $pid => $pname): ?>
               <th style="text-align:center">
                 <?= $pname ?><br>
@@ -3213,14 +3228,23 @@ $otaLinks = [
           </thead>
           <tbody>
           <?php foreach ($rooms as $rid => $rname):
-            $base = $ratesMap[$rid] ?? 0;
+            // Prefill with the rate a guest is actually quoted. This read
+            // room_rates alone until 2026-09-12, so with nothing saved the
+            // screen showed 0 for every room while the site charged ROOM_PRICING.
+            $effective = roomPricing($rid);
+            $base = (float)$effective['weekday'];
+            $weekend = (float)$effective['weekend'];
           ?>
           <tr>
             <td style="font-weight:600;font-size:.83rem"><?= htmlspecialchars($rname) ?></td>
             <td style="text-align:center">
-              <input type="number" name="rates[<?= $rid ?>]" value="<?= $base ?>" min="0"
+              <input type="number" name="rates[<?= $rid ?>]" value="<?= round($base) ?>" min="0"
                 style="width:80px;padding:.3rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-size:.82rem;text-align:center"
                 oninput="calcNet(this,'<?= $rid ?>')">
+            </td>
+            <td style="text-align:center">
+              <input type="number" name="weekend_rates[<?= $rid ?>]" value="<?= round($weekend) ?>" min="0"
+                style="width:80px;padding:.3rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-size:.82rem;text-align:center">
             </td>
             <?php foreach ($platforms as $pid => $pname):
               $prate = $platformRates[$rid][$pid] ?? ($base ?: '');
@@ -3448,22 +3472,47 @@ $otaLinks = [
 <?php
 $approvedSuggestions = getPricingSuggestions('approved');
 $dismissedSuggestions = getPricingSuggestions('dismissed');
+// How many nights each approval is actually charging for. Approving wrote no
+// price at all before 2026-09-12, so older rows legitimately show none.
+$appliedNightCounts = [];
+foreach (getRateOverrideRows() as $override) {
+    $sid = (int)($override['suggestion_id'] ?? 0);
+    if ($sid > 0) $appliedNightCounts[$sid] = ($appliedNightCounts[$sid] ?? 0) + 1;
+}
 if (!empty($approvedSuggestions)):
 ?>
 <div class="panel">
   <div class="panel-hd"><h3>✅ Approved Pricing Changes</h3></div>
   <div class="tbl-wrap">
     <table class="tbl">
-      <thead><tr><th>Room</th><th>Date Range</th><th>Old Price</th><th>Approved Price</th><th>Reason</th><th>Approved At</th></tr></thead>
+      <thead><tr><th>Room</th><th>Date Range</th><th>Old Price</th><th>Approved Price</th><th>Nights Live</th><th>Reason</th><th>Approved At</th><th></th></tr></thead>
       <tbody>
         <?php foreach ($approvedSuggestions as $s): ?>
+        <?php $liveNights = (int)($appliedNightCounts[(int)$s['id']] ?? 0); ?>
         <tr>
           <td style="font-weight:600"><?= htmlspecialchars(ROOM_IDS[$s['room_id']] ?? $s['room_id']) ?></td>
           <td class="muted"><?= $s['date_from'] ?> → <?= $s['date_to'] ?></td>
           <td><?= fmt($s['current_price']) ?></td>
           <td style="font-weight:700;color:var(--primary-dark)"><?= fmt($s['approved_price']) ?></td>
+          <td>
+            <?php if ($liveNights > 0): ?>
+              <span style="font-weight:700;color:var(--primary-dark)"><?= $liveNights ?> night<?= $liveNights === 1 ? '' : 's' ?></span>
+            <?php else: ?>
+              <span class="muted" title="Approved before 2026-09-12, when approving did not change any price">not applied</span>
+            <?php endif; ?>
+          </td>
           <td style="font-size:.78rem"><?= htmlspecialchars(substr($s['reason'],0,60)) ?>…</td>
-          <td class="muted"><?= $s['approved_at'] ?></td>
+          <td class="muted"><?php $approvedAt = kfsDbTimestamp($s['approved_at'] ?? null); ?><?= $approvedAt !== null ? date('d M, g:i A', $approvedAt) : '—' ?></td>
+          <td>
+            <?php if ($liveNights > 0): ?>
+            <form method="POST" onsubmit="return confirm('Put these nights back to the standard rate?')">
+              <?= csrfField() ?>
+              <input type="hidden" name="action" value="unapply_suggestion">
+              <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
+              <button type="submit" class="btn btn-grey" style="font-size:.72rem;padding:.25rem .5rem">Undo</button>
+            </form>
+            <?php endif; ?>
+          </td>
         </tr>
         <?php endforeach; ?>
       </tbody>
@@ -3685,7 +3734,12 @@ $pct = $totalSlots > 0 ? round($connected / $totalSlots * 100) : 0;
         <div style="height:6px;border-radius:3px;width:<?= $pct ?>%;background:<?= $pct >= 75 ? '#38a169' : '#d97706' ?>"></div>
       </div>
       <div style="font-size:.78rem;color:#4a5568;margin-top:.3rem">
-        Last synced: <strong><?= $lastAutoSync ? date('d M, g:i A', strtotime($lastAutoSync)) : 'never' ?></strong>
+        Last synced: <strong><?php $lastAutoSyncAt = kfsDbTimestamp($lastAutoSync); ?><?= $lastAutoSyncAt !== null ? date('d M, g:i A', $lastAutoSyncAt) : 'never' ?></strong>
+        <?php if ($failedCalendars !== []): ?>
+          <span style="color:var(--danger,#e03131);font-weight:700">
+            · <?= count($failedCalendars) ?> channel<?= count($failedCalendars) === 1 ? '' : 's' ?> failing
+          </span>
+        <?php endif; ?>
         · Automatic sync runs from the server cron schedule
       </div>
       <?php endif; ?>
@@ -4006,11 +4060,20 @@ $pct = $totalSlots > 0 ? round($connected / $totalSlots * 100) : 0;
           <td><?= badge($cal['platform']) ?></td>
           <td><a href="<?= htmlspecialchars($cal['ical_url']) ?>" target="_blank" style="color:var(--info);font-size:.78rem;word-break:break-all"><?= htmlspecialchars(substr($cal['ical_url'],0,55)) ?>…</a></td>
           <td>
-            <?php if ($cal['last_synced']): ?>
-              <?php $ago = round((time()-strtotime($cal['last_synced']))/60); ?>
-              <span class="status-synced">✓ <?= $ago < 60 ? $ago.'m ago' : date('d M, g:i A', strtotime($cal['last_synced'])) ?></span>
+            <?php $syncedAt = kfsDbTimestamp($cal['last_synced'] ?? null); ?>
+            <?php if ($syncedAt !== null): ?>
+              <?php $ago = (int)round((time()-$syncedAt)/60); ?>
+              <span class="status-synced">✓ <?= $ago < 60 ? max(0, $ago).'m ago' : date('d M, g:i A', $syncedAt) ?></span>
             <?php else: ?>
               <span class="status-never">Never synced</span>
+            <?php endif; ?>
+            <?php if (($cal['last_status'] ?? '') === 'error'): ?>
+              <div style="margin-top:.25rem;color:var(--danger,#e03131);font-size:.72rem;font-weight:600">
+                ⚠ Last attempt failed
+                <?php if (trim((string)($cal['last_error'] ?? '')) !== ''): ?>
+                  <div style="font-weight:400;word-break:break-word"><?= htmlspecialchars(substr((string)$cal['last_error'], 0, 140)) ?></div>
+                <?php endif; ?>
+              </div>
             <?php endif; ?>
           </td>
           <td>

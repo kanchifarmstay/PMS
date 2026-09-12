@@ -14,6 +14,58 @@ function getDB(): PDO {
     return $db;
 }
 
+/**
+ * Transaction helpers.
+ *
+ * PDO::inTransaction() does NOT see a transaction opened with exec('BEGIN
+ * IMMEDIATE') on PHP 8.1, which is what production runs; on PHP 8.5, which the
+ * tests run on, it does. Every "roll back if we are in a transaction" guard in
+ * this codebase was therefore a no-op in production, and every nested-BEGIN
+ * guard was blind - a sync that opened its own transaction and then called
+ * applyIcalSnapshot() died with "cannot start a transaction within a
+ * transaction". Depth is tracked here instead of being asked of the driver.
+ *
+ * BEGIN IMMEDIATE rather than PDO::beginTransaction(): the write lock is taken
+ * up front, so a second writer fails fast instead of deadlocking on upgrade.
+ */
+function kfsBeginTransaction(PDO $db): bool {
+    if (kfsTransactionDepth() > 0) return false;
+    $db->exec('BEGIN IMMEDIATE');
+    kfsTransactionDepth(1);
+    return true;
+}
+
+function kfsCommitTransaction(PDO $db, bool $owned = true): void {
+    if (!$owned || kfsTransactionDepth() === 0) return;
+    $db->exec('COMMIT');
+    kfsTransactionDepth(0);
+}
+
+function kfsRollbackTransaction(PDO $db, bool $owned = true): void {
+    if (!$owned || kfsTransactionDepth() === 0) return;
+    try { $db->exec('ROLLBACK'); } catch (Throwable) { /* already unwound */ }
+    kfsTransactionDepth(0);
+}
+
+function kfsTransactionDepth(?int $set = null): int {
+    static $depth = 0;
+    if ($set !== null) $depth = $set;
+    return $depth;
+}
+
+/**
+ * SQLite writes datetime('now') in UTC while the app runs in Asia/Kolkata, so
+ * strtotime() on a stored timestamp read it as local and every sync time in the
+ * admin showed 5h30m stale - permanently, which also meant the "x minutes ago"
+ * branch could never fire.
+ */
+function kfsDbTimestamp(?string $stored): ?int {
+    $stored = trim((string)$stored);
+    if ($stored === '') return null;
+    $parsed = strtotime($stored . ' UTC');
+    return $parsed === false ? null : $parsed;
+}
+
 function _initSchema(PDO $db): void {
     $db->exec("
         CREATE TABLE IF NOT EXISTS bookings (
@@ -89,6 +141,15 @@ function _initSchema(PDO $db): void {
             created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS rate_overrides (
+            room_id       TEXT NOT NULL,
+            night         DATE NOT NULL,
+            price         REAL NOT NULL,
+            source        TEXT DEFAULT 'suggestion',
+            suggestion_id INTEGER,
+            updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (room_id, night)
+        );
         CREATE TABLE IF NOT EXISTS pricing_suggestions (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             room_id         TEXT NOT NULL,
@@ -217,6 +278,15 @@ function _initSchema(PDO $db): void {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
     }
 
+    $rateMigrations = [
+        // A saved rate used to overwrite weekday AND weekend with one number,
+        // silently destroying every weekend uplift in ROOM_PRICING.
+        "ALTER TABLE room_rates ADD COLUMN weekend_price REAL NOT NULL DEFAULT 0",
+    ];
+    foreach ($rateMigrations as $sql) {
+        try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
+    }
+
     $calendarMigrations = [
         "ALTER TABLE external_calendars ADD COLUMN last_error TEXT DEFAULT ''",
         "ALTER TABLE external_calendars ADD COLUMN last_status TEXT DEFAULT 'never'",
@@ -236,6 +306,7 @@ function _initSchema(PDO $db): void {
     $db->exec("CREATE INDEX IF NOT EXISTS idx_bookings_availability ON bookings(room_id, status, check_in, check_out)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_external_blocks_availability ON external_blocks(room_id, check_in, check_out)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_booking_holds_availability ON booking_holds(room_id, status, expires_at, check_in, check_out)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_external_blocks_echo ON external_blocks(platform, external_uid, check_in, check_out)");
 }
 
 // ---- Bookings ------------------------------------------------
@@ -325,15 +396,9 @@ function getUpcomingBookings(): array {
     return $stmt->fetchAll();
 }
 
-function getBlockedRanges(string $roomId): array {
-    $stmt = getDB()->prepare("
-        SELECT check_in, check_out FROM bookings
-        WHERE room_id = ? AND status = 'confirmed' AND check_out >= date('now')
-        ORDER BY check_in
-    ");
-    $stmt->execute([$roomId]);
-    return $stmt->fetchAll();
-}
+// getBlockedRanges() was removed on 2026-09-12. It read only `bookings`, so it
+// saw neither OTA blocks nor payment holds - one letter away from the correct
+// getBlockedRangesForRoom() in booking-service.php and an oversell if called.
 
 function deleteBooking(int $id): void {
     $stmt = getDB()->prepare("DELETE FROM bookings WHERE id = ?");
@@ -499,14 +564,46 @@ function getRoomRates(): array {
     return getDB()->query("SELECT * FROM room_rates")->fetchAll();
 }
 
-function upsertRoomRate(string $roomId, float $price): void {
+function upsertRoomRate(string $roomId, float $price, ?float $weekendPrice = null): void {
     $db = getDB();
+    // A weekday price alone must never overwrite the weekend one: passing null
+    // leaves whatever weekend rate is already stored (0 = "use ROOM_PRICING").
+    if ($weekendPrice === null) {
+        $stmt = $db->prepare("
+            INSERT INTO room_rates (room_id, base_price, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(room_id) DO UPDATE SET base_price=excluded.base_price, updated_at=datetime('now')
+        ");
+        $stmt->execute([$roomId, $price]);
+        return;
+    }
     $stmt = $db->prepare("
-        INSERT INTO room_rates (room_id, base_price, updated_at)
-        VALUES (?, ?, datetime('now'))
-        ON CONFLICT(room_id) DO UPDATE SET base_price=excluded.base_price, updated_at=datetime('now')
+        INSERT INTO room_rates (room_id, base_price, weekend_price, updated_at)
+        VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(room_id) DO UPDATE SET
+            base_price=excluded.base_price,
+            weekend_price=excluded.weekend_price,
+            updated_at=datetime('now')
     ");
-    $stmt->execute([$roomId, $price]);
+    $stmt->execute([$roomId, $price, $weekendPrice]);
+}
+
+/** Per-night price overrides, as applied by an approved pricing suggestion. */
+function getRateOverrides(string $roomId, string $fromNight, string $toNight): array {
+    $stmt = getDB()->prepare('SELECT night, price FROM rate_overrides WHERE room_id=? AND night >= ? AND night < ?');
+    $stmt->execute([$roomId, $fromNight, $toNight]);
+    $out = [];
+    foreach ($stmt->fetchAll() as $row) $out[(string)$row['night']] = (float)$row['price'];
+    return $out;
+}
+
+function getRateOverrideRows(?string $fromNight = null): array {
+    $sql = 'SELECT room_id, night, price, source, suggestion_id FROM rate_overrides';
+    $params = [];
+    if ($fromNight !== null) { $sql .= ' WHERE night >= ?'; $params[] = $fromNight; }
+    $stmt = getDB()->prepare($sql . ' ORDER BY night, room_id');
+    $stmt->execute($params);
+    return $stmt->fetchAll();
 }
 
 function getRoomBasePrice(string $roomId): float {
@@ -623,6 +720,14 @@ function approveSuggestion(int $id, float $approvedPrice, string $notes = ''): v
         WHERE id=?
     ")->execute([$approvedPrice, $notes, $id]);
 
+    // Apply it. Until 2026-09-12 approval only moved a status and wrote a
+    // history row, so an approved suggestion changed nothing a guest was ever
+    // charged. A suggestion is date-ranged and room_rates is a single undated
+    // number, so the price lands in rate_overrides, one row per night.
+    $applied = applySuggestionOverrides(
+        (string)$s['room_id'], (string)$s['date_from'], (string)$s['date_to'], $approvedPrice, $id, $db
+    );
+
     // Log to price history
     $db->prepare("
         INSERT INTO price_history (room_id, date_from, date_to, old_price, new_price, reason)
@@ -630,8 +735,43 @@ function approveSuggestion(int $id, float $approvedPrice, string $notes = ''): v
     ")->execute([
         $s['room_id'], $s['date_from'], $s['date_to'],
         $s['current_price'], $approvedPrice,
-        'Approved: ' . $s['reason']
+        'Approved (' . $applied . ' night(s) repriced): ' . $s['reason']
     ]);
+}
+
+/**
+ * Write one override row per night of an approved suggestion. The range is
+ * inclusive of date_to, because a suggestion names the event DATES and a night
+ * is identified by the date it starts on.
+ */
+function applySuggestionOverrides(string $roomId, string $from, string $to, float $price, int $suggestionId, ?PDO $db = null): int {
+    $db ??= getDB();
+    if ($price <= 0) return 0;
+    $stmt = $db->prepare("INSERT INTO rate_overrides (room_id, night, price, source, suggestion_id, updated_at)
+        VALUES (?,?,?,'suggestion',?,datetime('now'))
+        ON CONFLICT(room_id, night) DO UPDATE SET
+            price=excluded.price, source=excluded.source,
+            suggestion_id=excluded.suggestion_id, updated_at=datetime('now')");
+    $night = $from;
+    $applied = 0;
+    $guard = 0;
+    while ($night <= $to && $guard++ < 400) {
+        $stmt->execute([$roomId, $night, $price, $suggestionId]);
+        $applied++;
+        $night = (new DateTimeImmutable($night))->modify('+1 day')->format('Y-m-d');
+    }
+    return $applied;
+}
+
+/** Undo an approval: drop its override rows and put it back in the queue. */
+function unapplySuggestion(int $id): int {
+    $db = getDB();
+    $stmt = $db->prepare('DELETE FROM rate_overrides WHERE suggestion_id=?');
+    $stmt->execute([$id]);
+    $removed = $stmt->rowCount();
+    $db->prepare("UPDATE pricing_suggestions SET status='pending', approved_price=NULL, approved_at=NULL WHERE id=?")
+       ->execute([$id]);
+    return $removed;
 }
 
 function dismissSuggestion(int $id, string $notes = ''): void {
@@ -650,7 +790,7 @@ function getExternalCalendars(): array {
 
 function addExternalCalendar(string $roomId, string $platform, string $url): int {
     $db = getDB();
-    $db->exec('BEGIN IMMEDIATE');
+    $owned = kfsBeginTransaction($db);
     try {
         $find = $db->prepare('SELECT id FROM external_calendars WHERE room_id=? AND platform=? ORDER BY id');
         $find->execute([$roomId, $platform]);
@@ -668,10 +808,10 @@ function addExternalCalendar(string $roomId, string $platform, string $url): int
             $stmt->execute([$roomId, $platform, $url]);
             $id = (int)$db->lastInsertId();
         }
-        $db->exec('COMMIT');
+        kfsCommitTransaction($db, $owned);
         return $id;
     } catch (Throwable $e) {
-        if ($db->inTransaction()) $db->exec('ROLLBACK');
+        kfsRollbackTransaction($db, $owned);
         throw $e;
     }
 }

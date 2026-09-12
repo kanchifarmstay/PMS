@@ -99,8 +99,7 @@ function normalizeIcalBlocks(string $raw, array $calendar, ?string $today = null
 function applyIcalSnapshot(array $calendar, array $blocks, ?PDO $db = null): void
 {
     $db ??= getDB();
-    $ownTransaction = !$db->inTransaction();
-    if ($ownTransaction) $db->exec('BEGIN IMMEDIATE');
+    $ownTransaction = kfsBeginTransaction($db);
     try {
         $calendarId = (int)$calendar['id'];
         $db->prepare('DELETE FROM external_blocks WHERE calendar_id=?')->execute([$calendarId]);
@@ -118,37 +117,95 @@ function applyIcalSnapshot(array $calendar, array $blocks, ?PDO $db = null): voi
            ->execute([$calendar['room_id'], strtolower((string)$calendar['platform'])]);
         $db->prepare("UPDATE external_calendars SET last_synced=datetime('now'), last_status='ok', last_error='' WHERE id=?")
            ->execute([$calendarId]);
-        if ($ownTransaction) $db->exec('COMMIT');
+        kfsCommitTransaction($db, $ownTransaction);
     } catch (Throwable $e) {
-        if ($ownTransaction && $db->inTransaction()) $db->exec('ROLLBACK');
+        kfsRollbackTransaction($db, $ownTransaction);
         throw $e;
     }
 }
 
 /**
- * Remove Airbnb calendar echoes that have been copied into multiple listing
- * feeds. Airbnb labels imported/linked availability as "Airbnb (Not
- * available)" and reuses the same UID across those feeds. Keeping every copy
- * turns a component block into a whole-property block when parent inventory is
- * expanded. Genuine reservation events use a different summary and remain.
+ * Remove Airbnb calendar echoes - copies of one block that Airbnb has fanned
+ * out across linked listing feeds.
+ *
+ * Airbnb labels both a host-set block and an imported/linked one "Airbnb (Not
+ * available)" and reuses the same UID across every linked feed, so the wording
+ * cannot tell the two apart. Until 2026-09-12 this deleted EVERY copy whenever
+ * a copy existed on another room, leaving the dates sellable on all of them. A
+ * live instance: Airbnb blocked 2027-09-12 on Nature's Nest, Tranquil Retreat
+ * and White Villa, all three copies were deleted, and the site quoted and took
+ * payment for all three.
+ *
+ * A copy is only an echo if something else already accounts for those nights:
+ * one of our own confirmed bookings (which we publish to every listing, which
+ * is what makes Airbnb fan it out), or a genuine Airbnb reservation - those
+ * carry a different summary and are never touched here. Every night of the
+ * block must be accounted for; a two-night block explained by a one-night
+ * booking is not an echo, and deleting it would sell the other night.
+ *
+ * With no such evidence the copies stay, and the rooms stay blocked. Over-
+ * blocking costs a booking we might have taken; over-selling costs a guest who
+ * arrives to no room.
  */
 function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
 {
     $db ??= getDB();
-    $stmt = $db->prepare("DELETE FROM external_blocks
-        WHERE lower(platform) = 'airbnb'
-          AND lower(trim(summary)) = 'airbnb (not available)'
-          AND EXISTS (
-              SELECT 1
-              FROM external_blocks AS duplicate
-              WHERE lower(duplicate.platform) = lower(external_blocks.platform)
-                AND duplicate.external_uid = external_blocks.external_uid
-                AND duplicate.check_in = external_blocks.check_in
-                AND duplicate.check_out = external_blocks.check_out
-                AND duplicate.room_id != external_blocks.room_id
-          )");
-    $stmt->execute();
-    return $stmt->rowCount();
+    $rows = $db->query("SELECT id, room_id, platform, external_uid, check_in, check_out, summary
+        FROM external_blocks WHERE lower(platform) = 'airbnb'")->fetchAll();
+
+    // Nights we can already account for, from our own confirmed bookings and
+    // from genuine Airbnb reservations on any listing.
+    $accounted = [];
+    $cover = static function (string $from, string $to) use (&$accounted): void {
+        $night = $from;
+        $guard = 0;
+        while ($night < $to && $guard++ < 800) {
+            $accounted[$night] = true;
+            $night = (new DateTimeImmutable($night))->modify('+1 day')->format('Y-m-d');
+        }
+    };
+    foreach ($db->query("SELECT check_in, check_out FROM bookings WHERE status='confirmed'")->fetchAll() as $row) {
+        $cover((string)$row['check_in'], (string)$row['check_out']);
+    }
+    foreach ($rows as $row) {
+        if (icalIsAirbnbEchoSummary((string)$row['summary'])) continue;
+        $cover((string)$row['check_in'], (string)$row['check_out']);
+    }
+
+    $doomed = [];
+    foreach ($rows as $row) {
+        if (!icalIsAirbnbEchoSummary((string)$row['summary'])) continue;
+
+        $hasTwin = false;
+        foreach ($rows as $other) {
+            if ((int)$other['id'] === (int)$row['id']) continue;
+            if ($other['external_uid'] === $row['external_uid']
+                && $other['check_in'] === $row['check_in']
+                && $other['check_out'] === $row['check_out']
+                && $other['room_id'] !== $row['room_id']) { $hasTwin = true; break; }
+        }
+        if (!$hasTwin) continue;
+
+        $night = (string)$row['check_in'];
+        $covered = true;
+        $guard = 0;
+        while ($night < (string)$row['check_out'] && $guard++ < 800) {
+            if (!isset($accounted[$night])) { $covered = false; break; }
+            $night = (new DateTimeImmutable($night))->modify('+1 day')->format('Y-m-d');
+        }
+        if ($covered) $doomed[] = (int)$row['id'];
+    }
+
+    if ($doomed === []) return 0;
+    $ph = implode(',', array_fill(0, count($doomed), '?'));
+    $db->prepare("DELETE FROM external_blocks WHERE id IN ({$ph})")->execute($doomed);
+    return count($doomed);
+}
+
+/** Airbnb's wording for a block it cannot attribute to a reservation. */
+function icalIsAirbnbEchoSummary(string $summary): bool
+{
+    return strtolower(trim($summary)) === 'airbnb (not available)';
 }
 
 /**

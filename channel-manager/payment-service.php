@@ -88,7 +88,7 @@ function createRazorpayBookingOrder(array $input, ?callable $client = null): arr
 function finalizeVerifiedRazorpayPayment(string $orderId, string $paymentId): int
 {
     $db = getDB();
-    $db->exec('BEGIN IMMEDIATE');
+    $owned = kfsBeginTransaction($db);
     try {
         $stmt = $db->prepare("SELECT po.*, h.room_id, h.check_in, h.check_out, h.guest_name, h.guest_email,
                 h.guest_phone, h.adults, h.children, h.amount, h.status AS hold_status, h.expires_at
@@ -98,7 +98,7 @@ function finalizeVerifiedRazorpayPayment(string $orderId, string $paymentId): in
         if (!$row) throw new DomainException('Unknown payment order.');
         if ($row['status'] === 'paid' && (int)$row['booking_id'] > 0) {
             if ($row['payment_id'] !== $paymentId) throw new DomainException('Payment does not match the order.');
-            $db->exec('COMMIT');
+            kfsCommitTransaction($db, $owned);
             return (int)$row['booking_id'];
         }
         if ($row['hold_status'] !== 'pending' || $row['expires_at'] <= gmdate('Y-m-d H:i:s')) {
@@ -127,10 +127,10 @@ function finalizeVerifiedRazorpayPayment(string $orderId, string $paymentId): in
         $db->prepare("UPDATE payment_orders SET payment_id=?, status='paid', signature_verified=1,
                 booking_id=?, last_error='', updated_at=datetime('now') WHERE order_id=?")
             ->execute([$paymentId, $bookingId, $orderId]);
-        $db->exec('COMMIT');
+        kfsCommitTransaction($db, $owned);
         return $bookingId;
     } catch (Throwable $e) {
-        if ($db->inTransaction()) $db->exec('ROLLBACK');
+        kfsRollbackTransaction($db, $owned);
         throw $e;
     }
 }

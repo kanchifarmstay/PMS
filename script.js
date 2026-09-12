@@ -565,10 +565,24 @@ function loadRoomDetails() {
         const desc = document.getElementById('room-full-desc');
         if (desc) desc.innerText = room.fullDescription;
 
-        // Price
+        // Price. The strings above are a fallback for the moment before the
+        // server answers; ROOM_PRICING in channel-manager/config.php is what a
+        // guest is actually charged, and prices-api.php publishes it. Typing a
+        // price into a second place is how the two drift.
         const price = document.getElementById('room-price');
         if (price) {
             price.innerText = room.weekendPrice ? `${room.price} | Weekend ${room.weekendPrice}` : room.price;
+            fetch('channel-manager/prices-api.php', {cache: 'no-store'})
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    const live = data && data.rooms && data.rooms[room.id];
+                    if (!live) return;
+                    const rupees = n => `₹${Number(n).toLocaleString('en-IN')} / night`;
+                    price.innerText = Number(live.weekend) > Number(live.weekday)
+                        ? `${rupees(live.weekday)} | Weekend ${rupees(live.weekend)}`
+                        : rupees(live.weekday);
+                })
+                .catch(() => {});
         }
 
         // Capacity

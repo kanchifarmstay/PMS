@@ -38,7 +38,12 @@ function fetchCalendarUrl(string $url): string
     throw new RuntimeException('Too many calendar redirects.');
 }
 
-function syncOneCalendar(array $calendar, ?callable $fetcher = null): array
+/**
+ * Fetch and parse one calendar. Deliberately writes nothing: the snapshot and
+ * the echo sweeps are applied together at the end of the run, so the site never
+ * reads a half-swept table.
+ */
+function prepareOneCalendar(array $calendar, ?callable $fetcher = null): array
 {
     try {
         if (!isValidRoomId((string)$calendar['room_id'])) throw new RuntimeException('Calendar has an invalid room.');
@@ -46,8 +51,23 @@ function syncOneCalendar(array $calendar, ?callable $fetcher = null): array
         $raw = $fetcher((string)$calendar['ical_url']);
         if (!is_string($raw)) throw new RuntimeException('Calendar fetcher returned invalid data.');
         $blocks = normalizeIcalBlocks($raw, $calendar);
-        applyIcalSnapshot($calendar, $blocks);
-        return ['success'=>true, 'imported'=>count($blocks), 'blocks'=>count($blocks), 'error'=>''];
+        return ['success'=>true, 'imported'=>count($blocks), 'blocks'=>count($blocks), 'error'=>'', 'parsed'=>$blocks];
+    } catch (Throwable $e) {
+        if (!empty($calendar['id'])) {
+            getDB()->prepare("UPDATE external_calendars SET last_status='error', last_error=? WHERE id=?")
+                ->execute([substr($e->getMessage(), 0, 500), (int)$calendar['id']]);
+        }
+        return ['success'=>false, 'imported'=>0, 'blocks'=>0, 'error'=>$e->getMessage(), 'parsed'=>[]];
+    }
+}
+
+/** Fetch, store and sweep one calendar on its own. Used by tests and by hand. */
+function syncOneCalendar(array $calendar, ?callable $fetcher = null): array
+{
+    $result = prepareOneCalendar($calendar, $fetcher);
+    if (!$result['success']) { unset($result['parsed']); return $result; }
+    try {
+        applyIcalSnapshot($calendar, $result['parsed']);
     } catch (Throwable $e) {
         if (!empty($calendar['id'])) {
             getDB()->prepare("UPDATE external_calendars SET last_status='error', last_error=? WHERE id=?")
@@ -55,31 +75,79 @@ function syncOneCalendar(array $calendar, ?callable $fetcher = null): array
         }
         return ['success'=>false, 'imported'=>0, 'blocks'=>0, 'error'=>$e->getMessage()];
     }
+    unset($result['parsed']);
+    return $result;
 }
 
 function runCalendarSync(?callable $fetcher = null): array
 {
-    $calendars = getDB()->query("SELECT * FROM external_calendars WHERE is_active=1 ORDER BY room_id, platform")->fetchAll();
+    $db = getDB();
+    $calendars = $db->query("SELECT * FROM external_calendars WHERE is_active=1 ORDER BY room_id, platform")->fetchAll();
+
+    // Phase 1 - network only. Thirty feeds take about ten seconds and none of
+    // it may happen with the database write-locked.
     $results = [];
+    $pending = [];
     foreach ($calendars as $calendar) {
+        $result = prepareOneCalendar($calendar, $fetcher);
+        if ($result['success']) $pending[] = [$calendar, $result['parsed']];
+        unset($result['parsed']);
         $results[] = array_merge(
             ['calendar_id'=>(int)$calendar['id'], 'platform'=>$calendar['platform'], 'room_id'=>$calendar['room_id']],
-            syncOneCalendar($calendar, $fetcher)
+            $result
         );
     }
-    // A linked/imported Airbnb block can be echoed with the same UID into
-    // several listing feeds. Remove those echoes only after every active
-    // calendar has refreshed so genuine single-listing blocks remain intact.
-    removeSharedAirbnbEchoBlocks();
-    // A lone echo has no twin to match, so it survives the sweep above. Drop
-    // anything whose dates we already hold ourselves, which does not depend on
-    // how many feeds answered this run.
-    // A parent-level block closes every room beneath it, and on booking.com and
-    // agoda no wording distinguishes a block from a reservation. Drop the parent
-    // copy only where a component feed carries the same block.
-    removeParentInventoryEchoBlocks();
-    removeOwnBookingEchoBlocks();
+
+    // Phase 2 - one transaction, milliseconds. Storing the snapshots and then
+    // sweeping in separate transactions left the echoes readable in between,
+    // so for the ten seconds of every run the site showed rooms as booked that
+    // were free the moment the sweeps landed.
+    $ownTransaction = kfsBeginTransaction($db);
+    try {
+        foreach ($pending as [$calendar, $blocks]) {
+            applyIcalSnapshot($calendar, $blocks, $db);
+        }
+        // Echoes are only recognisable once every feed that answered has been
+        // stored, which is why the sweeps run here and not per calendar.
+        removeSharedAirbnbEchoBlocks($db);
+        // A parent-level block closes every room beneath it, and on booking.com
+        // and agoda no wording distinguishes a block from a reservation. Drop
+        // the parent copy only where a component feed carries the same block.
+        removeParentInventoryEchoBlocks($db);
+        // Anything whose dates we already hold ourselves.
+        removeOwnBookingEchoBlocks($db);
+        kfsCommitTransaction($db, $ownTransaction);
+    } catch (Throwable $e) {
+        kfsRollbackTransaction($db, $ownTransaction);
+        $message = 'Snapshot failed: ' . $e->getMessage();
+        foreach ($results as $index => $result) {
+            if (!$result['success']) continue;
+            $results[$index] = array_merge($result, ['success'=>false, 'imported'=>0, 'blocks'=>0, 'error'=>$message]);
+            $db->prepare("UPDATE external_calendars SET last_status='error', last_error=? WHERE id=?")
+               ->execute([substr($message, 0, 500), (int)$result['calendar_id']]);
+        }
+    }
     return $results;
+}
+
+/**
+ * Hold the same lock cron.php uses. Two syncs at once would sweep a table the
+ * other is still refilling, and the sweeps decide what is bookable.
+ */
+function withSyncLock(callable $work): mixed
+{
+    $handle = fopen(__DIR__ . '/cron.lock', 'c');
+    if ($handle === false) return $work();
+    if (!flock($handle, LOCK_EX | LOCK_NB)) {
+        fclose($handle);
+        throw new RuntimeException('Another sync is already running.');
+    }
+    try {
+        return $work();
+    } finally {
+        flock($handle, LOCK_UN);
+        fclose($handle);
+    }
 }
 
 function outputSyncResults(array $results, bool $json): void
@@ -119,7 +187,17 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
         }
         requireValidCsrfToken($_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null));
     }
-    $results = runCalendarSync();
+    try {
+        $results = withSyncLock(static fn(): array => runCalendarSync());
+    } catch (RuntimeException $e) {
+        if (!$isCli) {
+            http_response_code(409);
+            header('Content-Type: application/json');
+            echo json_encode(['error'=>$e->getMessage()]);
+            exit;
+        }
+        exit($e->getMessage() . "\n");
+    }
     if (!$isCli) {
         $_SESSION['last_sync_results'] = $results;
         $_SESSION['last_sync_time'] = date('Y-m-d H:i:s');
