@@ -10,3 +10,18 @@ RewriteRule ^channel-manager/(?:calendar\.db(?:-wal|-shm)?|cron\.log|cron\.lock|
 <FilesMatch "(^\.env|calendar\.db(?:-wal|-shm)?|cron\.log|cron\.lock|\.last_demand_seed|\.(?:bak|sql|sqlite)$)">
     Require all denied
 </FilesMatch>
+
+# Pages must be revalidated, assets may be kept.
+#
+# The host sends no Cache-Control at all for HTML, which leaves browsers to
+# guess: with only a Last-Modified date to go on they treat a page as fresh for
+# roughly a tenth of its age, so an edit to a page that had not changed for days
+# stayed invisible to anyone who had already visited. "no-cache" does not mean
+# "do not store" - the copy is kept and revalidated, and the ETag this server
+# already sends makes that a 304 with no body. Assets keep their long max-age;
+# they are versioned in the URL (script.js?v=N) when they change.
+<IfModule mod_headers.c>
+    <FilesMatch "\.(?:html|json)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>
