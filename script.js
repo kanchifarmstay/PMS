@@ -522,7 +522,10 @@ function renderFooter() {
             </div>
         </div>
         <div class="footer-bottom">
-            <p>&copy; ${new Date().getFullYear()} Kanchi Farm Stay. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Kanchi Farm Stay. All rights reserved.
+                &nbsp;&middot;&nbsp;
+                <a href="privacy.html" style="color:inherit;">Privacy Policy</a>
+            </p>
         </div>
     </footer>
     `;
