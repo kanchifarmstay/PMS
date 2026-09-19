@@ -615,19 +615,14 @@ test('a lone whole-property echo of our own booking is removed', function (): vo
     $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
        ->execute([$calendarId, 'kanchi-farm-stay', 'airbnb', 'lone-echo', '2030-10-10', '2030-10-12', 'Airbnb (Not available)']);
 
-    // Only the whole-property feed returned the event, so there is no twin and
-    // the shared-UID sweep cannot see it. This is the state the live calendar
-    // was flickering into: one component booking closing all ten rooms.
-    assertSame(0, removeSharedAirbnbEchoBlocks($db));
-    foreach (['tent', 'natures-nest', 'white-villa'] as $room) {
-        assertFalse(
-            isInventoryAvailable($room, '2030-10-10', '2030-10-12'),
-            "expected {$room} to be closed by the whole-property echo"
-        );
-    }
-
-    assertSame(1, removeOwnBookingEchoBlocks($db));
+    // Only the whole-property feed returned the event, so there is no twin.
+    // Until 2026-09-19 the shared-UID sweep could not see it and the block sat
+    // there closing all ten rooms until removeOwnBookingEchoBlocks() happened
+    // to match its dates exactly; now the parent path clears it here.
+    assertSame(1, removeSharedAirbnbEchoBlocks($db));
     assertSame(0, (int)$db->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn());
+    // Nothing is left for the exact-date sweep to do.
+    assertSame(0, removeOwnBookingEchoBlocks($db));
     foreach (['tent', 'natures-nest', 'white-villa'] as $room) {
         assertTrue(
             isInventoryAvailable($room, '2030-10-10', '2030-10-12'),
@@ -636,6 +631,109 @@ test('a lone whole-property echo of our own booking is removed', function (): vo
     }
     // The booking that started the round trip still blocks its own room.
     assertFalse(isInventoryAvailable('wooden-cottage', '2030-10-10', '2030-10-12'));
+});
+
+test('a merged whole-property block is dropped when its components explain every night', function (): void {
+    // The live failure of 2026-09-19. One Airbnb reservation on Wooden Cottage
+    // (night of the 19th) and one phone booking on Wooden Villa (night of the
+    // 20th) made Airbnb mark the whole-property listing unavailable and export
+    // it as ONE merged 19-21 range under its own UID. No feed shares those
+    // dates, so no twin exists; no booking of ours matches them either, so the
+    // exact-date sweep cannot help. All ten rooms read as sold out for two
+    // nights while eight of them were free.
+    resetAvailabilityData();
+    $db = getDB();
+    addBooking([
+        'room_id'=>'wooden-villa', 'room_name'=>ROOM_IDS['wooden-villa'],
+        'check_in'=>'2030-09-20', 'check_out'=>'2030-09-21',
+        'guest_name'=>'Phone Guest', 'source'=>'phone',
+    ]);
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['wooden-cottage', 'airbnb', 'https://example.com/cottage-res.ics']);
+    $cottageCalendar = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$cottageCalendar, 'wooden-cottage', 'airbnb', 'cottage-res', '2030-09-19', '2030-09-20', 'Reserved']);
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['kanchi-farm-stay', 'airbnb', 'https://example.com/group-merged.ics']);
+    $groupCalendar = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$groupCalendar, 'kanchi-farm-stay', 'airbnb', 'group-merged', '2030-09-19', '2030-09-21', 'Airbnb (Not available)']);
+
+    assertSame(1, removeSharedAirbnbEchoBlocks($db));
+    // The genuine reservation is never touched.
+    assertSame(1, (int)$db->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn());
+
+    // The two rooms actually taken stay closed on the nights they are taken.
+    assertFalse(isInventoryAvailable('wooden-cottage', '2030-09-19', '2030-09-20'));
+    assertFalse(isInventoryAvailable('wooden-villa', '2030-09-20', '2030-09-21'));
+    // Everything else is sellable again, on both nights.
+    foreach (['tent', 'natures-nest', 'tranquil-retreat', 'white-villa', 'tree-house'] as $room) {
+        assertTrue(isInventoryAvailable($room, '2030-09-19', '2030-09-20'), "expected {$room} free on the first night");
+        assertTrue(isInventoryAvailable($room, '2030-09-20', '2030-09-21'), "expected {$room} free on the second night");
+    }
+});
+
+test('a whole-property block is kept when one of its nights is unexplained', function (): void {
+    // Same shape as the merged block above but a night longer. Dropping it
+    // would sell ten rooms for a night nothing accounts for.
+    resetAvailabilityData();
+    $db = getDB();
+    addBooking([
+        'room_id'=>'wooden-villa', 'room_name'=>ROOM_IDS['wooden-villa'],
+        'check_in'=>'2030-09-20', 'check_out'=>'2030-09-21',
+        'guest_name'=>'Phone Guest', 'source'=>'phone',
+    ]);
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['kanchi-farm-stay', 'airbnb', 'https://example.com/group-long.ics']);
+    $groupCalendar = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$groupCalendar, 'kanchi-farm-stay', 'airbnb', 'group-long', '2030-09-20', '2030-09-22', 'Airbnb (Not available)']);
+
+    assertSame(0, removeSharedAirbnbEchoBlocks($db));
+    assertFalse(isInventoryAvailable('tent', '2030-09-21', '2030-09-22'));
+});
+
+test('a parent block is not explained by a room that is not one of its components', function (): void {
+    // White Villa's full floor is made of White Villa and White Villa Room 2.
+    // A booking on the Tent says nothing about it, and testing coverage
+    // against occupancy anywhere on the farm - rather than against this
+    // parent's own components - would drop the block and oversell the floor.
+    resetAvailabilityData();
+    $db = getDB();
+    addBooking([
+        'room_id'=>'tent', 'room_name'=>ROOM_IDS['tent'],
+        'check_in'=>'2030-09-25', 'check_out'=>'2030-09-26',
+        'guest_name'=>'Tent Guest', 'source'=>'phone',
+    ]);
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['white-villa-full-floor', 'airbnb', 'https://example.com/floor.ics']);
+    $floorCalendar = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$floorCalendar, 'white-villa-full-floor', 'airbnb', 'floor-block', '2030-09-25', '2030-09-26', 'Airbnb (Not available)']);
+
+    assertSame(0, removeSharedAirbnbEchoBlocks($db));
+    assertFalse(isInventoryAvailable('white-villa-full-floor', '2030-09-25', '2030-09-26'));
+});
+
+test('a genuine whole-property reservation is never dropped as an echo', function (): void {
+    // Airbnb labels a real booking `Reserved`. Even with a component occupied
+    // on every one of its nights, it must survive - it is the whole property
+    // being sold, not a shadow of something else.
+    resetAvailabilityData();
+    $db = getDB();
+    addBooking([
+        'room_id'=>'wooden-villa', 'room_name'=>ROOM_IDS['wooden-villa'],
+        'check_in'=>'2030-09-28', 'check_out'=>'2030-09-29',
+        'guest_name'=>'Phone Guest', 'source'=>'phone',
+    ]);
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute(['kanchi-farm-stay', 'airbnb', 'https://example.com/group-real.ics']);
+    $groupCalendar = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$groupCalendar, 'kanchi-farm-stay', 'airbnb', 'group-real', '2030-09-28', '2030-09-29', 'Reserved']);
+
+    assertSame(0, removeSharedAirbnbEchoBlocks($db));
+    assertFalse(isInventoryAvailable('tent', '2030-09-28', '2030-09-29'));
 });
 
 test('an OTA block that matches no booking of ours is kept', function (): void {
