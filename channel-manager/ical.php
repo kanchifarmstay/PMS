@@ -146,6 +146,21 @@ function applyIcalSnapshot(array $calendar, array $blocks, ?PDO $db = null): voi
  * With no such evidence the copies stay, and the rooms stay blocked. Over-
  * blocking costs a booking we might have taken; over-selling costs a guest who
  * arrives to no room.
+ *
+ * A block on PARENT inventory needs no twin, because it does not get one. When
+ * a component room is taken, Airbnb marks the whole-property listing
+ * unavailable and exports that as a single MERGED range under its own UID -
+ * nothing on any other feed shares those dates, so the twin test above can
+ * never fire and the block closes all ten rooms indefinitely. The live
+ * instance: on 2026-09-19 one Airbnb reservation on Wooden Cottage (19th) and
+ * one phone booking on Wooden Villa (20th) produced a group block of 19-21,
+ * and the whole farm read as sold out for two nights with eight rooms free.
+ *
+ * The safety that the twin provided is replaced, not dropped. A parent block is
+ * only removed when every one of its nights is explained by occupancy on that
+ * parent's OWN components - not, as the flattened set above would allow, by a
+ * booking on some unrelated room. A genuine whole-property reservation is
+ * labelled `Reserved` and is never a candidate here at all.
  */
 function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
 {
@@ -153,23 +168,47 @@ function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
     $rows = $db->query("SELECT id, room_id, platform, external_uid, check_in, check_out, summary
         FROM external_blocks WHERE lower(platform) = 'airbnb'")->fetchAll();
 
-    // Nights we can already account for, from our own confirmed bookings and
-    // from genuine Airbnb reservations on any listing.
-    $accounted = [];
-    $cover = static function (string $from, string $to) use (&$accounted): void {
+    $nightsBetween = static function (string $from, string $to): array {
+        $nights = [];
         $night = $from;
         $guard = 0;
         while ($night < $to && $guard++ < 800) {
-            $accounted[$night] = true;
+            $nights[] = $night;
             $night = (new DateTimeImmutable($night))->modify('+1 day')->format('Y-m-d');
         }
+        return $nights;
     };
-    foreach ($db->query("SELECT check_in, check_out FROM bookings WHERE status='confirmed'")->fetchAll() as $row) {
-        $cover((string)$row['check_in'], (string)$row['check_out']);
+
+    // Nights we can already account for, from our own confirmed bookings and
+    // from genuine Airbnb reservations on any listing.
+    $accounted = [];
+    // The same evidence kept per room, so a parent block can be tested against
+    // its own components instead of against occupancy anywhere on the farm.
+    $occupiedByRoom = [];
+
+    foreach ($db->query("SELECT room_id, check_in, check_out FROM bookings WHERE status='confirmed'")->fetchAll() as $row) {
+        foreach ($nightsBetween((string)$row['check_in'], (string)$row['check_out']) as $night) {
+            $accounted[$night] = true;
+            $occupiedByRoom[(string)$row['room_id']][$night] = true;
+        }
     }
     foreach ($rows as $row) {
         if (icalIsAirbnbEchoSummary((string)$row['summary'])) continue;
-        $cover((string)$row['check_in'], (string)$row['check_out']);
+        foreach ($nightsBetween((string)$row['check_in'], (string)$row['check_out']) as $night) {
+            $accounted[$night] = true;
+        }
+    }
+    // Component occupancy also counts a room closed on another platform.
+    // booking.com and agoda do not label a reservation distinguishably, but a
+    // room closed by either is still a room Airbnb can see is gone - and it is
+    // only ever read as evidence FOR a parent, never as a reason to delete a
+    // block belonging to those platforms.
+    foreach ($db->query("SELECT room_id, platform, check_in, check_out, summary FROM external_blocks")->fetchAll() as $row) {
+        if (strtolower((string)$row['platform']) === 'airbnb'
+            && icalIsAirbnbEchoSummary((string)$row['summary'])) continue;
+        foreach ($nightsBetween((string)$row['check_in'], (string)$row['check_out']) as $night) {
+            $occupiedByRoom[(string)$row['room_id']][$night] = true;
+        }
     }
 
     $doomed = [];
@@ -184,14 +223,24 @@ function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
                 && $other['check_out'] === $row['check_out']
                 && $other['room_id'] !== $row['room_id']) { $hasTwin = true; break; }
         }
-        if (!$hasTwin) continue;
+        $components = INVENTORY_COMPONENTS[(string)$row['room_id']] ?? [];
+        if (!$hasTwin && $components === []) continue;
 
-        $night = (string)$row['check_in'];
+        $nights = $nightsBetween((string)$row['check_in'], (string)$row['check_out']);
+        if ($nights === []) continue;
+
         $covered = true;
-        $guard = 0;
-        while ($night < (string)$row['check_out'] && $guard++ < 800) {
-            if (!isset($accounted[$night])) { $covered = false; break; }
-            $night = (new DateTimeImmutable($night))->modify('+1 day')->format('Y-m-d');
+        foreach ($nights as $night) {
+            if ($hasTwin) {
+                if (isset($accounted[$night])) continue;
+                $covered = false;
+                break;
+            }
+            $explained = false;
+            foreach ($components as $component) {
+                if (isset($occupiedByRoom[$component][$night])) { $explained = true; break; }
+            }
+            if (!$explained) { $covered = false; break; }
         }
         if ($covered) $doomed[] = (int)$row['id'];
     }
