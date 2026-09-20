@@ -1312,4 +1312,163 @@ test('booking deletion permanently removes record and frees up calendar inventor
     assertTrue(isInventoryAvailable('tent', '2030-06-01', '2030-06-03'));
 });
 
+function insertOtaBlock(string $roomId, string $platform, string $uid, string $checkIn, string $checkOut): int
+{
+    $db = getDB();
+    $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
+       ->execute([$roomId, $platform, "https://example.com/{$roomId}-{$platform}.ics"]);
+    $calendarId = (int)$db->lastInsertId();
+    $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$calendarId, $roomId, $platform, $uid, $checkIn, $checkOut, 'CLOSED - Not available']);
+    return (int)$db->lastInsertId();
+}
+
+function countExternalBlocks(): int
+{
+    return (int)getDB()->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn();
+}
+
+test('an OTA booking replaces the block its own reservation exported', function (): void {
+    // The live failure of 2026-09-20. Booking.com sold White Villa - Full 1st
+    // Floor for one night and published the closure on BOTH linked listings
+    // under one uid; removeParentInventoryEchoBlocks() kept the component copy,
+    // so the reservation came back as a block on White Villa 1 and closed the
+    // floor it was a reservation for. Recording it was impossible.
+    resetAvailabilityData();
+    insertOtaBlock('white-villa', 'booking.com', 'f0c4a2ca@booking.com', '2030-09-20', '2030-09-21');
+    assertFalse(isInventoryAvailable('white-villa-full-floor', '2030-09-20', '2030-09-21'));
+
+    $id = createConfirmedBooking([
+        'room_id'=>'white-villa-full-floor',
+        'check_in'=>'2030-09-20', 'check_out'=>'2030-09-21',
+        'guest_name'=>'Booking.com Guest', 'source'=>'booking.com',
+    ]);
+    assertTrue($id > 0);
+    assertSame(0, countExternalBlocks());
+
+    // The booking now holds the dates the block was holding - nothing reopened.
+    assertFalse(isInventoryAvailable('white-villa-full-floor', '2030-09-20', '2030-09-21'));
+    assertFalse(isInventoryAvailable('white-villa', '2030-09-20', '2030-09-21'));
+    // And this is what the block could never do: the block sat on White Villa 1,
+    // whose family does not contain Room 2, so Room 2 stayed on sale for a night
+    // the whole floor was sold. The booking closes it.
+    assertFalse(isInventoryAvailable('white-villa-room-2', '2030-09-20', '2030-09-21'));
+});
+
+test('a booking that did not come from the platform never clears its blocks', function (): void {
+    resetAvailabilityData();
+    insertOtaBlock('white-villa', 'booking.com', 'someone-else@booking.com', '2030-09-20', '2030-09-21');
+
+    foreach (['manual', 'direct', 'phone', ''] as $source) {
+        $refused = false;
+        try {
+            createConfirmedBooking([
+                'room_id'=>'white-villa-full-floor',
+                'check_in'=>'2030-09-20', 'check_out'=>'2030-09-21',
+                'guest_name'=>'Walk-in', 'source'=>$source,
+            ]);
+        } catch (DomainException $e) {
+            $refused = true;
+            assertSame('Those dates conflict with a booking, OTA block, or payment hold.', $e->getMessage());
+        }
+        assertTrue($refused, "expected a {$source} booking to be refused");
+    }
+    assertSame(1, countExternalBlocks());
+});
+
+test('another platform holding the same night still refuses the stay', function (): void {
+    resetAvailabilityData();
+    insertOtaBlock('white-villa', 'booking.com', 'ours@booking.com', '2030-09-20', '2030-09-21');
+    insertOtaBlock('white-villa-room-2', 'airbnb', 'theirs@airbnb.com', '2030-09-20', '2030-09-21');
+
+    $refused = false;
+    try {
+        createConfirmedBooking([
+            'room_id'=>'white-villa-full-floor',
+            'check_in'=>'2030-09-20', 'check_out'=>'2030-09-21',
+            'guest_name'=>'Booking.com Guest', 'source'=>'booking.com',
+        ]);
+    } catch (DomainException) { $refused = true; }
+    assertTrue($refused, 'a second OTA on the same night must still refuse');
+    // Neither block was touched - not even the one the source did match.
+    assertSame(2, countExternalBlocks());
+});
+
+test('a block that outlives the stay belongs to someone else', function (): void {
+    resetAvailabilityData();
+    // Three nights blocked, one night being recorded: the other two nights are
+    // not explained by this reservation, so the block is not its echo.
+    insertOtaBlock('white-villa', 'booking.com', 'longer@booking.com', '2030-09-19', '2030-09-22');
+
+    $refused = false;
+    try {
+        createConfirmedBooking([
+            'room_id'=>'white-villa-full-floor',
+            'check_in'=>'2030-09-20', 'check_out'=>'2030-09-21',
+            'guest_name'=>'Booking.com Guest', 'source'=>'booking.com',
+        ]);
+    } catch (DomainException) { $refused = true; }
+    assertTrue($refused, 'a block wider than the stay must refuse it');
+    assertSame(1, countExternalBlocks());
+});
+
+test('a conflict hidden behind a claimable block refuses, and the block comes back', function (): void {
+    resetAvailabilityData();
+    insertOtaBlock('white-villa', 'booking.com', 'echo@booking.com', '2030-09-20', '2030-09-21');
+    // A real guest is already in Room 2 that night, which the block was hiding.
+    addBooking([
+        'room_id'=>'white-villa-room-2', 'room_name'=>ROOM_IDS['white-villa-room-2'],
+        'check_in'=>'2030-09-20', 'check_out'=>'2030-09-21',
+        'guest_name'=>'Room 2 Guest', 'source'=>'phone',
+    ]);
+
+    $refused = false;
+    try {
+        createConfirmedBooking([
+            'room_id'=>'white-villa-full-floor',
+            'check_in'=>'2030-09-20', 'check_out'=>'2030-09-21',
+            'guest_name'=>'Booking.com Guest', 'source'=>'booking.com',
+        ]);
+    } catch (DomainException) { $refused = true; }
+    assertTrue($refused, 'a genuine booking behind the block must still refuse');
+    // The rollback is the point: claiming deletes before the second check, so a
+    // refusal that did not restore the block would quietly reopen the night.
+    assertSame(1, countExternalBlocks());
+    assertFalse(isInventoryAvailable('white-villa-full-floor', '2030-09-20', '2030-09-21'));
+});
+
+test('a whole-property OTA booking replaces the component blocks it closed', function (): void {
+    resetAvailabilityData();
+    // The group listing has no block of its own - removeParentInventoryEchoBlocks()
+    // drops that copy - and GROUP_BOOKING_THRESHOLD closes the property once three
+    // components are taken. All three are this same reservation.
+    insertOtaBlock('wooden-villa', 'booking.com', 'group@booking.com', '2030-09-20', '2030-09-21');
+    insertOtaBlock('wooden-cottage', 'booking.com', 'group@booking.com', '2030-09-20', '2030-09-21');
+    insertOtaBlock('natures-nest', 'booking.com', 'group@booking.com', '2030-09-20', '2030-09-21');
+    assertFalse(isInventoryAvailable('kanchi-farm-stay', '2030-09-20', '2030-09-21'));
+
+    $id = createConfirmedBooking([
+        'room_id'=>'kanchi-farm-stay',
+        'check_in'=>'2030-09-20', 'check_out'=>'2030-09-21',
+        'guest_name'=>'Booking.com Group', 'source'=>'booking.com',
+    ]);
+    assertTrue($id > 0);
+    assertSame(0, countExternalBlocks());
+    assertFalse(isInventoryAvailable('kanchi-farm-stay', '2030-09-20', '2030-09-21'));
+    assertFalse(isInventoryAvailable('wooden-villa', '2030-09-20', '2030-09-21'));
+});
+
+test('claimable ids are read only, and say no before anything is deleted', function (): void {
+    resetAvailabilityData();
+    $blockId = insertOtaBlock('white-villa', 'booking.com', 'read-only@booking.com', '2030-09-20', '2030-09-21');
+
+    assertSame([$blockId], claimableOtaBlockIds('white-villa-full-floor', '2030-09-20', '2030-09-21', 'Booking.com'));
+    assertSame([], claimableOtaBlockIds('white-villa-full-floor', '2030-09-20', '2030-09-21', 'manual'));
+    assertSame([], claimableOtaBlockIds('white-villa-full-floor', '2030-09-20', '2030-09-21', 'airbnb'));
+    // A room in no way related to White Villa sees nothing to claim.
+    assertSame([], claimableOtaBlockIds('tent', '2030-09-20', '2030-09-21', 'booking.com'));
+    assertSame(1, countExternalBlocks());
+});
+
+
 runTests();
