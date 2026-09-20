@@ -239,6 +239,60 @@ function releaseBookingHold(string $token): void
     getDB()->prepare("UPDATE booking_holds SET status='released', updated_at=datetime('now') WHERE token=? AND status='pending'")->execute([$token]);
 }
 
+/**
+ * The imported blocks that a booking from an OTA is entitled to replace.
+ *
+ * When an OTA sells a stay it closes those dates in its own calendar and exports
+ * the closure back to us as an availability block. Recording that reservation in
+ * the PMS then fails, because the block we imported from it is sitting on the
+ * dates - the reservation is refused by its own shadow. It is worse on linked
+ * listings: booking.com and Airbnb publish ONE uid across a parent listing and
+ * its components, and removeParentInventoryEchoBlocks() keeps the component copy,
+ * so a whole-floor reservation comes back as a block on a single room and closes
+ * the floor from underneath itself. That is the live failure of 2026-09-20 on
+ * White Villa - Full 1st Floor.
+ *
+ * A block may be replaced only when all of this holds:
+ *   - the booking says it came from that platform, so a manual or direct booking
+ *     can never clear an OTA's blocks;
+ *   - EVERY block overlapping the stay across the room's inventory family is
+ *     from that same platform, so a second OTA's block still refuses the dates;
+ *   - each of those blocks lies WITHIN the stay. A block that starts earlier or
+ *     ends later covers a night this reservation does not, so it is somebody
+ *     else's and the dates are genuinely taken.
+ *
+ * Returns the ids to delete, or [] when nothing here may be replaced. It does not
+ * look at bookings or holds at all: the caller re-runs isInventoryAvailable()
+ * afterwards, so a real conflict behind the blocks still refuses the stay and the
+ * transaction puts the blocks back.
+ */
+function claimableOtaBlockIds(
+    string $roomId,
+    string $checkIn,
+    string $checkOut,
+    string $source,
+    ?PDO $db = null
+): array {
+    $platform = strtolower(trim($source));
+    if (!in_array($platform, SUPPORTED_ICAL_PLATFORMS, true)) return [];
+    $rooms = relatedInventoryIds($roomId);
+    if ($rooms === []) return [];
+
+    $db ??= getDB();
+    $roomPlaceholders = implode(',', array_fill(0, count($rooms), '?'));
+    $stmt = $db->prepare("SELECT id, platform, check_in, check_out FROM external_blocks
+        WHERE room_id IN ({$roomPlaceholders}) AND check_in < ? AND check_out > ?");
+    $stmt->execute(array_merge($rooms, [$checkOut, $checkIn]));
+
+    $ids = [];
+    foreach ($stmt->fetchAll() as $block) {
+        if (strtolower((string)$block['platform']) !== $platform) return [];
+        if ((string)$block['check_in'] < $checkIn || (string)$block['check_out'] > $checkOut) return [];
+        $ids[] = (int)$block['id'];
+    }
+    return $ids;
+}
+
 function createConfirmedBooking(array $data): int
 {
     $roomId = trim((string)($data['room_id'] ?? ''));
@@ -251,7 +305,18 @@ function createConfirmedBooking(array $data): int
     try {
         cleanupExpiredHolds($db);
         if (!isInventoryAvailable($roomId, $checkIn, $checkOut, null, null, $db)) {
-            throw new DomainException('Those dates conflict with a booking, OTA block, or payment hold.');
+            $claimed = claimableOtaBlockIds($roomId, $checkIn, $checkOut, (string)($data['source'] ?? ''), $db);
+            if ($claimed === []) {
+                throw new DomainException('Those dates conflict with a booking, OTA block, or payment hold.');
+            }
+            $claimPlaceholders = implode(',', array_fill(0, count($claimed), '?'));
+            $db->prepare("DELETE FROM external_blocks WHERE id IN ({$claimPlaceholders})")->execute($claimed);
+            // Deliberately the same check again, not a narrower one: whatever the
+            // blocks were hiding - another booking, a payment hold, the group
+            // threshold - still refuses the stay, and the rollback restores them.
+            if (!isInventoryAvailable($roomId, $checkIn, $checkOut, null, null, $db)) {
+                throw new DomainException('Those dates conflict with a booking, OTA block, or payment hold.');
+            }
         }
         $data['room_id'] = $roomId;
         $data['room_name'] = ROOM_IDS[$roomId];
