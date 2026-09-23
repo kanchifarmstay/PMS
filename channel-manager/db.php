@@ -292,6 +292,8 @@ function _initSchema(PDO $db): void {
         // Only these rows may be deleted by the stale-booking cleanup.
         // Manually logged bookings (even with source='airbnb') stay = 0.
         "ALTER TABLE bookings ADD COLUMN is_sync_imported INTEGER DEFAULT 0",
+        // When the WhatsApp admin alert went out (UTC); '' = not sent. See admin-alerts.php.
+        "ALTER TABLE bookings ADD COLUMN admin_alert_sent_at TEXT DEFAULT ''",
     ];
     foreach ($migrations as $sql) {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }

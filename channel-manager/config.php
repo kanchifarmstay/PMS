@@ -35,6 +35,13 @@ define('CALLMEBOT_API_KEY', kfsEnv('KFS_CALLMEBOT_API_KEY'));
 define('META_WA_TOKEN', kfsEnv('KFS_META_WA_TOKEN'));
 define('META_WA_PHONE_ID', kfsEnv('KFS_META_WA_PHONE_ID'));
 define('META_WA_VERIFY_TOKEN', kfsEnv('KFS_META_WA_VERIFY_TOKEN'));
+// Admin alert on a direct booking: an approved template sent from the property's
+// own WhatsApp API number (see admin-alerts.php). Falls back to the Meta inbox token.
+define('ADMIN_ALERT_WA_TOKEN', kfsEnv('KFS_WA_TOKEN', META_WA_TOKEN));
+define('ADMIN_ALERT_WA_PHONE_ID', kfsEnv('KFS_WA_PHONE_ID', META_WA_PHONE_ID));
+define('ADMIN_ALERT_WA_NUMBERS', kfsEnv('KFS_ADMIN_WA_NUMBERS'));
+define('ADMIN_ALERT_TEMPLATE', kfsEnv('KFS_ADMIN_BOOKING_TEMPLATE', 'kfs_direct_booking_alert'));
+define('ADMIN_ALERT_TEMPLATE_LANG', kfsEnv('KFS_ADMIN_BOOKING_TEMPLATE_LANG', 'en'));
 define('BANK_NAME', kfsEnv('KFS_BANK_NAME'));
 define('BANK_ACCOUNT_NAME', kfsEnv('KFS_BANK_ACCOUNT_NAME'));
 define('BANK_ACCOUNT_NO', kfsEnv('KFS_BANK_ACCOUNT_NO'));

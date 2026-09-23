@@ -1679,4 +1679,103 @@ test('bill: the admin panel links to the generator from the sidebar and from eac
 });
 
 
+// ── WhatsApp admin alert on a direct booking ───────────────────
+$adminAlertsPath = dirname(__DIR__) . '/channel-manager/admin-alerts.php';
+if (is_file($adminAlertsPath)) require_once $adminAlertsPath;
+
+function alertConfig(array $over = []): array
+{
+    return $over + ['token' => 'test-token', 'phone_id' => '1375626102292867',
+        'numbers' => '+917200390283, 919028001639,9028001639 ,bad', 'template' => 'kfs_direct_booking_alert', 'language' => 'en'];
+}
+
+function fakeTransport(array &$sent, bool $ok = true): callable
+{
+    return function (array $config, array $payload) use (&$sent, $ok): array {
+        $sent[] = $payload;
+        return $ok ? [true, 'wamid.test'] : [false, 'HTTP 400 132001 Template does not exist'];
+    };
+}
+
+function directBooking(array $over = []): int
+{
+    return addBooking($over + ['room_id' => 'wooden-villa', 'room_name' => 'Wooden Villa', 'check_in' => '2031-02-10',
+        'check_out' => '2031-02-12', 'guest_name' => "Priya\nRaman", 'guest_phone' => '+91 98765 43210',
+        'source' => 'direct', 'amount' => 9000, 'amount_paid' => 9000, 'status' => 'confirmed']);
+}
+
+test('admin alert: admin numbers are normalised to digits, deduplicated, and junk is dropped', function (): void {
+    assertSame(['917200390283', '919028001639'], adminAlertNumbers('+917200390283, 919028001639,9028001639 ,bad'));
+    assertSame([], adminAlertNumbers(''));
+});
+
+test('admin alert: a direct booking sends the approved template once to every admin number', function (): void {
+    $id = directBooking();
+    $sent = [];
+    $r = notifyAdminsOfDirectBooking($id, fakeTransport($sent), alertConfig());
+    assertSame('sent', $r['status']);
+    assertSame(2, count($sent));
+    assertSame(['917200390283', '919028001639'], array_column($sent, 'to'));
+    $tpl = $sent[0]['template'];
+    assertSame('kfs_direct_booking_alert', $tpl['name']);
+    assertSame('en', $tpl['language']['code']);
+    $params = array_column($tpl['components'][0]['parameters'], 'text');
+    assertSame(8, count($params), 'the template has exactly eight body variables');
+    assertSame(str_pad((string)$id, 4, '0', STR_PAD_LEFT), $params[0]);
+    assertSame('Priya Raman', $params[1], 'a newline inside a variable is rejected by Meta, so it is flattened');
+    assertSame('Wooden Villa', $params[3]);
+    assertSame('Mon, 10 Feb 2031', $params[4]);
+    assertSame('2', $params[6]);
+    assertSame('9,000', $params[7]);
+    foreach ($params as $p) assertTrue($p !== '' && !preg_match('/[\n\t]|\s{4,}/', $p), 'no empty or multi-line variable');
+
+    // The other confirmation path, or a Razorpay redelivery, must not alert twice.
+    $again = [];
+    assertSame('already_sent', notifyAdminsOfDirectBooking($id, fakeTransport($again), alertConfig())['status']);
+    assertSame(0, count($again));
+});
+
+test('admin alert: only direct, confirmed, recent bookings alert', function (): void {
+    $sent = [];
+    notifyAdminsOfDirectBooking(directBooking(['source' => 'airbnb', 'check_in' => '2031-03-01', 'check_out' => '2031-03-02']), fakeTransport($sent), alertConfig());
+    notifyAdminsOfDirectBooking(directBooking(['source' => 'phone', 'check_in' => '2031-03-03', 'check_out' => '2031-03-04']), fakeTransport($sent), alertConfig());
+    $old = directBooking(['check_in' => '2031-03-05', 'check_out' => '2031-03-06']);
+    getDB()->prepare("UPDATE bookings SET created_at = datetime('now', '-3 days') WHERE id = ?")->execute([$old]);
+    notifyAdminsOfDirectBooking($old, fakeTransport($sent), alertConfig());
+    notifyAdminsOfDirectBooking(999999, fakeTransport($sent), alertConfig());
+    assertSame(0, count($sent));
+});
+
+test('admin alert: when every send fails the claim is released so the other path can retry', function (): void {
+    $id = directBooking(['check_in' => '2031-04-01', 'check_out' => '2031-04-02']);
+    $sent = [];
+    $r = notifyAdminsOfDirectBooking($id, fakeTransport($sent, false), alertConfig());
+    assertSame('failed', $r['status']);
+    assertSame(2, $r['failed']);
+    assertNotContains('7200390283', implode(' ', $r['errors']), 'full admin numbers are not written to the error log');
+    $retry = [];
+    assertSame('sent', notifyAdminsOfDirectBooking($id, fakeTransport($retry), alertConfig())['status']);
+    assertSame(2, count($retry));
+});
+
+test('admin alert: unconfigured is a quiet no-op, and a crashing transport never throws', function (): void {
+    $id = directBooking(['check_in' => '2031-05-01', 'check_out' => '2031-05-02']);
+    $sent = [];
+    assertSame('not_configured', notifyAdminsOfDirectBooking($id, fakeTransport($sent), alertConfig(['token' => '']))['status']);
+    assertSame('not_configured', notifyAdminsOfDirectBooking($id, fakeTransport($sent), alertConfig(['numbers' => '']))['status']);
+    assertSame(0, count($sent));
+    $r = notifyAdminsOfDirectBooking($id, function (): array { throw new RuntimeException('network down'); }, alertConfig());
+    assertSame('error', $r['status']);
+});
+
+test('admin alert: both confirmation paths call it', function (): void {
+    $root = dirname(__DIR__);
+    foreach (['confirm_booking.php', 'razorpay-webhook.php'] as $f) {
+        $src = file_get_contents("{$root}/{$f}");
+        assertContains("admin-alerts.php", $src, "{$f} loads the alert module");
+        assertContains('deferAdminBookingAlert($bookingId);', $src, "{$f} queues the alert");
+    }
+});
+
+
 runTests();
