@@ -5,6 +5,7 @@ require_once __DIR__ . '/channel-manager/config.php';
 require_once __DIR__ . '/channel-manager/db.php';
 require_once __DIR__ . '/channel-manager/payment-service.php';
 require_once __DIR__ . '/channel-manager/whatsapp.php';
+require_once __DIR__ . '/channel-manager/admin-alerts.php';
 require_once __DIR__ . '/channel-manager/api.php';
 
 sendJsonHeaders('POST, OPTIONS');
@@ -22,6 +23,7 @@ try {
     $before->execute([$orderId]);
     $existingId = (int)($before->fetchColumn() ?: 0);
     $bookingId = confirmRazorpayPayment($orderId, $paymentId, $signature);
+    deferAdminBookingAlert($bookingId);
     if ($existingId === 0) {
         $booking = getBookingById($bookingId);
         if ($booking) sendWhatsAppNotification(buildBookingMessage($booking));

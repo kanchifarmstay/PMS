@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/channel-manager/config.php';
 require_once __DIR__ . '/channel-manager/db.php';
 require_once __DIR__ . '/channel-manager/payment-service.php';
+require_once __DIR__ . '/channel-manager/admin-alerts.php';
 require_once __DIR__ . '/channel-manager/api.php';
 
 sendJsonHeaders('POST');
@@ -19,7 +20,9 @@ $orderId = trim((string)($payment['order_id'] ?? ''));
 $paymentId = trim((string)($payment['id'] ?? ''));
 if ($orderId === '' || $paymentId === '') jsonResponse(['error'=>'Webhook is missing payment identifiers.'], 422);
 try {
-    jsonResponse(['ok'=>true, 'bookingId'=>finalizeVerifiedRazorpayPayment($orderId, $paymentId)]);
+    $bookingId = finalizeVerifiedRazorpayPayment($orderId, $paymentId);
+    deferAdminBookingAlert($bookingId);
+    jsonResponse(['ok'=>true, 'bookingId'=>$bookingId]);
 } catch (Throwable $e) {
     error_log('Razorpay webhook reconciliation failure: ' . $e->getMessage());
     jsonResponse(['error'=>'Payment requires reconciliation.'], 409);
