@@ -1471,4 +1471,203 @@ test('claimable ids are read only, and say no before anything is deleted', funct
 });
 
 
+// ── Bill / GST invoice generator ──────────────────────────────
+$billServicePath = dirname(__DIR__) . '/channel-manager/bill-service.php';
+if (is_file($billServicePath)) require_once $billServicePath;
+
+function renderBillPage(array $get, bool $admin = true, array $env = []): string
+{
+    $script = tempnam(sys_get_temp_dir(), 'kfs-bill-') . '.php';
+    $page = var_export(dirname(__DIR__) . '/channel-manager/bill.php', true);
+    $code = '<?php ';
+    foreach ($env as $k => $v) $code .= 'putenv(' . var_export("{$k}={$v}", true) . ');';
+    $code .= 'session_start();' . ($admin ? '$_SESSION["admin_logged_in"]=true;' : '')
+        . '$_SERVER["REQUEST_METHOD"]="GET";$_GET=' . var_export($get, true) . ';'
+        . 'include ' . $page . ';';
+    file_put_contents($script, $code);
+    $out = shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' 2>&1');
+    @unlink($script);
+    return (string)$out;
+}
+
+function sampleBill(array $over = []): array
+{
+    return array_replace_recursive(billFromInput([
+        'guest_name' => 'Test Guest', 'guest_phone' => '9876543210', 'invoice_date' => '2030-09-20',
+        'room_name' => 'Wooden Villa', 'check_in' => '2030-09-20', 'check_out' => '2030-09-22',
+        'inclusive' => '1', 'paid' => '5000',
+        'items' => [['desc' => 'Room tariff', 'sac' => '996311', 'qty' => '2', 'rate' => '4500', 'gst' => '5']],
+    ]), $over);
+}
+
+test('bill: an inclusive room rate splits into taxable + CGST + SGST that add back to the rate', function (): void {
+    $c = computeBill([['desc' => 'Room', 'sac' => '996311', 'qty' => 2, 'rate' => 450000, 'gst' => 5]], true);
+    assertSame(857143, $c['taxable']);
+    assertSame(21428, $c['cgst']);
+    assertSame(21429, $c['sgst']);
+    assertSame(900000, $c['taxable'] + $c['cgst'] + $c['sgst']);
+    assertSame(900000, $c['grand']);
+    assertSame(0, $c['round_off']);
+});
+
+test('bill: exclusive rates add tax on top and round the total to the rupee with the round-off shown', function (): void {
+    $c = computeBill([
+        ['desc' => 'Room', 'sac' => '996311', 'qty' => 1, 'rate' => 333333, 'gst' => 5],
+        ['desc' => 'Dinner', 'sac' => '996331', 'qty' => 3, 'rate' => 45050, 'gst' => 5],
+    ], false);
+    assertSame(333333 + 135150, $c['taxable']);
+    assertSame($c['tax'], $c['cgst'] + $c['sgst']);
+    assertSame(0, $c['grand'] % 100);
+    assertSame($c['grand'], $c['taxable'] + $c['tax'] + $c['round_off']);
+    assertSame(2, count($c['tax_summary']), 'one tax-summary row per SAC and rate');
+});
+
+test('bill: room GST default follows the ₹7,500 pre-tax ceiling', function (): void {
+    assertSame(5, defaultRoomGstRate(750000, false));
+    assertSame(18, defaultRoomGstRate(750001, false));
+    // ₹7,800 inclusive is ₹7,428.57 before tax, so still 5%.
+    assertSame(5, defaultRoomGstRate(780000, true));
+    assertSame(18, defaultRoomGstRate(900000, true));
+});
+
+test('bill: financial year and invoice number follow the April-March year and fit GST\'s 16 characters', function (): void {
+    assertSame('2026-27', financialYear('2026-09-23'));
+    assertSame('2026-27', financialYear('2027-03-31'));
+    assertSame('2027-28', financialYear('2027-04-01'));
+    $no = formatInvoiceNumber('KFSTAY', '2026-27', 12);
+    assertSame('KFSTAY/26-27/0012', $no);
+    assertTrue(strlen(formatInvoiceNumber('KFS', '2026-27', 9999)) <= 16);
+});
+
+test('bill: amounts print in Indian grouping and in words', function (): void {
+    assertSame('₹12,34,567.50', fmtPaise(123456750));
+    assertSame('₹999.00', fmtPaise(99900));
+    assertSame('Rupees Nine Thousand Only', amountInWords(900000));
+    assertSame('Rupees One Lakh Twenty Three Thousand Four Hundred Fifty Six and Seventy Eight Paise Only', amountInWords(12345678));
+    assertSame('Rupees Zero Only', amountInWords(0));
+});
+
+test('bill: input is refused rather than printed when it would make a bad invoice', function (): void {
+    foreach ([
+        ['guest_name' => '', 'invoice_date' => '2030-01-01', 'items' => [['desc' => 'x', 'qty' => 1, 'rate' => 1, 'gst' => 5]]],
+        ['guest_name' => 'A', 'invoice_date' => '', 'items' => [['desc' => 'x', 'qty' => 1, 'rate' => 1, 'gst' => 5]]],
+        ['guest_name' => 'A', 'invoice_date' => '2030-01-01', 'items' => []],
+        ['guest_name' => 'A', 'invoice_date' => '2030-01-01', 'items' => [['desc' => 'x', 'qty' => 1, 'rate' => 1, 'gst' => 7]]],
+        ['guest_name' => 'A', 'invoice_date' => '2030-01-01', 'items' => [['desc' => '', 'qty' => 1, 'rate' => 100, 'gst' => 5]]],
+        ['guest_name' => 'A', 'invoice_date' => '2030-01-01', 'guest_gstin' => 'NOTAGSTIN', 'items' => [['desc' => 'x', 'qty' => 1, 'rate' => 1, 'gst' => 5]]],
+    ] as $i => $bad) {
+        $threw = false;
+        try { billFromInput($bad); } catch (InvalidArgumentException) { $threw = true; }
+        assertTrue($threw, "case {$i} should be refused");
+    }
+    assertTrue(isValidGstin('33BFYPP2186L1ZM'));
+});
+
+test('bill: a draft from a booking bills exactly the booking amount', function (): void {
+    $even = billDraftFromBooking(['id' => 7, 'room_name' => 'Tent', 'check_in' => '2030-01-01', 'check_out' => '2030-01-04',
+        'guest_name' => 'G', 'guest_phone' => '', 'whatsapp_number' => '9999999999', 'amount' => 9000, 'amount_paid' => 3000]);
+    assertSame(3, $even['items'][0]['qty']);
+    assertSame(300000, $even['items'][0]['rate']);
+    assertSame('9999999999', $even['guest']['phone']);
+    assertSame(300000, $even['paid']);
+    $odd = billDraftFromBooking(['id' => 8, 'room_name' => 'Tent', 'check_in' => '2030-01-01', 'check_out' => '2030-01-04',
+        'guest_name' => 'G', 'amount' => 10000]);
+    assertSame(1, $odd['items'][0]['qty']);
+    assertSame(1000000, computeBill($odd['items'], true)['grand']);
+});
+
+test('bill: numbers run in sequence per financial year, and an edit keeps its number', function (): void {
+    getDB()->exec('DELETE FROM bills');
+    $a = saveBill(sampleBill());
+    $b = saveBill(sampleBill());
+    $c = saveBill(sampleBill(['invoice_date' => '2031-04-02']));
+    assertSame('KFS/30-31/0001', getBill($a)['invoice_no']);
+    assertSame('KFS/30-31/0002', getBill($b)['invoice_no']);
+    assertSame('KFS/31-32/0001', getBill($c)['invoice_no']);
+
+    saveBill(sampleBill(['guest' => ['name' => 'Renamed']]), $a);
+    assertSame('KFS/30-31/0001', getBill($a)['invoice_no']);
+    assertSame('Renamed', getBill($a)['guest_name']);
+
+    $moved = false;
+    try { saveBill(sampleBill(['invoice_date' => '2031-05-01']), $a); } catch (InvalidArgumentException) { $moved = true; }
+    assertTrue($moved, 'an edit may not move an invoice into another financial year');
+
+    cancelBill($b);
+    assertSame('cancelled', getBill($b)['status']);
+    $edited = false;
+    try { saveBill(sampleBill(), $b); } catch (InvalidArgumentException) { $edited = true; }
+    assertTrue($edited, 'a cancelled invoice cannot be edited');
+    // Cancelling never frees the number.
+    assertSame('KFS/30-31/0003', getBill(saveBill(sampleBill()))['invoice_no']);
+});
+
+test('bill: an issued invoice keeps the business details it was issued with', function (): void {
+    getDB()->exec('DELETE FROM bills');
+    $id = saveBill(sampleBill());
+    saveBillProfile(array_merge(BILL_PROFILE_DEFAULTS, ['address' => 'New Road, Kanchipuram 631501']));
+    assertSame(BILL_PROFILE_DEFAULTS['address'], getBill($id)['data']['business']['address']);
+    assertSame('New Road, Kanchipuram 631501', getBill(saveBill(sampleBill()))['data']['business']['address']);
+    $bad = false;
+    try { saveBillProfile(array_merge(BILL_PROFILE_DEFAULTS, ['gstin' => '33BAD'])); } catch (InvalidArgumentException) { $bad = true; }
+    assertTrue($bad);
+    saveBillProfile(BILL_PROFILE_DEFAULTS);
+});
+
+test('bill: the printed invoice carries the logo, GSTIN, phone numbers, and totals', function (): void {
+    getDB()->exec('DELETE FROM bills');
+    $id = saveBill(sampleBill());
+    $html = renderBillPage(['id' => (string)$id]);
+    foreach (['assets/images/logo.png', 'TAX INVOICE', '33BFYPP2186L1ZM', '+91 6383726094', '+91 8825775747',
+              'KFS/30-31/0001', 'Test Guest', 'Rupees Nine Thousand Only', '9,000.00', 'Tamil Nadu (33)', '2.5% + 2.5%'] as $needle) {
+        assertContains($needle, $html, "invoice should show {$needle}");
+    }
+    assertNotContains('Warning', $html);
+    assertNotContains('Fatal', $html);
+});
+
+test('bill: the guest link needs the signed token, and the admin pages need a session', function (): void {
+    getDB()->exec('DELETE FROM bills');
+    $id = saveBill(sampleBill());
+    $secret = 'test-doc-secret';
+    $env = ['KFS_DOCUMENT_SIGNING_SECRET' => $secret];
+    $token = hash_hmac('sha256', 'bill-' . $id, $secret);
+    assertContains('TAX INVOICE', renderBillPage(['id' => (string)$id, 'token' => $token], false, $env));
+    assertContains('Access denied', renderBillPage(['id' => (string)$id, 'token' => 'nope'], false, $env));
+    assertContains('Access denied', renderBillPage(['id' => (string)$id], false));
+    assertNotContains('New bill', renderBillPage(['new' => '1'], false, $env));
+    // The admin sees a WhatsApp share of that same signed link; the guest does not.
+    assertContains('Send on WhatsApp', renderBillPage(['id' => (string)$id], true, $env));
+    assertNotContains('Send on WhatsApp', renderBillPage(['id' => (string)$id, 'token' => $token], false, $env));
+});
+
+test('bill: the form and list render, and the form\'s inline JS parses', function (): void {
+    $bookingId = addBooking(['room_id' => 'tent', 'room_name' => 'Tent', 'check_in' => '2030-11-01', 'check_out' => '2030-11-03',
+        'guest_name' => "O'Brien <b>", 'amount' => 6000, 'amount_paid' => 0, 'status' => 'confirmed']);
+    $form = renderBillPage(['new' => '1', 'booking' => (string)$bookingId]);
+    assertContains('Save &amp; issue bill', $form);
+    assertContains('O&#039;Brien &lt;b&gt;', $form, 'guest name is escaped into the form');
+    assertContains('Accommodation — Tent', $form);
+    assertNotContains('<b>"', $form);
+    assertTrue((bool)preg_match('#<script>(.*?)</script>#s', $form, $m), 'form has an inline script');
+    $js = tempnam(sys_get_temp_dir(), 'kfs-bill-js-') . '.js';
+    file_put_contents($js, $m[1]);
+    $node = trim((string)shell_exec('command -v node'));
+    if ($node !== '') {
+        exec(escapeshellarg($node) . ' --check ' . escapeshellarg($js) . ' 2>&1', $out, $code);
+        assertSame(0, $code, 'inline JS must parse: ' . implode("\n", $out));
+    }
+    @unlink($js);
+    assertContains('Bills &amp; GST Invoices', renderBillPage([]));
+    assertContains('Full postal address', renderBillPage(['profile' => '1']));
+});
+
+test('bill: the admin panel links to the generator from the sidebar and from each booking', function (): void {
+    $admin = file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php');
+    assertContains("'bills'     => ['🧾', 'Bills / GST Invoice', 'bill.php', 0]", $admin);
+    assertContains('bill.php?new=1&amp;booking=<?= (int)$b[\'id\'] ?>', $admin);
+    assertContains('bill.php?new=1&booking=${b.id}', $admin);
+});
+
+
 runTests();

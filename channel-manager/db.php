@@ -261,6 +261,25 @@ function _initSchema(PDO $db): void {
             meta_message_id     TEXT DEFAULT '',
             FOREIGN KEY(conversation_id) REFERENCES wa_conversations(id)
         );
+
+        -- GST tax invoices. data is the full bill as JSON, including a snapshot
+        -- of the business profile at issue; UNIQUE(fy, seq) is the legal
+        -- requirement that a number is used once per financial year.
+        CREATE TABLE IF NOT EXISTS bills (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_no    TEXT    NOT NULL UNIQUE,
+            fy            TEXT    NOT NULL,
+            seq           INTEGER NOT NULL,
+            booking_id    INTEGER,
+            invoice_date  DATE    NOT NULL,
+            guest_name    TEXT    DEFAULT '',
+            total_paise   INTEGER DEFAULT 0,
+            data          TEXT    NOT NULL,
+            status        TEXT    DEFAULT 'issued',
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(fy, seq)
+        );
     ");
 
     // Safe schema migrations for existing installs (SQLite ignores duplicates)
