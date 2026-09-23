@@ -8,6 +8,7 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/bill-service.php';
 
 startSecureSession();
 
@@ -256,7 +257,7 @@ function pmLabel(string $pm): string {
   <div class="header">
     <div>
       <h1>🏡 Kanchi Farm Stay</h1>
-      <div class="sub">Madikeri, Coorg, Karnataka</div>
+      <div class="sub"><?= htmlspecialchars(billProfile()['address']) ?></div>
     </div>
     <div class="date-col">
       <div class="date-lbl">ISSUED ON</div>

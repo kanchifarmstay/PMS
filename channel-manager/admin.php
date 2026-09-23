@@ -1320,6 +1320,7 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
       'demand'    => ['🥇', 'High-Demand Dates', 'admin.php?section=demand', 0],
       'wa_inbox'  => ['💬', 'WA Inbox',          'admin.php?section=wa_inbox', $waUnread],
       'pricing'   => ['💡', 'Pricing',           'admin.php?section=pricing', $pendingCount],
+      'bills'     => ['🧾', 'Bills / GST Invoice', 'bill.php', 0],
       'analytics' => ['📈', 'Analytics',         'admin.php?section=analytics', 0],
       'channels'  => ['🔗', 'Channels',          'admin.php?section=channels', 0],
       'export'    => ['📤', 'iCal Export',       'admin.php?section=export', 0],
@@ -3119,6 +3120,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
           <td style="white-space:nowrap">
             <button type="button" class="btn btn-sm btn-primary" onclick="openEditBookingModal(<?= $bJson ?>)" title="Edit Booking / Change Dates">✏️ Edit</button>
             <a href="<?= $pdfUrl ?>" target="_blank" class="btn btn-sm btn-grey" title="View / Download PDF">📄 PDF</a>
+            <a href="bill.php?new=1&amp;booking=<?= (int)$b['id'] ?>" target="_blank" class="btn btn-sm btn-grey" title="Create a GST bill for this booking">🧾 Bill</a>
             <?php if ($waNum): ?><a href="https://wa.me/<?= preg_replace('/\D/','',$waNum) ?>" target="_blank" class="btn btn-sm btn-grey" title="Open WhatsApp chat">💬</a><?php endif; ?>
             <?php if ($b['status']==='confirmed'): ?>
             <form method="POST" style="display:inline" onsubmit="return confirm('Cancel booking #<?= $b['id'] ?> (<?= htmlspecialchars(addslashes($b['guest_name'])) ?>)?')">
@@ -4523,6 +4525,7 @@ function showBookingModal(b) {
         <button type="button" class="btn btn-primary btn-sm" onclick="openEditBookingModal(window._activeBookingData)">✏️ Edit Booking &amp; Dates</button>
         ${b.guest_phone ? `<a href="https://wa.me/${b.guest_phone.replace(/\D/g,'')}" target="_blank" class="btn btn-grey btn-sm">💬 WhatsApp</a>` : ''}
         <a href="booking-pdf.php?id=${b.id}" target="_blank" class="btn btn-grey btn-sm">📄 PDF Receipt</a>
+        <a href="bill.php?new=1&booking=${b.id}" target="_blank" class="btn btn-grey btn-sm">🧾 GST Bill</a>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         ${b.status === 'confirmed' ? `
