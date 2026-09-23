@@ -234,8 +234,8 @@ if ($mode === 'invoice') {
     <a class="btn" href="bill.php?profile=1">⚙️ Business details</a>
     <a class="btn btn-primary" href="bill.php?new=1">+ New bill</a>
   </div>
-  <?php if ($profile['address'] === BILL_PROFILE_DEFAULTS['address']): ?>
-  <div class="flash flash-err">Your bills print the address as “<?= h($profile['address']) ?>”. A GST invoice needs the full postal address — <a href="bill.php?profile=1">add it in Business details</a>.</div>
+  <?php if (billAddressNeedsPin($profile['address'])): ?>
+  <div class="flash flash-err">The address on your bills has no PIN code. A GST invoice needs the full postal address — <a href="bill.php?profile=1">add the 6-digit PIN in Business details</a>.</div>
   <?php endif; ?>
   <div class="card">
     <p class="muted" style="margin-top:0">To bill a stay, open <a href="admin.php?section=bookings">Bookings</a> and press <b>🧾 Bill</b> on the row — guest, room, dates and amount are filled in for you. Use <b>+ New bill</b> for walk-ins, food or anything without a booking.</p>

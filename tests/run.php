@@ -1614,12 +1614,20 @@ test('bill: an issued invoice keeps the business details it was issued with', fu
     saveBillProfile(BILL_PROFILE_DEFAULTS);
 });
 
+test('bill: the registered address prints by default, and a missing PIN is flagged', function (): void {
+    assertContains('Chithathur Village', BILL_PROFILE_DEFAULTS['address']);
+    assertTrue(billAddressNeedsPin(BILL_PROFILE_DEFAULTS['address']));
+    assertFalse(billAddressNeedsPin(BILL_PROFILE_DEFAULTS['address'] . ' 604 410'));
+    assertFalse(billAddressNeedsPin('Chithathur, Tamil Nadu - 604410'));
+    assertContains('no PIN code', renderBillPage([]));
+});
+
 test('bill: the printed invoice carries the logo, GSTIN, phone numbers, and totals', function (): void {
     getDB()->exec('DELETE FROM bills');
     $id = saveBill(sampleBill());
     $html = renderBillPage(['id' => (string)$id]);
     foreach (['assets/images/logo.png', 'TAX INVOICE', '33BFYPP2186L1ZM', '+91 6383726094', '+91 8825775747',
-              'KFS/30-31/0001', 'Test Guest', 'Rupees Nine Thousand Only', '9,000.00', 'Tamil Nadu (33)', '2.5% + 2.5%'] as $needle) {
+              'KFS/30-31/0001', 'Test Guest', 'Chithathur Village', 'Tiruvannamalai District', 'Rupees Nine Thousand Only', '9,000.00', 'Tamil Nadu (33)', '2.5% + 2.5%'] as $needle) {
         assertContains($needle, $html, "invoice should show {$needle}");
     }
     assertNotContains('Warning', $html);

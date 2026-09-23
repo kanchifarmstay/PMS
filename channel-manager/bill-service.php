@@ -31,7 +31,7 @@ const BILL_ITEM_PRESETS = [
 const BILL_PROFILE_DEFAULTS = [
     'trade_name' => 'Kanchi Farm Stay',
     'legal_name' => '',
-    'address'    => 'Near Kanchipuram, Tamil Nadu, India',
+    'address'    => "506, Satha Nagar, Chithathur Village,\nVembakkam, Near Alandur Sub Post Office,\nTiruvannamalai District, Tamil Nadu",
     'state'      => 'Tamil Nadu',
     'state_code' => '33',
     'gstin'      => '33BFYPP2186L1ZM',
@@ -66,6 +66,11 @@ function saveBillProfile(array $input): void {
         if ($key === 'prefix') $value = $prefix;
         setSetting('bill_' . $key, $value);
     }
+}
+
+/** A GST invoice address is incomplete without a 6-digit PIN code. */
+function billAddressNeedsPin(string $address): bool {
+    return !preg_match('/\b[1-9][0-9]{5}\b|\b[1-9][0-9]{2}\s[0-9]{3}\b/', $address);
 }
 
 function isValidGstin(string $gstin): bool {
