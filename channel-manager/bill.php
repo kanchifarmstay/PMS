@@ -461,8 +461,7 @@ if ($mode === 'invoice') {
         <div class="t"><?= $biz['gstin'] !== '' ? 'TAX INVOICE' : 'INVOICE' ?></div>
         <div class="meta">
           Invoice No: <b><?= h($row['invoice_no']) ?></b><br>
-          Date: <b><?= h(date('d M Y', strtotime($row['invoice_date']))) ?></b><br>
-          Place of supply: <b><?= h($biz['state']) ?> (<?= h($biz['state_code']) ?>)</b>
+          Date: <b><?= h(date('d M Y', strtotime($row['invoice_date']))) ?></b>
         </div>
       </div>
     </div>
