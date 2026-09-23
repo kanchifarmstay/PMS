@@ -4,7 +4,7 @@
  */
 
 const CACHE_PREFIX = 'kfs-public-';
-const CACHE = CACHE_PREFIX + 'v2';
+const CACHE = CACHE_PREFIX + 'v3';
 const STATIC = [
   '/',
   '/index.html',

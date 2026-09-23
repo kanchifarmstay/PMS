@@ -514,6 +514,7 @@ function renderFooter() {
                 <p>📞 <a href="tel:+916383726094">+91 6383726094</a></p>
                 <p>📞 <a href="tel:+918825775747">+91 8825775747</a></p>
                 <p>📧 <a href="mailto:ops@kanchifarmstay.com">ops@kanchifarmstay.com</a></p>
+                <p>🧾 GSTIN: 33BFYPP2186L1ZM</p>
                 <p>
                     <a href="https://airbnb.co.in/h/kanchifarmstay" target="_blank" rel="noopener noreferrer" style="color:rgba(255,255,255,0.8);">Also on Airbnb</a>
                     &nbsp;·&nbsp;

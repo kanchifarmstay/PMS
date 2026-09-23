@@ -428,7 +428,7 @@ function pmLabel(string $pm): string {
   <!-- Footer -->
   <div class="footer">
     <span>Computer-generated confirmation · No signature required · Booking #<?= str_pad($b['id'], 4, '0', STR_PAD_LEFT) ?></span>
-    <strong>Kanchi Farm Stay</strong>
+    <strong>Kanchi Farm Stay · GSTIN 33BFYPP2186L1ZM</strong>
   </div>
 </div>
 
