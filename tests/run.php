@@ -1627,9 +1627,10 @@ test('bill: the printed invoice carries the logo, GSTIN, phone numbers, and tota
     $id = saveBill(sampleBill());
     $html = renderBillPage(['id' => (string)$id]);
     foreach (['assets/images/logo.png', 'TAX INVOICE', '33BFYPP2186L1ZM', '+91 6383726094', '+91 8825775747',
-              'KFS/30-31/0001', 'Test Guest', 'Chithathur Village', 'Tiruvannamalai District', 'Rupees Nine Thousand Only', '9,000.00', 'Tamil Nadu (33)', '2.5% + 2.5%'] as $needle) {
+              'KFS/30-31/0001', 'Test Guest', 'Chithathur Village', 'Tiruvannamalai District', 'Rupees Nine Thousand Only', '9,000.00', '2.5% + 2.5%'] as $needle) {
         assertContains($needle, $html, "invoice should show {$needle}");
     }
+    assertNotContains('Place of supply', $html, 'place of supply is not printed on the invoice');
     assertNotContains('Warning', $html);
     assertNotContains('Fatal', $html);
 });
