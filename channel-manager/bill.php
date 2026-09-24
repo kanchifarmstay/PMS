@@ -51,6 +51,11 @@ if ($isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
             cancelBill((int)$_POST['bill_id']);
             header('Location: bill.php?id=' . (int)$_POST['bill_id']); exit;
         }
+        if ($act === 'send_whatsapp') {
+            $id = (int)$_POST['bill_id'];
+            $r = sendBillOnWhatsApp($id);
+            header('Location: bill.php?id=' . $id . '&' . ($r['ok'] ? 'wa=sent' : 'wa_err=' . rawurlencode($r['message']))); exit;
+        }
         if ($act === 'save_profile') {
             saveBillProfile($_POST);
             header('Location: bill.php?profile=1&saved=1'); exit;
@@ -445,6 +450,8 @@ if ($mode === 'invoice') {
 
 <?php else: /* invoice */ ?>
   <?php if (isset($_GET['saved'])): ?><div class="flash flash-ok no-print">Bill <?= h($row['invoice_no']) ?> saved.</div><?php endif; ?>
+  <?php if ($isAdmin && isset($_GET['wa_err'])): ?><div class="flash flash-err no-print"><?= h($_GET['wa_err']) ?></div><?php endif; ?>
+  <?php if ($isAdmin && ($row['wa_sent_at'] ?? '') !== ''): ?><div class="flash flash-ok no-print">💬 <?= isset($_GET['wa']) ? 'Sent' : 'Last sent' ?> on WhatsApp to +<?= h($row['wa_sent_to']) ?> on <?= h(date('d M Y, g:i A', (kfsDbTimestamp($row['wa_sent_at']) ?? time()))) ?>.</div><?php endif; ?>
   <div class="invoice">
     <?php if ($row['status'] === 'cancelled'): ?><div class="stamp">CANCELLED</div><?php endif; ?>
     <div class="inv-head">
@@ -584,7 +591,13 @@ if ($mode === 'invoice') {
           $gPhone = preg_replace('/\D/', '', $bill['guest']['phone']);
           if (strlen($gPhone) === 10) $gPhone = '91' . $gPhone;
           $waText = 'Hello ' . $bill['guest']['name'] . ', here is your invoice ' . $row['invoice_no'] . ' from ' . $biz['trade_name'] . ': ' . $guestUrl; ?>
-          <a class="btn" target="_blank" rel="noopener" href="https://wa.me/<?= h($gPhone) ?>?text=<?= h(rawurlencode($waText)) ?>">💬 Send on WhatsApp</a>
+          <form method="POST" style="display:inline" onsubmit="return confirm('Send invoice <?= h($row['invoice_no']) ?> on WhatsApp to <?= h($bill['guest']['phone'] ?: 'the guest') ?>?<?= ($row['wa_sent_at'] ?? '') !== '' ? ' It was already sent once.' : '' ?>')">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="send_whatsapp">
+            <input type="hidden" name="bill_id" value="<?= (int)$row['id'] ?>">
+            <button class="btn" type="submit" title="Send the approved invoice template from the property's WhatsApp number">💬 Send on WhatsApp</button>
+          </form>
+          <a class="btn" target="_blank" rel="noopener" href="https://wa.me/<?= h($gPhone) ?>?text=<?= h(rawurlencode($waText)) ?>" title="Open a chat on this device with the link typed in">↗ Open chat</a>
         <?php endif; ?>
       <?php endif; ?>
     <?php endif; ?>

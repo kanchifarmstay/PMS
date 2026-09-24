@@ -15,6 +15,7 @@
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/admin-alerts.php';
 
 const BILL_GST_RATES = [0, 5, 12, 18, 28];
 
@@ -365,4 +366,105 @@ function listBills(int $limit = 200): array {
 
 function billToken(int $id): string {
     return DOCUMENT_SIGNING_SECRET === '' ? '' : hash_hmac('sha256', 'bill-' . $id, DOCUMENT_SIGNING_SECRET);
+}
+
+/* ── Send the invoice on WhatsApp ──────────────────────────────
+ * The bill page's "Send on WhatsApp" posts here. It sends the approved
+ * template kfs_invoice_ready from the property's API number to the guest,
+ * with the signed bill link as the button's URL suffix. A template, not free
+ * text, because a guest who has not messaged the number in 24h can only be
+ * reached with one.
+ */
+
+/** Guest phone as WhatsApp wants it: digits with country code; a bare 10-digit number is Indian. */
+function billWhatsAppNumber(string $phone): ?string {
+    $digits = preg_replace('/\D/', '', $phone);
+    if (strlen($digits) === 11 && $digits[0] === '0') $digits = substr($digits, 1);
+    if (strlen($digits) === 10) $digits = '91' . $digits;
+    return strlen($digits) >= 11 && strlen($digits) <= 15 ? $digits : null;
+}
+
+function billStayLabel(array $bill): string {
+    $room = trim((string)($bill['stay']['room_name'] ?? ''));
+    $in = (string)($bill['stay']['check_in'] ?? '');
+    $out = (string)($bill['stay']['check_out'] ?? '');
+    $dates = '';
+    if ($in !== '' && $out !== '') {
+        $a = strtotime($in); $b = strtotime($out);
+        $dates = date('M Y', $a) === date('M Y', $b)
+            ? date('j', $a) . '-' . date('j M Y', $b)
+            : date('j M', $a) . ' - ' . date('j M Y', $b);
+    }
+    $label = trim($room . ($room !== '' && $dates !== '' ? ', ' : '') . $dates);
+    return $label !== '' ? $label : 'Invoice dated ' . date('d M Y', strtotime((string)$bill['invoice_date']));
+}
+
+function billInvoiceTemplatePayload(array $row, string $to, string $template, string $lang): array {
+    $bill = $row['data'];
+    $grand = computeBill($bill['items'], (bool)$bill['inclusive'])['grand'];
+    $total = fmtPaise($grand, false);
+    if (str_ends_with($total, '.00')) $total = substr($total, 0, -3);
+    $params = [
+        templateParam($bill['guest']['name'] ?? ''),
+        (string)$row['invoice_no'],
+        templateParam(billStayLabel($bill)),
+        $total,
+    ];
+    return [
+        'messaging_product' => 'whatsapp',
+        'to'                => $to,
+        'type'              => 'template',
+        'template'          => [
+            'name'       => $template,
+            'language'   => ['code' => $lang],
+            'components' => [
+                ['type' => 'body', 'parameters' => array_map(fn(string $p) => ['type' => 'text', 'text' => $p], $params)],
+                // The template's button URL is .../bill.php?{{1}}; this is the suffix.
+                ['type' => 'button', 'sub_type' => 'url', 'index' => '0',
+                 'parameters' => [['type' => 'text', 'text' => 'id=' . (int)$row['id'] . '&token=' . billToken((int)$row['id'])]]],
+            ],
+        ],
+    ];
+}
+
+/** Meta's error codes, said the way the owner needs to hear them. */
+function billWhatsAppErrorText(string $detail): string {
+    return match (true) {
+        str_contains($detail, '132001') => 'The invoice template is not approved by Meta yet. Use "Open chat" for now.',
+        str_contains($detail, '131026') => 'This number does not appear to be on WhatsApp.',
+        str_contains($detail, '131047') => 'WhatsApp refused the message outside the 24-hour window.',
+        str_contains($detail, '131042') => 'Meta refused the send: the WhatsApp account has a payment method problem.',
+        str_contains($detail, '190')    => 'The WhatsApp token was rejected. Check KFS_WA_TOKEN in kfs.env.',
+        default => 'WhatsApp send failed: ' . $detail,
+    };
+}
+
+/** @return array{ok:bool, message:string, to?:string} */
+function sendBillOnWhatsApp(int $id, ?callable $transport = null, ?array $config = null): array {
+    $row = getBill($id);
+    if (!$row) return ['ok' => false, 'message' => 'Bill not found.'];
+    if ($row['status'] === 'cancelled') return ['ok' => false, 'message' => 'A cancelled invoice is not sent.'];
+    $config ??= ['token' => ADMIN_ALERT_WA_TOKEN, 'phone_id' => ADMIN_ALERT_WA_PHONE_ID,
+                 'template' => INVOICE_WA_TEMPLATE, 'language' => 'en'];
+    if ($config['token'] === '' || $config['phone_id'] === '') {
+        return ['ok' => false, 'message' => 'WhatsApp is not configured (KFS_WA_TOKEN / KFS_WA_PHONE_ID).'];
+    }
+    if (billToken($id) === '') return ['ok' => false, 'message' => 'Guest links are off: KFS_DOCUMENT_SIGNING_SECRET is not set.'];
+    $to = billWhatsAppNumber((string)($row['data']['guest']['phone'] ?? ''));
+    if ($to === null) return ['ok' => false, 'message' => 'This bill has no valid guest phone number. Edit the bill and add one.'];
+
+    $transport ??= 'sendWhatsAppCloudRequest';
+    try {
+        [$ok, $detail] = $transport($config, billInvoiceTemplatePayload($row, $to, $config['template'], $config['language']));
+    } catch (Throwable $e) {
+        [$ok, $detail] = [false, $e->getMessage()];
+    }
+    $db = getDB();
+    if ($ok) {
+        $db->prepare("UPDATE bills SET wa_sent_at = datetime('now'), wa_sent_to = ?, wa_last_error = '' WHERE id = ?")->execute([$to, $id]);
+        return ['ok' => true, 'message' => 'Invoice sent on WhatsApp to +' . $to . '.', 'to' => $to];
+    }
+    $db->prepare("UPDATE bills SET wa_last_error = ? WHERE id = ?")->execute([mb_substr((string)$detail, 0, 300), $id]);
+    error_log("Invoice WhatsApp send failed for bill #{$id}: {$detail}");
+    return ['ok' => false, 'message' => billWhatsAppErrorText((string)$detail), 'to' => $to];
 }
