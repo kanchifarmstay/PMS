@@ -1778,4 +1778,76 @@ test('admin alert: both confirmation paths call it', function (): void {
 });
 
 
+// ── Invoice "Send on WhatsApp" ────────────────────────────────
+function invoiceWaConfig(array $over = []): array
+{
+    return $over + ['token' => 'test-token', 'phone_id' => '1375626102292867', 'template' => 'kfs_invoice_ready', 'language' => 'en'];
+}
+
+function freshBills(): void
+{
+    getDB()->exec('DELETE FROM bills');
+}
+
+test('invoice whatsapp: guest phone numbers normalise to WhatsApp format', function (): void {
+    assertSame('919876543210', billWhatsAppNumber('98765 43210'));
+    assertSame('919876543210', billWhatsAppNumber('+91-98765-43210'));
+    assertSame('919876543210', billWhatsAppNumber('098765 43210'));
+    assertSame('447700900123', billWhatsAppNumber('+44 7700 900123'));
+    assertSame(null, billWhatsAppNumber('12345'));
+    assertSame(null, billWhatsAppNumber(''));
+});
+
+test('invoice whatsapp: the template carries name, invoice no, stay, total and the signed bill link', function (): void {
+    freshBills();
+    $id = saveBill(sampleBill());
+    $payload = billInvoiceTemplatePayload(getBill($id), '919876543210', 'kfs_invoice_ready', 'en');
+    assertSame('kfs_invoice_ready', $payload['template']['name']);
+    assertSame('919876543210', $payload['to']);
+    [$bodyC, $btnC] = $payload['template']['components'];
+    assertSame(['Test Guest', 'KFS/30-31/0001', 'Wooden Villa, 20-22 Sep 2030', '9,000'], array_column($bodyC['parameters'], 'text'));
+    assertSame(['button', 'url', '0'], [$btnC['type'], $btnC['sub_type'], $btnC['index']]);
+    assertSame('id=' . $id . '&token=' . billToken($id), $btnC['parameters'][0]['text']);
+});
+
+test('invoice whatsapp: a successful send is recorded; without a signing secret nothing is sent', function (): void {
+    freshBills();
+    $id = saveBill(sampleBill());
+    $sent = [];
+    $fake = function (array $c, array $p) use (&$sent): array { $sent[] = $p; return [true, 'wamid.x']; };
+    $r = sendBillOnWhatsApp($id, $fake, invoiceWaConfig());
+    if (billToken($id) === '') {
+        assertFalse($r['ok']);
+        assertContains('KFS_DOCUMENT_SIGNING_SECRET', $r['message']);
+        assertSame(0, count($sent), 'never send a button that opens a dead link');
+    } else {
+        assertTrue($r['ok'], $r['message']);
+        assertSame(1, count($sent));
+        assertSame('919876543210', getBill($id)['wa_sent_to']);
+        assertTrue(getBill($id)['wa_sent_at'] !== '');
+    }
+});
+
+test('invoice whatsapp: refuses cancelled bills, missing phones and missing config; Meta errors are explained', function (): void {
+    freshBills();
+    $never = function (): array { throw new RuntimeException('must not be called'); };
+    assertFalse(sendBillOnWhatsApp(saveBill(sampleBill(['guest' => ['phone' => '']])), $never, invoiceWaConfig())['ok']);
+    $cancelled = saveBill(sampleBill());
+    cancelBill($cancelled);
+    assertContains('cancelled', sendBillOnWhatsApp($cancelled, $never, invoiceWaConfig())['message']);
+    $ok = saveBill(sampleBill());
+    assertContains('not configured', sendBillOnWhatsApp($ok, $never, invoiceWaConfig(['token' => '']))['message']);
+    assertSame('Bill not found.', sendBillOnWhatsApp(999999, $never, invoiceWaConfig())['message']);
+    assertContains('not approved', billWhatsAppErrorText('HTTP 400 132001 Template does not exist'));
+    assertContains('not appear to be on WhatsApp', billWhatsAppErrorText('HTTP 400 131026 Message undeliverable'));
+});
+
+test('invoice whatsapp: the bill page posts the send to the server and keeps "Open chat" as a fallback', function (): void {
+    $src = file_get_contents(dirname(__DIR__) . '/channel-manager/bill.php');
+    assertContains('value="send_whatsapp"', $src);
+    assertContains("if (\$act === 'send_whatsapp')", $src);
+    assertContains('↗ Open chat', $src);
+});
+
+
 runTests();

@@ -316,6 +316,16 @@ function _initSchema(PDO $db): void {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
     }
 
+    $billMigrations = [
+        // Last WhatsApp send of the invoice (UTC), who it went to, and the last error.
+        "ALTER TABLE bills ADD COLUMN wa_sent_at TEXT DEFAULT ''",
+        "ALTER TABLE bills ADD COLUMN wa_sent_to TEXT DEFAULT ''",
+        "ALTER TABLE bills ADD COLUMN wa_last_error TEXT DEFAULT ''",
+    ];
+    foreach ($billMigrations as $sql) {
+        try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
+    }
+
     $paymentMigrations = [
         "ALTER TABLE payment_orders ADD COLUMN booking_id INTEGER",
         "ALTER TABLE payment_orders ADD COLUMN last_error TEXT DEFAULT ''",
