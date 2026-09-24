@@ -5,6 +5,7 @@ require_once __DIR__ . '/channel-manager/config.php';
 require_once __DIR__ . '/channel-manager/db.php';
 require_once __DIR__ . '/channel-manager/payment-service.php';
 require_once __DIR__ . '/channel-manager/admin-alerts.php';
+require_once __DIR__ . '/channel-manager/guest-whatsapp.php';
 require_once __DIR__ . '/channel-manager/api.php';
 
 sendJsonHeaders('POST');
@@ -22,6 +23,7 @@ if ($orderId === '' || $paymentId === '') jsonResponse(['error'=>'Webhook is mis
 try {
     $bookingId = finalizeVerifiedRazorpayPayment($orderId, $paymentId);
     deferAdminBookingAlert($bookingId);
+    deferGuestBookingConfirmation($bookingId);
     jsonResponse(['ok'=>true, 'bookingId'=>$bookingId]);
 } catch (Throwable $e) {
     error_log('Razorpay webhook reconciliation failure: ' . $e->getMessage());

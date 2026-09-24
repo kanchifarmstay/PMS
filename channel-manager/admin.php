@@ -8,6 +8,7 @@ require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/booking-service.php';
 require_once __DIR__ . '/whatsapp.php';
 require_once __DIR__ . '/demand-engine.php';
+require_once __DIR__ . '/guest-whatsapp.php';
 
 startSecureSession();
 
@@ -66,10 +67,9 @@ if (!empty($_SESSION['admin_logged_in'])) {
         }
         if ($id) {
             sendWhatsAppNotification(buildBookingMessage(array_merge($data, ['id' => $id])));
-            // Send confirmation to guest if WhatsApp number provided and Meta API configured
-            if (!empty($data['whatsapp_number']) && META_WA_TOKEN) {
-                sendMetaWABookingConfirmation(array_merge($data, ['id' => $id]));
-            }
+            // Guest confirmation: the approved kfs_booking_confirmed template, sent after
+            // the redirect. Skips OTA sources, blocks and bookings with no phone.
+            deferGuestBookingConfirmation((int)$id);
             // If converted from a WA conversation, link it
             if (!empty($_POST['wa_conversation_id'])) {
                 $cid = (int)$_POST['wa_conversation_id'];
