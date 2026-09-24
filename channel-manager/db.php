@@ -294,6 +294,8 @@ function _initSchema(PDO $db): void {
         "ALTER TABLE bookings ADD COLUMN is_sync_imported INTEGER DEFAULT 0",
         // When the WhatsApp admin alert went out (UTC); '' = not sent. See admin-alerts.php.
         "ALTER TABLE bookings ADD COLUMN admin_alert_sent_at TEXT DEFAULT ''",
+        // When the guest's WhatsApp confirmation went out (UTC); '' = not sent. See guest-whatsapp.php.
+        "ALTER TABLE bookings ADD COLUMN guest_confirm_sent_at TEXT DEFAULT ''",
     ];
     foreach ($migrations as $sql) {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }

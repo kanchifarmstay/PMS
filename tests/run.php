@@ -1682,6 +1682,7 @@ test('bill: the admin panel links to the generator from the sidebar and from eac
 // ── WhatsApp admin alert on a direct booking ───────────────────
 $adminAlertsPath = dirname(__DIR__) . '/channel-manager/admin-alerts.php';
 if (is_file($adminAlertsPath)) require_once $adminAlertsPath;
+require_once dirname(__DIR__) . '/channel-manager/guest-whatsapp.php';
 
 function alertConfig(array $over = []): array
 {
@@ -1847,6 +1848,84 @@ test('invoice whatsapp: the bill page posts the send to the server and keeps "Op
     assertContains('value="send_whatsapp"', $src);
     assertContains("if (\$act === 'send_whatsapp')", $src);
     assertContains('↗ Open chat', $src);
+});
+
+
+// ── Guest WhatsApp booking confirmation ───────────────────────
+test('guest confirmation: the template carries name, booking #, room, dates, amount and the signed PDF link', function (): void {
+    $b = ['id' => 142, 'guest_name' => "Priya\tRaman", 'room_name' => 'Wooden Villa', 'check_in' => '2031-02-10',
+          'check_out' => '2031-02-12', 'amount_paid' => 4500];
+    $p = guestConfirmationPayload($b, '919876543210', ['template' => 'kfs_booking_confirmed', 'language' => 'en']);
+    assertSame('kfs_booking_confirmed', $p['template']['name']);
+    [$body, $btn] = $p['template']['components'];
+    assertSame(['Priya Raman', '0142', 'Wooden Villa', 'Mon, 10 Feb 2031', 'Wed, 12 Feb 2031', '4,500'], array_column($body['parameters'], 'text'));
+    assertSame(['button', 'url', '0'], [$btn['type'], $btn['sub_type'], $btn['index']]);
+    assertSame('id=142&token=' . bookingPdfToken(142), $btn['parameters'][0]['text']);
+});
+
+test('guest confirmation: without a signing secret nothing is sent, so a guest never gets a dead button', function (): void {
+    if (DOCUMENT_SIGNING_SECRET !== '') return;
+    $id = directBooking(['check_in' => '2031-06-01', 'check_out' => '2031-06-02']);
+    $sent = [];
+    $r = sendGuestBookingConfirmation($id, fakeTransport($sent), ['token' => 't', 'phone_id' => '1', 'template' => 'x', 'language' => 'en']);
+    assertSame('not_configured', $r['status']);
+    assertSame(0, count($sent));
+});
+
+test('guest confirmation: sends once for direct and admin bookings, never for OTA, blocks, no phone or old rows', function (): void {
+    $db = sys_get_temp_dir() . '/kfs-guest-confirm-' . getmypid() . '.sqlite';
+    @unlink($db);
+    $script = sys_get_temp_dir() . '/kfs-guest-confirm-' . getmypid() . '.php';
+    file_put_contents($script, '<?php
+        putenv("KFS_DB_PATH=' . $db . '"); putenv("KFS_DOCUMENT_SIGNING_SECRET=s3cret"); putenv("KFS_SITE_URL=https://example.test");
+        require ' . var_export(dirname(__DIR__) . '/channel-manager/guest-whatsapp.php', true) . ';
+        $cfg = ["token" => "t", "phone_id" => "1", "template" => "kfs_booking_confirmed", "language" => "en"];
+        $sent = [];
+        $ok = function ($c, $p) use (&$sent) { $sent[] = $p["to"]; return [true, "wamid.x"]; };
+        $bad = function () { return [false, "HTTP 400 132001 Template does not exist"]; };
+        $mk = function (array $o) { static $d = 1; $d += 2;
+            return addBooking($o + ["room_id" => "tent", "room_name" => "Tent", "check_in" => "2031-07-" . sprintf("%02d", $d),
+                "check_out" => "2031-07-" . sprintf("%02d", $d + 1), "guest_name" => "G", "guest_phone" => "98765 43210",
+                "source" => "direct", "amount" => 3000, "amount_paid" => 3000, "status" => "confirmed"]); };
+        $out = [];
+        $direct = $mk([]);
+        $out["direct"] = sendGuestBookingConfirmation($direct, $ok, $cfg)["status"];
+        $out["direct_again"] = sendGuestBookingConfirmation($direct, $ok, $cfg)["status"];
+        $out["phone"] = sendGuestBookingConfirmation($mk(["source" => "phone", "whatsapp_number" => "+44 7700 900123"]), $ok, $cfg)["status"];
+        $out["airbnb"] = sendGuestBookingConfirmation($mk(["source" => "airbnb"]), $ok, $cfg)["status"];
+        $out["blocked"] = sendGuestBookingConfirmation($mk(["source" => "blocked"]), $ok, $cfg)["status"];
+        $out["no_phone"] = sendGuestBookingConfirmation($mk(["guest_phone" => ""]), $ok, $cfg)["status"];
+        $old = $mk([]); getDB()->prepare("UPDATE bookings SET created_at = datetime(\'now\', \'-3 days\') WHERE id = ?")->execute([$old]);
+        $out["old"] = sendGuestBookingConfirmation($old, $ok, $cfg)["status"];
+        $retry = $mk([]);
+        $out["fail"] = sendGuestBookingConfirmation($retry, $bad, $cfg)["status"];
+        $out["retry"] = sendGuestBookingConfirmation($retry, $ok, $cfg)["status"];
+        $out["sent_to"] = $sent;
+        echo json_encode($out);');
+    $raw = (string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' 2>/dev/null');
+    @unlink($script); @unlink($db);
+    $r = json_decode($raw, true);
+    assertTrue(is_array($r), 'child process output: ' . $raw);
+    assertSame('sent', $r['direct']);
+    assertSame('already_sent', $r['direct_again']);
+    assertSame('sent', $r['phone']);
+    assertSame('skipped', $r['airbnb']);
+    assertSame('skipped', $r['blocked']);
+    assertSame('skipped', $r['no_phone']);
+    assertSame('skipped', $r['old']);
+    assertSame('failed', $r['fail']);
+    assertSame('sent', $r['retry'], 'a failed send releases the claim');
+    assertSame(['919876543210', '447700900123', '919876543210'], $r['sent_to'], 'the WhatsApp number wins over the phone');
+});
+
+test('guest confirmation: wired into both Razorpay paths and admin add-booking, and the old free-text send is gone', function (): void {
+    $root = dirname(__DIR__);
+    foreach (['confirm_booking.php', 'razorpay-webhook.php'] as $f) {
+        assertContains('deferGuestBookingConfirmation($bookingId);', file_get_contents("{$root}/{$f}"), $f);
+    }
+    $admin = file_get_contents("{$root}/channel-manager/admin.php");
+    assertContains('deferGuestBookingConfirmation((int)$id);', $admin);
+    assertNotContains('sendMetaWABookingConfirmation(', $admin, 'no second, free-text confirmation');
 });
 
 

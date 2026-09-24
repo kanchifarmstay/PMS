@@ -378,10 +378,7 @@ function billToken(int $id): string {
 
 /** Guest phone as WhatsApp wants it: digits with country code; a bare 10-digit number is Indian. */
 function billWhatsAppNumber(string $phone): ?string {
-    $digits = preg_replace('/\D/', '', $phone);
-    if (strlen($digits) === 11 && $digits[0] === '0') $digits = substr($digits, 1);
-    if (strlen($digits) === 10) $digits = '91' . $digits;
-    return strlen($digits) >= 11 && strlen($digits) <= 15 ? $digits : null;
+    return whatsAppNumber($phone);
 }
 
 function billStayLabel(array $bill): string {

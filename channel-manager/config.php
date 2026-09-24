@@ -44,6 +44,8 @@ define('ADMIN_ALERT_TEMPLATE', kfsEnv('KFS_ADMIN_BOOKING_TEMPLATE', 'kfs_direct_
 define('ADMIN_ALERT_TEMPLATE_LANG', kfsEnv('KFS_ADMIN_BOOKING_TEMPLATE_LANG', 'en'));
 // Bill page "Send on WhatsApp": approved template sent to the guest from the same API number.
 define('INVOICE_WA_TEMPLATE', kfsEnv('KFS_INVOICE_TEMPLATE', 'kfs_invoice_ready'));
+// Guest confirmation on a new direct/admin booking (see guest-whatsapp.php).
+define('GUEST_CONFIRM_TEMPLATE', kfsEnv('KFS_GUEST_CONFIRM_TEMPLATE', 'kfs_booking_confirmed'));
 define('BANK_NAME', kfsEnv('KFS_BANK_NAME'));
 define('BANK_ACCOUNT_NAME', kfsEnv('KFS_BANK_ACCOUNT_NAME'));
 define('BANK_ACCOUNT_NO', kfsEnv('KFS_BANK_ACCOUNT_NO'));

@@ -41,6 +41,14 @@ function adminAlertNumbers(string $csv): array {
     return array_map('strval', array_keys($out));
 }
 
+/** A phone as WhatsApp wants it: digits with country code; a bare 10-digit number is Indian, a leading 0 is dropped. */
+function whatsAppNumber(string $phone): ?string {
+    $digits = preg_replace('/\D/', '', $phone);
+    if (strlen($digits) === 11 && $digits[0] === '0') $digits = substr($digits, 1);
+    if (strlen($digits) === 10) $digits = '91' . $digits;
+    return strlen($digits) >= 11 && strlen($digits) <= 15 ? $digits : null;
+}
+
 /** Meta rejects a template variable containing a newline, a tab or 4+ spaces, and an empty one. */
 function templateParam(mixed $value, int $max = 60): string {
     $text = trim((string)preg_replace('/\s+/u', ' ', (string)$value));
