@@ -1010,9 +1010,14 @@ test('public maintenance and credential-writing scripts are absent', function ()
 
 test('admin authentication and mutations use secure sessions and CSRF protection', function (): void {
     $source = (string)file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php');
+    $auth = (string)file_get_contents(dirname(__DIR__) . '/channel-manager/auth.php');
     assertContains('startSecureSession()', $source);
-    assertContains('verifyAdminPassword(', $source);
-    assertContains('session_regenerate_id(true)', $source);
+    // Login moved into auth.php (staff accounts); the same protections must hold there.
+    assertContains('kfsAttemptLogin(', $source);
+    assertContains('kfsStartUserSession(', $source);
+    assertContains('verifyAdminPassword(', $auth);
+    assertContains('password_verify(', $auth);
+    assertContains('session_regenerate_id(true)', $auth);
     assertContains('requireValidCsrfToken(', $source);
     assertContains('csrfField()', $source);
     assertContains("'&destination='", $source);
@@ -2549,6 +2554,111 @@ test('accounts: wired into add, edit, both Razorpay paths and cron; pages render
     assertContains('Tax by rate', $run('accounts.php', ['view' => 'gst']));
     assertContains('"Invoice no","Invoice date",Customer', $run('accounts.php', ['view' => 'gst', 'export' => 'csv']));
     @unlink($db);
+});
+
+
+// ── Staff logins, roles and the change history ─────────────────
+require_once dirname(__DIR__) . '/channel-manager/auth.php';
+
+test('roles: owner can do everything, manager all but staff, front desk only the day-to-day', function (): void {
+    $o = ['id' => 0, 'role' => 'owner'];
+    $m = ['id' => 1, 'role' => 'manager'];
+    $f = ['id' => 2, 'role' => 'frontdesk'];
+    foreach (['staff', 'accounts', 'bookings.delete', 'payments.refund', 'settings', 'backups', 'audit'] as $p) assertTrue(userCan($p, $o), "owner: {$p}");
+    assertFalse(userCan('staff', $m));
+    foreach (['accounts', 'bookings.delete', 'payments.refund', 'settings', 'backups', 'audit'] as $p) assertTrue(userCan($p, $m), "manager: {$p}");
+    foreach (['bookings.view', 'bookings.edit', 'frontdesk', 'bills', 'whatsapp', 'payments.add'] as $p) assertTrue(userCan($p, $f), "front desk: {$p}");
+    foreach (['staff', 'accounts', 'bookings.delete', 'payments.refund', 'settings', 'backups', 'audit'] as $p) assertFalse(userCan($p, $f), "front desk must not: {$p}");
+    assertFalse(userCan('bookings.view', ['id' => 3, 'role' => 'nonsense']), 'an unknown role gets nothing');
+});
+
+test('login: the built-in owner password still works; staff log in with their own; wrong and inactive refused', function (): void {
+    getDB()->exec("UPDATE audit_log SET username = 'x-' || id WHERE action = 'login_failed'");
+    $owner = kfsAttemptLogin('', 'test-secret');
+    assertTrue(is_array($owner) && $owner['role'] === 'owner' && $owner['username'] === 'admin', 'blank username = admin');
+    $id = createUser('Meena', 'Meena.K', 'frontdesk', 'gate-pass-123');
+    $u = kfsAttemptLogin('meena.k', 'gate-pass-123');
+    assertTrue(is_array($u) && $u['role'] === 'frontdesk' && $u['id'] === $id, 'username is case-insensitive');
+    assertSame('Incorrect username or password.', kfsAttemptLogin('meena.k', 'wrong-one'));
+    assertSame('Incorrect username or password.', kfsAttemptLogin('admin', 'gate-pass-123'), 'a staff password never opens the owner login');
+    updateUser($id, 'frontdesk', false);
+    assertSame('Incorrect username or password.', kfsAttemptLogin('meena.k', 'gate-pass-123'), 'deactivated');
+    updateUser($id, 'manager', true);
+    assertSame('manager', kfsAttemptLogin('meena.k', 'gate-pass-123')['role']);
+    $rows = auditRows(['user' => 'meena.k']);
+    assertTrue(in_array('login', array_column($rows, 'action'), true));
+    assertTrue(in_array('login_failed', array_column($rows, 'action'), true));
+});
+
+test('login: five wrong passwords lock the username for 15 minutes, even with the right one', function (): void {
+    createUser('Ravi', 'ravi', 'frontdesk', 'right-password');
+    for ($i = 0; $i < KFS_LOGIN_MAX_FAILURES; $i++) kfsAttemptLogin('ravi', 'nope-' . $i);
+    $r = kfsAttemptLogin('ravi', 'right-password');
+    assertTrue(is_string($r) && str_contains($r, 'Too many'), 'locked');
+    getDB()->exec("UPDATE audit_log SET created_at = datetime('now', '-20 minutes') WHERE username = 'ravi'");
+    assertTrue(is_array(kfsAttemptLogin('ravi', 'right-password')), 'unlocked after the window');
+});
+
+test('staff accounts: usernames, roles and passwords are validated; admin is reserved', function (): void {
+    foreach ([['', 'okname', 'frontdesk', 'password1'], ['A', 'x', 'frontdesk', 'password1'], ['A', 'admin', 'owner', 'password1'],
+              ['A', 'good.name', 'king', 'password1'], ['A', 'good.name2', 'frontdesk', 'short'], ['A', 'bad name', 'frontdesk', 'password1']] as $i => $c) {
+        $threw = false;
+        try { createUser(...$c); } catch (InvalidArgumentException) { $threw = true; }
+        assertTrue($threw, "case {$i} refused");
+    }
+    createUser('Dup', 'dup.user', 'frontdesk', 'password1');
+    $dup = false;
+    try { createUser('Dup2', 'DUP.user', 'frontdesk', 'password2'); } catch (InvalidArgumentException $e) { $dup = str_contains($e->getMessage(), 'taken'); }
+    assertTrue($dup);
+    $threw = false;
+    try { changeOwnPassword(['id' => 0, 'role' => 'owner'], 'test-secret', 'newpassword'); } catch (InvalidArgumentException) { $threw = true; }
+    assertTrue($threw, 'the built-in owner password lives in kfs.env');
+    $hash = getDB()->query("SELECT password_hash FROM users WHERE username = 'dup.user'")->fetchColumn();
+    assertFalse(str_contains((string)$hash, 'password1'), 'only a hash is stored');
+});
+
+test('roles: a front desk login is refused Accounts, Backups, Staff and Change history, and sees a trimmed sidebar', function (): void {
+    $db = sys_get_temp_dir() . '/kfs-roles-' . getmypid() . '.sqlite';
+    @unlink($db);
+    $root = dirname(__DIR__);
+    $as = function (string $page, array $user, array $get = []) use ($db, $root): string {
+        $script = sys_get_temp_dir() . '/kfs-roles-' . getmypid() . '.php';
+        file_put_contents($script, '<?php putenv("KFS_DB_PATH=' . $db . '"); session_start(); $_SESSION["admin_logged_in"]=true; $_SESSION["kfs_user"]=' . var_export($user, true) . ';'
+            . '$_SERVER["REQUEST_METHOD"]="GET"; $_GET=' . var_export($get, true) . '; include ' . var_export("{$root}/channel-manager/{$page}", true) . ';');
+        $out = (string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' 2>&1');
+        @unlink($script);
+        return $out;
+    };
+    $fd = ['id' => 5, 'name' => 'Gate', 'username' => 'gate', 'role' => 'frontdesk'];
+    foreach (['accounts.php', 'backups.php', 'staff.php', 'audit.php', 'setup-wizard.php'] as $p) {
+        assertContains('Not allowed', $as($p, $fd), "{$p} refused for front desk");
+    }
+    assertContains('Front Desk', $as('frontdesk.php', $fd));
+    assertContains('My password', $as('staff.php', $fd, ['me' => '1']), 'everyone can change their own password');
+    $mgr = ['id' => 6, 'name' => 'Boss', 'username' => 'boss', 'role' => 'manager'];
+    assertContains('Accounts', $as('accounts.php', $mgr));
+    assertContains('Not allowed', $as('staff.php', $mgr), 'managers do not manage staff');
+    assertContains('Change history', $as('audit.php', $mgr));
+    $home = $as('admin.php', $fd);
+    assertContains('Front Desk', $home);
+    foreach (['accounts.php', 'backups.php', 'staff.php', 'audit.php', 'admin.php?section=pricing', 'admin.php?section=channels'] as $hidden) {
+        assertNotContains('href="' . $hidden . '"', $home, "front desk sidebar hides {$hidden}");
+    }
+    assertContains('Front desk · <a href="staff.php?me=1">My password</a>', $home);
+    $owner = $as('admin.php', ['id' => 0, 'name' => 'Owner', 'username' => 'admin', 'role' => 'owner']);
+    assertContains('href="staff.php"', $owner);
+    assertContains('href="accounts.php"', $owner);
+    @unlink($db);
+});
+
+test('roles: admin.php gates every POST action and section, and audits the important ones', function (): void {
+    $src = file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php');
+    assertContains("'delete_booking' => 'bookings.delete'", $src);
+    assertContains("!userCan(\$actionPermission[\$act] ?? 'settings')", $src, 'unlisted actions default to settings, the safe side');
+    assertContains("\$sectionPermission = ['pricing' => 'settings'", $src);
+    foreach (['booking_added', 'booking_edited', 'booking_cancelled', 'booking_deleted', 'logout'] as $a) assertContains("kfsAudit('{$a}'", $src);
+    $pay = file_get_contents(dirname(__DIR__) . '/channel-manager/booking-payments.php');
+    assertContains("!userCan('payments.refund')", $pay, 'refunds and voids need more than taking payments');
 });
 
 

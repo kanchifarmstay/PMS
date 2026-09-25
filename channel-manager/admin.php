@@ -11,6 +11,7 @@ require_once __DIR__ . '/demand-engine.php';
 require_once __DIR__ . '/guest-whatsapp.php';
 require_once __DIR__ . '/wa-templates.php';
 require_once __DIR__ . '/accounts-service.php';
+require_once __DIR__ . '/auth.php';
 
 startSecureSession();
 
@@ -18,12 +19,12 @@ startSecureSession();
 $loginError = '';
 if (($_POST['action'] ?? '') === 'login') {
     requireValidCsrfToken($_POST['csrf_token'] ?? null);
-    if (verifyAdminPassword((string)($_POST['password'] ?? ''))) {
-        $_SESSION['admin_logged_in'] = true;
-        session_regenerate_id(true);
+    $login = kfsAttemptLogin((string)($_POST['username'] ?? ''), (string)($_POST['password'] ?? ''));
+    if (is_array($login)) {
+        kfsStartUserSession($login);
         header('Location: admin.php'); exit;
     }
-    $loginError = 'Incorrect password.';
+    $loginError = $login;
 }
 // ── POST handlers (authenticated) ────────────────────────────
 if (!empty($_SESSION['admin_logged_in'])) {
@@ -31,8 +32,22 @@ if (!empty($_SESSION['admin_logged_in'])) {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         requireValidCsrfToken($_POST['csrf_token'] ?? null);
     }
+    // Roles: what each POST action needs (auth.php). Anything not listed is a setting.
+    $actionPermission = [
+        'add_booking' => 'bookings.edit', 'edit_booking' => 'bookings.edit', 'cancel_booking' => 'bookings.edit',
+        'block_date' => 'bookings.edit', 'delete_booking' => 'bookings.delete',
+        'wa_reply' => 'whatsapp', 'wa_update_status' => 'whatsapp', 'wa_add_manual' => 'whatsapp',
+    ];
+    if ($act !== '' && $act !== 'logout' && $act !== 'login' && !userCan($actionPermission[$act] ?? 'settings')) {
+        kfsAudit('denied', 'action', null, $act);
+        header('Location: admin.php?flash=' . urlencode('Your role cannot do that.')); exit;
+    }
+    if ($act !== '' && !isset($actionPermission[$act]) && !in_array($act, ['logout', 'login'], true)) {
+        kfsAudit('settings_' . $act, 'settings');
+    }
 
     if ($act === 'logout') {
+        kfsAudit('logout', 'user', currentUser()['id'] ?? null);
         $_SESSION = [];
         session_destroy();
         header('Location: admin.php'); exit;
@@ -69,6 +84,7 @@ if (!empty($_SESSION['admin_logged_in'])) {
         }
         if ($id) {
             acctSyncFromBooking((int)$id, 'Recorded when the booking was added');
+            kfsAudit('booking_added', 'booking', (int)$id, $data['room_name'] . ' ' . $data['check_in'] . '→' . $data['check_out'] . ' · ' . $data['guest_name'] . ' · Rs. ' . $data['amount']);
             sendWhatsAppNotification(buildBookingMessage(array_merge($data, ['id' => $id])));
             // Guest confirmation: the approved kfs_booking_confirmed template, sent after
             // the redirect. Skips OTA sources, blocks and bookings with no phone.
@@ -173,6 +189,11 @@ if (!empty($_SESSION['admin_logged_in'])) {
             exit;
         }
         acctSyncFromBooking($id, 'Changed in booking edit');
+        $changes = [];
+        foreach (['room_name', 'check_in', 'check_out', 'guest_name', 'amount', 'amount_paid', 'status'] as $f) {
+            if ($beforeEdit && (string)$beforeEdit[$f] !== (string)$data[$f]) $changes[] = $f . ': ' . $beforeEdit[$f] . ' → ' . $data[$f];
+        }
+        kfsAudit('booking_edited', 'booking', $id, implode('; ', $changes));
         $afterEdit = getBookingById($id);
         // WhatsApp: booking updated / payment received / cancelled, after the redirect.
         if ($beforeEdit && $afterEdit) waDefer(fn() => waOnBookingEdited($beforeEdit, $afterEdit));
@@ -186,7 +207,11 @@ if (!empty($_SESSION['admin_logged_in'])) {
         if (!in_array($returnSec, ['bookings', 'calendar', 'overview', 'day', 'week', 'month', 'blocked'], true)) {
             $returnSec = 'bookings';
         }
-        if ($id > 0) deleteBooking($id);
+        if ($id > 0) {
+            $gone = getBookingById($id);
+            deleteBooking($id);
+            if ($gone) kfsAudit('booking_deleted', 'booking', $id, $gone['room_name'] . ' ' . $gone['check_in'] . '→' . $gone['check_out'] . ' · ' . $gone['guest_name'] . ' · ' . $gone['source']);
+        }
         header('Location: admin.php?section=' . $returnSec . '&flash=Booking+deleted');
         exit;
     }
@@ -200,6 +225,7 @@ if (!empty($_SESSION['admin_logged_in'])) {
         if ($id > 0) {
             cancelBooking($id);
             $cancelled = getBookingById($id);
+            kfsAudit('booking_cancelled', 'booking', $id, $cancelled ? $cancelled['guest_name'] . ' · ' . $cancelled['check_in'] : '');
             // WhatsApp alert to the admins; the guest message (it carries a refund) is sent from booking-whatsapp.php.
             if ($cancelled) waDefer(fn() => waOnBookingCancelled($cancelled));
         }
@@ -316,6 +342,11 @@ if (!empty($_SESSION['admin_logged_in'])) {
 
 // ── Data ──────────────────────────────────────────────────────
 $section = $_GET['section'] ?? 'dashboard';
+$sectionPermission = ['pricing' => 'settings', 'channels' => 'settings', 'export' => 'settings', 'analytics' => 'settings',
+    'demand' => 'settings', 'wa_inbox' => 'whatsapp', 'blocked' => 'bookings.edit'];
+if (!empty($_SESSION['admin_logged_in']) && !userCan($sectionPermission[$section] ?? 'bookings.view')) {
+    header('Location: admin.php?section=dashboard&flash=' . urlencode('Your role cannot open that section.')); exit;
+}
 $flash   = htmlspecialchars($_GET['flash'] ?? '');
 $rooms   = ROOM_IDS;
 
@@ -1308,8 +1339,9 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
     <form method="POST">
     <?= csrfField() ?>
       <input type="hidden" name="action" value="login">
-      <input type="hidden" name="username" value="admin" autocomplete="username">
-      <label>Admin Password</label>
+      <label>Username</label>
+      <input type="text" name="username" autocomplete="username" placeholder="admin" autocapitalize="none" spellcheck="false">
+      <label>Password</label>
       <input type="password" name="password" autofocus autocomplete="current-password" placeholder="Enter password">
       <button type="submit" class="btn-login">Sign In →</button>
     </form>
@@ -1345,6 +1377,13 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
       'channels'  => ['🔗', 'Channels',          'admin.php?section=channels', 0],
       'export'    => ['📤', 'iCal Export',       'admin.php?section=export', 0],
     ];
+    $navPermission = ['blocked' => 'bookings.edit', 'demand' => 'settings', 'wa_inbox' => 'whatsapp', 'pricing' => 'settings',
+        'analytics' => 'settings', 'channels' => 'settings', 'export' => 'settings', 'bills' => 'bills', 'wa_logs' => 'whatsapp',
+        'backups' => 'backups', 'accounts' => 'accounts', 'frontdesk' => 'frontdesk'];
+    $navItems['audit'] = ['🕵️', 'Change history', 'audit.php', 0];
+    $navItems['staff'] = ['👥', 'Staff & roles', 'staff.php', 0];
+    $navPermission += ['audit' => 'audit', 'staff' => 'staff'];
+    $navItems = array_filter($navItems, fn($k) => userCan($navPermission[$k] ?? 'bookings.view'), ARRAY_FILTER_USE_KEY);
     $currentSec = $section ?? 'dashboard';
     $navActive = in_array($currentSec, ['day','week','overview','calendar']) ? 'calendar' : $currentSec;
     foreach ($navItems as $key => [$icon, $label, $url, $cnt]):
@@ -1357,6 +1396,9 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
     <?php endforeach; ?>
   </nav>
   <div class="sidebar-bottom">
+    <?php $me = currentUser(); ?>
+    <div style="color:#fff;font-weight:600;margin-bottom:2px"><?= htmlspecialchars($me['name'] ?? '') ?></div>
+    <div style="color:#8ab898;margin-bottom:8px"><?= htmlspecialchars(KFS_ROLES[$me['role'] ?? ''] ?? '') ?> · <a href="staff.php?me=1">My password</a></div>
     <a href="/">← View website</a><br>
     <form method="POST" style="display:inline">
       <?= csrfField() ?>
@@ -1565,7 +1607,7 @@ $totalOccupied = count($propStatus) - $totalFree;
   <div class="panel-hd" style="background:#fffbeb"><h3>💡 <?= $pendingCount ?> Pricing Suggestions Pending</h3></div>
   <div class="panel-bd" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
     <p style="font-size:.85rem;color:var(--text-muted);margin:0;flex:1">Review AI-generated pricing recommendations based on Muhurathams, festivals &amp; holidays.</p>
-    <a href="admin.php?section=pricing" class="btn btn-gold">Review Suggestions →</a>
+<?php if (userCan('settings')): ?><a href="admin.php?section=pricing" class="btn btn-gold">Review Suggestions →</a><?php endif; ?>
   </div>
 </div>
 <?php endif; ?>
@@ -2964,7 +3006,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
       High-demand dates are used to auto-generate pricing suggestions. Visit Pricing to review and approve rate increases for these dates.
     </p>
     <div style="display:flex;gap:.75rem;flex-wrap:wrap">
-      <a href="admin.php?section=pricing" class="btn btn-gold">Review Pricing Suggestions →</a>
+<?php if (userCan('settings')): ?><a href="admin.php?section=pricing" class="btn btn-gold">Review Pricing Suggestions →</a><?php endif; ?>
       <form method="POST" style="display:inline">
     <?= csrfField() ?>
         <input type="hidden" name="action" value="generate_suggestions">
@@ -5074,10 +5116,14 @@ if ('serviceWorker' in navigator) {
       ['wa_inbox',  '💬', 'WA' . ($waUnread > 0 ? " ({$waUnread})" : '')],
       ['pricing',   '💰', 'Pricing'],
     ];
-    foreach ($mobTabs as [$s, $icon, $label]):
+    // Same rules as the sidebar: a tab the role cannot open is not shown.
+    $mobTabs = array_values(array_filter($mobTabs, fn($t) => userCan($sectionPermission[$t[0]] ?? 'bookings.view')));
+    if (count($mobTabs) < 5 && userCan('frontdesk')) $mobTabs[] = ['frontdesk', '🛎️', 'Front Desk', 'frontdesk.php'];
+    foreach ($mobTabs as $tab):
+      [$s, $icon, $label] = $tab;
       $active = $sec === $s ? ' active' : '';
     ?>
-    <a href="admin.php?section=<?= $s ?>" class="<?= $active ?>">
+    <a href="<?= $tab[3] ?? 'admin.php?section=' . $s ?>" class="<?= $active ?>">
       <span class="mn-icon"><?= $icon ?></span>
       <?= $label ?>
     </a>

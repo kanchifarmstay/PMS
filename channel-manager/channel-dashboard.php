@@ -12,6 +12,8 @@ startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) {
     header('Location: admin.php'); exit;
 }
+require_once __DIR__ . '/auth.php';
+requirePermission('settings');
 
 // ── Handle manual booking save ─────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_manual') {

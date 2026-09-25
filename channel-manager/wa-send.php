@@ -17,6 +17,8 @@ if (empty($_SESSION['admin_logged_in'])) {
     echo json_encode(['ok' => false, 'error' => 'Not authenticated']);
     exit;
 }
+require_once __DIR__ . '/auth.php';
+if (!userCan('whatsapp')) { http_response_code(403); echo json_encode(['ok' => false, 'error' => 'Your role cannot send WhatsApp replies.']); exit; }
 
 $raw  = file_get_contents('php://input');
 $data = json_decode($raw, true) ?? [];

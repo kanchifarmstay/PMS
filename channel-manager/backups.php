@@ -12,6 +12,8 @@ require_once __DIR__ . '/backup-service.php';
 
 startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) { header('Location: admin.php'); exit; }
+require_once __DIR__ . '/auth.php';
+requirePermission('backups');
 
 function bh(mixed $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 function bsize(int $b): string { return $b >= 1048576 ? round($b / 1048576, 1) . ' MB' : max(1, (int)round($b / 1024)) . ' KB'; }
@@ -19,6 +21,7 @@ function bsize(int $b): string { return $b >= 1048576 ? round($b / 1048576, 1) .
 if (isset($_GET['download'])) {
     $path = backupPathFor((string)$_GET['download']);
     if ($path === null) { http_response_code(404); exit('Backup not found.'); }
+    kfsAudit('backup_downloaded', 'backup', basename($path));
     header('Content-Type: application/vnd.sqlite3');
     header('Content-Disposition: attachment; filename="kanchifarmstay-' . basename($path) . '"');
     header('Content-Length: ' . filesize($path));
@@ -30,6 +33,7 @@ if (isset($_GET['download'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'backup_now') {
     requireValidCsrfToken($_POST['csrf_token'] ?? null);
     $r = createBackup();
+    kfsAudit('backup_created', 'backup', $r['name'] ?? null, $r['ok'] ? '' : ($r['error'] ?? ''));
     header('Location: backups.php?' . ($r['ok'] ? 'ok=' . rawurlencode($r['name']) : 'err=' . rawurlencode($r['error'])));
     exit;
 }

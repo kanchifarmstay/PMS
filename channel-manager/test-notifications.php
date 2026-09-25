@@ -11,6 +11,8 @@ startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) {
     header('Location: admin.php'); exit;
 }
+require_once __DIR__ . '/auth.php';
+requirePermission('settings');
 
 $results = [];
 

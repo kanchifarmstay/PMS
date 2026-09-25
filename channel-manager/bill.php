@@ -15,6 +15,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/bill-service.php';
+require_once __DIR__ . '/auth.php';
 
 startSecureSession();
 $isAdmin = !empty($_SESSION['admin_logged_in']);
@@ -45,19 +46,24 @@ if ($isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($act === 'save_bill') {
             $editId = (int)($_POST['bill_id'] ?? 0) ?: null;
             $id = saveBill(billFromInput($_POST), $editId);
+            kfsAudit($editId ? 'bill_edited' : 'bill_issued', 'bill', $id, (string)(getBill($id)['invoice_no'] ?? ''));
             header('Location: bill.php?id=' . $id . '&saved=1'); exit;
         }
         if ($act === 'cancel_bill') {
             cancelBill((int)$_POST['bill_id']);
+            kfsAudit('bill_cancelled', 'bill', (int)$_POST['bill_id'], (string)(getBill((int)$_POST['bill_id'])['invoice_no'] ?? ''));
             header('Location: bill.php?id=' . (int)$_POST['bill_id']); exit;
         }
         if ($act === 'send_whatsapp') {
             $id = (int)$_POST['bill_id'];
             $r = sendBillOnWhatsApp($id);
+            kfsAudit($r['ok'] ? 'bill_whatsapp_sent' : 'bill_whatsapp_failed', 'bill', $id, $r['message']);
             header('Location: bill.php?id=' . $id . '&' . ($r['ok'] ? 'wa=sent' : 'wa_err=' . rawurlencode($r['message']))); exit;
         }
         if ($act === 'save_profile') {
+            if (!userCan('settings')) throw new InvalidArgumentException('Only a manager or the owner can change business details.');
             saveBillProfile($_POST);
+            kfsAudit('business_details_saved', 'settings');
             header('Location: bill.php?profile=1&saved=1'); exit;
         }
     } catch (InvalidArgumentException $e) {
@@ -71,7 +77,7 @@ $profile = billProfile();
 $mode = 'list';
 $draft = null;
 $billId = null;
-if ($isAdmin && isset($_GET['profile'])) {
+if ($isAdmin && isset($_GET['profile']) && userCan('settings')) {
     $mode = 'profile';
 } elseif ($isAdmin && ($_POST['action'] ?? '') === 'save_bill' && $error) {
     // Re-show the form with what was typed, not a blank one.
