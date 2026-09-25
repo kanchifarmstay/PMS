@@ -2238,4 +2238,53 @@ test('wa logs: the page renders for an admin, exports CSV, and is closed to ever
 });
 
 
+// ── Daily backups ─────────────────────────────────────────────
+require_once dirname(__DIR__) . '/channel-manager/backup-service.php';
+
+function clearTestBackups(): void
+{
+    foreach (glob(kfsBackupDir() . '/calendar-*') ?: [] as $f) @unlink($f);
+}
+
+test('backup: a copy is a real, verified database holding the bookings', function (): void {
+    clearTestBackups();
+    $id = directBooking(['check_in' => '2035-01-01', 'check_out' => '2035-01-02']);
+    $r = createBackup(strtotime('2035-01-01 02:00'));
+    assertTrue($r['ok'], $r['error'] ?? '');
+    assertSame('calendar-20350101-020000.db', $r['name']);
+    $copy = new PDO('sqlite:' . backupPathFor($r['name']));
+    assertSame('ok', (string)$copy->query('PRAGMA integrity_check')->fetchColumn());
+    assertSame(1, (int)$copy->query('SELECT COUNT(*) FROM bookings WHERE id = ' . (int)$id)->fetchColumn());
+    assertSame([], glob(kfsBackupDir() . '/*.part') ?: [], 'no half-written file is left behind');
+});
+
+test('backup: the cron takes one per day, and only the newest 30 are kept', function (): void {
+    clearTestBackups();
+    assertSame('created', runDailyBackup(strtotime('2035-02-01 00:15'))['status']);
+    assertSame('already_done', runDailyBackup(strtotime('2035-02-01 23:45'))['status']);
+    assertSame('created', runDailyBackup(strtotime('2035-02-02 00:15'))['status']);
+    for ($d = 3; $d <= 40; $d++) createBackup(strtotime(sprintf('2035-02-%02d 00:15', min($d, 28)) . ' +' . max(0, $d - 28) . ' days'));
+    $list = listBackups();
+    assertSame(KFS_BACKUP_KEEP, count($list));
+    assertTrue($list[0]['time'] > $list[KFS_BACKUP_KEEP - 1]['time'], 'newest first, oldest pruned');
+    clearTestBackups();
+});
+
+test('backup: the download only serves real backup names, never another file', function (): void {
+    clearTestBackups();
+    $r = createBackup(strtotime('2035-03-01 01:00'));
+    assertTrue(backupPathFor($r['name']) !== null);
+    foreach (['../calendar.db', 'calendar.db', '../../kfs.env', 'calendar-20350301-010000.db/../x', '', 'calendar-2035.db'] as $bad) {
+        assertSame(null, backupPathFor($bad), "refused: {$bad}");
+    }
+    clearTestBackups();
+});
+
+test('backup: wired into cron and the sidebar', function (): void {
+    $root = dirname(__DIR__) . '/channel-manager';
+    assertContains('$backup = runDailyBackup();', file_get_contents("{$root}/cron.php"));
+    assertContains("'backups'   => ['🗄️', 'Backups',           'backups.php', 0]", file_get_contents("{$root}/admin.php"));
+});
+
+
 runTests();
