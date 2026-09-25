@@ -2287,4 +2287,138 @@ test('backup: wired into cron and the sidebar', function (): void {
 });
 
 
+// ── Front desk: stay status, guest register, Form C, housekeeping ──
+require_once dirname(__DIR__) . '/channel-manager/frontdesk-service.php';
+
+function tinyPngFile(): string
+{
+    $f = tempnam(sys_get_temp_dir(), 'kfs-png-');
+    file_put_contents($f, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+    return $f;
+}
+
+test('front desk: Aadhaar keeps only the last 4 digits; other IDs are kept as written', function (): void {
+    assertSame('XXXX-XXXX-9012', fdStoredIdNumber('aadhaar', '1234 5678 9012'));
+    assertSame('XXXX-XXXX-9012', fdStoredIdNumber('aadhaar', '9012'));
+    assertSame('Z1234567', fdStoredIdNumber('passport', ' z1234567 '));
+    assertTrue(fdIsForeign('German'));
+    assertFalse(fdIsForeign('Indian'));
+    assertFalse(fdIsForeign('india'));
+});
+
+test('front desk: a foreign guest cannot be checked in without a passport number', function (): void {
+    $threw = false;
+    try { fdGuestFromInput(['name' => 'Anna', 'id_type' => 'driving_licence', 'id_number' => 'D123', 'nationality' => 'German']); }
+    catch (InvalidArgumentException $e) { $threw = str_contains($e->getMessage(), 'passport'); }
+    assertTrue($threw);
+    $ok = fdGuestFromInput(['name' => 'Anna', 'id_type' => 'passport', 'id_number' => 'C01X00T47', 'nationality' => 'German', 'visa_expiry' => '2027-01-01', 'arrived_india_on' => 'junk']);
+    assertSame('C01X00T47', $ok['passport_no'], 'a passport ID doubles as the Form C passport number');
+    assertSame('', $ok['arrived_india_on'], 'a malformed date is dropped, not stored');
+});
+
+test('front desk: check in records the guests and photo, then check out marks every room of a bundle dirty', function (): void {
+    $b = ownBooking(['room_id' => 'white-villa-full-floor', 'room_name' => 'White Villa — Full 1st Floor', 'check_in' => '2036-01-10', 'check_out' => '2036-01-12']);
+    $png = tinyPngFile();
+    fdCheckIn((int)$b['id'], [
+        ['name' => 'Asha', 'id_type' => 'aadhaar', 'id_number' => '1111 2222 3333', 'nationality' => 'Indian'],
+        ['name' => '', 'id_number' => ''],
+        ['name' => 'Anna', 'id_type' => 'passport', 'id_number' => 'C01X00T47', 'nationality' => 'German'],
+    ], [0 => ['name' => 'id.png', 'tmp_name' => $png, 'error' => UPLOAD_ERR_OK, 'size' => filesize($png)]]);
+    $after = getBookingById((int)$b['id']);
+    assertSame('checked_in', fdStayStatus($after));
+    $guests = fdGuestsForBooking((int)$b['id']);
+    assertSame(['Asha', 'Anna'], array_column($guests, 'name'), 'the blank row is skipped');
+    assertSame('XXXX-XXXX-3333', $guests[0]['id_number']);
+    assertTrue(fdIdFilePath($guests[0]['id_photo']) !== null, 'the photo is stored and addressable');
+    assertSame(1, (int)$guests[1]['is_foreign']);
+
+    $again = false;
+    try { fdCheckIn((int)$b['id'], [['name' => 'X', 'id_type' => 'pan', 'id_number' => 'P1']]); } catch (InvalidArgumentException) { $again = true; }
+    assertTrue($again, 'no double check-in');
+
+    fdCheckOut((int)$b['id']);
+    assertSame('checked_out', fdStayStatus(getBookingById((int)$b['id'])));
+    $status = array_column(hkRooms(), 'status', 'room_id');
+    assertSame(['dirty', 'dirty'], [$status['white-villa'], $status['white-villa-room-2']]);
+    hkSetStatus('white-villa', 'ready');
+    assertSame('ready', array_column(hkRooms(), 'status', 'room_id')['white-villa']);
+});
+
+test('front desk: Form C lists foreign guests until marked, with a 24h deadline', function (): void {
+    $pending = array_values(array_filter(fcPending(), fn($g) => $g['name'] === 'Anna'));
+    assertTrue($pending !== []);
+    $dl = fcDeadline($pending[0]);
+    assertSame(FD_FORM_C_HOURS * 3600, $dl - kfsDbTimestamp($pending[0]['checked_in_at']));
+    $noRef = false;
+    try { fcMarkSubmitted((int)$pending[0]['id'], ' '); } catch (InvalidArgumentException) { $noRef = true; }
+    assertTrue($noRef, 'a reference is required');
+    fcMarkSubmitted((int)$pending[0]['id'], 'FRRO-12345');
+    assertSame([], array_values(array_filter(fcPending(), fn($g) => (int)$g['id'] === (int)$pending[0]['id'])));
+    assertSame(0, count(array_filter(fcPending(), fn($g) => $g['name'] === 'Asha')), 'Indian guests are never on the Form C list');
+});
+
+test('front desk: no-show only on or after check-in day; undo puts it back', function (): void {
+    $b = ownBooking(['check_in' => '2036-02-10', 'check_out' => '2036-02-11']);
+    $early = false;
+    try { fdMarkNoShow((int)$b['id'], '2036-02-09'); } catch (InvalidArgumentException) { $early = true; }
+    assertTrue($early);
+    fdMarkNoShow((int)$b['id'], '2036-02-10');
+    assertSame('no_show', fdStayStatus(getBookingById((int)$b['id'])));
+    fdUndoStay((int)$b['id']);
+    assertSame('expected', fdStayStatus(getBookingById((int)$b['id'])));
+    $d = fdDay('2036-02-10');
+    assertTrue(in_array((int)$b['id'], array_map('intval', array_column($d['arrivals'], 'id')), true));
+    $o = fdDay('2036-02-11');
+    assertFalse(in_array((int)$b['id'], array_map('intval', array_column($o['overdue'], 'id')), true), 'a stay that has ended is not overdue');
+});
+
+test('front desk: uploads must really be images or PDFs, and stored paths cannot be abused', function (): void {
+    $txt = tempnam(sys_get_temp_dir(), 'kfs-txt-');
+    file_put_contents($txt, '<?php echo "x";');
+    $bad = false;
+    try { fdStoreIdUpload(1, ['name' => 'id.jpg', 'tmp_name' => $txt, 'error' => UPLOAD_ERR_OK, 'size' => 20]); } catch (InvalidArgumentException) { $bad = true; }
+    assertTrue($bad, 'a PHP file renamed .jpg is refused');
+    foreach (['../calendar.db', '1/../../kfs.env', '1/abc.jpg', '1/' . str_repeat('a', 24) . '.php', ''] as $p) {
+        assertSame(null, fdIdFilePath($p), "refused: {$p}");
+    }
+    assertSame('', fdStoreIdUpload(1, null));
+});
+
+test('front desk: page, check-in form and register render; the register exports CSV', function (): void {
+    $db = sys_get_temp_dir() . '/kfs-fd-' . getmypid() . '.sqlite';
+    @unlink($db);
+    $run = function (array $get) use ($db): string {
+        $script = sys_get_temp_dir() . '/kfs-fd-' . getmypid() . '.php';
+        file_put_contents($script, '<?php putenv("KFS_DB_PATH=' . $db . '"); session_start(); $_SESSION["admin_logged_in"]=true;'
+            . '$_SERVER["REQUEST_METHOD"]="GET"; $_GET=' . var_export($get, true) . ';'
+            . 'require ' . var_export(dirname(__DIR__) . '/channel-manager/db.php', true) . ';'
+            . 'if (!getDB()->query("SELECT COUNT(*) FROM bookings")->fetchColumn()) { $id = addBooking(["room_id"=>"tent","room_name"=>"Tent","check_in"=>date("Y-m-d"),"check_out"=>date("Y-m-d", strtotime("+1 day")),"guest_name"=>"O\'Hara <i>","guest_phone"=>"9876543210","source"=>"phone","amount"=>3000,"amount_paid"=>1000,"status"=>"confirmed"]);'
+            . ' getDB()->exec("INSERT INTO guest_ids (booking_id,name,id_type,id_number,nationality) VALUES ($id,\'Reg Guest\',\'pan\',\'ABCDE1234F\',\'Indian\')"); }'
+            . 'include ' . var_export(dirname(__DIR__) . '/channel-manager/frontdesk.php', true) . ';');
+        $out = (string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' 2>&1');
+        @unlink($script);
+        return $out;
+    };
+    $home = $run([]);
+    assertContains('Front Desk', $home);
+    assertContains('O&#039;Hara &lt;i&gt;', $home);
+    assertContains('Housekeeping', $home);
+    assertNotContains('Fatal', $home);
+    $form = $run(['checkin' => '1']);
+    assertContains('name="action" value="checkin"', $form);
+    assertContains('enctype="multipart/form-data"', $form);
+    assertTrue((bool)preg_match_all('#<script>(.*?)</script>#s', $form, $m));
+    $js = tempnam(sys_get_temp_dir(), 'kfs-fd-js-') . '.js';
+    file_put_contents($js, implode("\n", $m[1]));
+    exec('node --check ' . escapeshellarg($js) . ' 2>&1', $o, $code);
+    assertSame(0, $code, 'check-in JS parses: ' . implode("\n", $o));
+    @unlink($js);
+    $csv = $run(['register' => '1', 'from' => '2000-01-01', 'to' => '2099-12-31', 'export' => 'csv']);
+    assertContains('Check-in,Check-out,Booking,Room,Guest', $csv);
+    assertContains('Reg Guest', $csv);
+    @unlink($db);
+    assertContains("'frontdesk' => ['🛎️', 'Front Desk',        'frontdesk.php', 0]", file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php'));
+});
+
+
 runTests();

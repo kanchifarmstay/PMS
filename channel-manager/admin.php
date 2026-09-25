@@ -1326,6 +1326,7 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
       'dashboard' => ['📊', 'Dashboard',        'admin.php?section=dashboard', 0],
       'calendar'  => ['📅', 'Calendar',         'admin.php?section=calendar&view=day&date=' . date('Y-m-d'), 0],
       'bookings'  => ['📋', 'Bookings',          'admin.php?section=bookings', 0],
+      'frontdesk' => ['🛎️', 'Front Desk',        'frontdesk.php', 0],
       'blocked'   => ['🚫', 'Blocked Dates',     'admin.php?section=blocked', 0],
       'demand'    => ['🥇', 'High-Demand Dates', 'admin.php?section=demand', 0],
       'wa_inbox'  => ['💬', 'WA Inbox',          'admin.php?section=wa_inbox', $waUnread],
