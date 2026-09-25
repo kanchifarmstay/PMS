@@ -260,7 +260,16 @@ function waDailySummaryParams(string $today): array {
     return [waDate($today), (string)$arrivals, (string)$departures, $occ . ' of ' . count($rooms), waMoney($balanceToday)];
 }
 
-/** New OTA reservations since the last sync. The first run only records what is already there. */
+/**
+ * New OTA reservations since the last sync. The first run only records what is already there.
+ *
+ * A reservation is recognised by its UID AND by platform + room + dates, because a feed's UID
+ * is not stable: MakeMyTrip/Goibibo re-issue it every few hours for the same stay, and keying
+ * on the UID alone re-announced one Wooden Cottage night to every admin four times on
+ * 2026-09-25. Each claim row keeps its rooms in `detail` ("rooms=a,b") so a later UID for
+ * the same room and dates is known. Two different reservations cannot hold one room on the
+ * same dates, so matching on the room loses nothing.
+ */
 function waDetectNewOtaReservations(?callable $transport = null, ?array $config = null): array {
     $db = getDB();
     $today = date('Y-m-d');
@@ -272,15 +281,27 @@ function waDetectNewOtaReservations(?callable $transport = null, ?array $config 
         $groups[$k] ??= $r + ['rooms' => []];
         $groups[$k]['rooms'][$r['room_id']] = true;
     }
+    // Claims made before rooms were recorded: fill them in while their UID is still in the feed.
+    $backfill = $db->prepare("UPDATE wa_template_log SET detail=? WHERE dedupe_key=? AND COALESCE(detail, '')=''");
+    foreach ($groups as $key => $g) $backfill->execute([waOtaRoomsDetail($g), $key]);
+    $known = [];
+    foreach ($db->query("SELECT dedupe_key, detail FROM wa_template_log WHERE template='kfs_admin_ota_booking' AND dedupe_key LIKE 'ota:%' AND detail LIKE 'rooms=%'") as $p) {
+        $parts = explode(':', $p['dedupe_key']);
+        $dates = $parts[count($parts) - 2] . '|' . $parts[count($parts) - 1];
+        foreach (explode(',', substr($p['detail'], 6)) as $room) $known[$parts[1] . '|' . $room . '|' . $dates] = true;
+    }
     $seeded = getSetting('wa_ota_seeded') === '1';
-    $claim = $db->prepare("INSERT OR IGNORE INTO wa_template_log (dedupe_key, template, status) VALUES (?, 'kfs_admin_ota_booking', ?)");
+    $claim = $db->prepare("INSERT OR IGNORE INTO wa_template_log (dedupe_key, template, status, detail) VALUES (?, 'kfs_admin_ota_booking', ?, ?)");
     $alerted = 0;
     $result = ['seeded' => 0, 'alerted' => 0];
     foreach ($groups as $key => $g) {
-        if (!$seeded) { $claim->execute([$key, 'seeded']); $result['seeded']++; continue; }
+        $slots = array_map(fn($room) => $g['platform'] . '|' . $room . '|' . $g['check_in'] . '|' . $g['check_out'], array_keys($g['rooms']));
+        if (!$seeded) { $claim->execute([$key, 'seeded', waOtaRoomsDetail($g)]); $result['seeded']++; continue; }
         if ($alerted >= WA_OTA_ALERTS_PER_RUN) break;
-        $claim->execute([$key, 'claimed']);
+        if (array_filter($slots, fn($s) => isset($known[$s]))) continue;
+        $claim->execute([$key, 'claimed', waOtaRoomsDetail($g)]);
         if ($claim->rowCount() !== 1) continue;
+        foreach ($slots as $s) $known[$s] = true;
         $names = array_map(fn($id) => $id === GROUP_INVENTORY_ID ? 'Whole farm stay' : (ROOM_IDS[$id] ?? $id), array_keys($g['rooms']));
         $platform = waSourceLabel($g['platform']);
         $sends = waSendAdmins('kfs_admin_ota_booking',
@@ -288,6 +309,7 @@ function waDetectNewOtaReservations(?callable $transport = null, ?array $config 
             null, null, $transport, $config);
         if (!array_filter($sends, fn($s) => $s['status'] === 'sent')) {
             $db->prepare("DELETE FROM wa_template_log WHERE dedupe_key=?")->execute([$key]);
+            foreach ($slots as $s) unset($known[$s]);
             continue;
         }
         $db->prepare("UPDATE wa_template_log SET status='sent' WHERE dedupe_key=?")->execute([$key]);
@@ -296,6 +318,12 @@ function waDetectNewOtaReservations(?callable $transport = null, ?array $config 
     if (!$seeded) setSetting('wa_ota_seeded', '1');
     $result['alerted'] = $alerted;
     return $result;
+}
+
+function waOtaRoomsDetail(array $group): string {
+    $rooms = array_keys($group['rooms']);
+    sort($rooms);
+    return 'rooms=' . implode(',', $rooms);
 }
 
 /**
