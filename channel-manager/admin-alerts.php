@@ -53,6 +53,20 @@ function isOtaSource(?string $source): bool {
     return $s !== '' && (bool)preg_match('/airbnb|booking\.?com|agoda|makemytrip|make ?my ?trip|goibibo|ingoibibo|\bmmt\b|expedia/', $s);
 }
 
+/**
+ * One row in wa_template_log for every WhatsApp send the PMS attempts - sent,
+ * failed or blocked - so the WhatsApp Logs page (whatsapp-logs.php) sees
+ * everything in one place. Never throws: logging must not break a send.
+ */
+function waLogSend(string $template, string $to, string $status, string $detail, ?int $bookingId, string $context = ''): void {
+    try {
+        getDB()->prepare("INSERT INTO wa_template_log (booking_id, template, recipient, status, detail, context) VALUES (?,?,?,?,?,?)")
+            ->execute([$bookingId, $template, $to, $status, mb_substr($detail, 0, 500), $context]);
+    } catch (Throwable $e) {
+        error_log('WhatsApp log write failed: ' . $e->getMessage());
+    }
+}
+
 /** A phone as WhatsApp wants it: digits with country code; a bare 10-digit number is Indian, a leading 0 is dropped. */
 function whatsAppNumber(string $phone): ?string {
     $digits = preg_replace('/\D/', '', $phone);
@@ -156,6 +170,7 @@ function notifyAdminsOfDirectBooking(int $bookingId, ?callable $transport = null
         $params = adminBookingTemplateParams($b);
         foreach ($numbers as $to) {
             [$ok, $detail] = $transport($config, adminTemplatePayload($to, $config, $params));
+            waLogSend($config['template'], $to, $ok ? 'sent' : 'failed', (string)$detail, $bookingId, 'automatic');
             if ($ok) {
                 $result['sent']++;
             } else {
