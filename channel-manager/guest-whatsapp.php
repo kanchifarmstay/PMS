@@ -85,6 +85,7 @@ function sendGuestBookingConfirmation(int $bookingId, ?callable $transport = nul
         } catch (Throwable $e) {
             [$ok, $detail] = [false, $e->getMessage()];
         }
+        waLogSend($config['template'], $to, $ok ? 'sent' : 'failed', (string)$detail, $bookingId, 'automatic');
         if ($ok) return ['status' => 'sent', 'detail' => (string)$detail];
         $db->prepare("UPDATE bookings SET guest_confirm_sent_at = '' WHERE id = ?")->execute([$bookingId]);
         error_log("Guest booking confirmation #{$bookingId} failed: {$detail}");

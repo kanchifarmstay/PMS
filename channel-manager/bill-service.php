@@ -466,6 +466,8 @@ function sendBillOnWhatsApp(int $id, ?callable $transport = null, ?array $config
         [$ok, $detail] = [false, $e->getMessage()];
     }
     $db = getDB();
+    $linkedBooking = (int)($row['data']['booking_id'] ?? 0) ?: null;
+    waLogSend($config['template'], $to, $ok ? 'sent' : 'failed', (string)$detail, $linkedBooking, 'Bill ' . $row['invoice_no']);
     if ($ok) {
         $db->prepare("UPDATE bills SET wa_sent_at = datetime('now'), wa_sent_to = ?, wa_last_error = '' WHERE id = ?")->execute([$to, $id]);
         return ['ok' => true, 'message' => 'Invoice sent on WhatsApp to +' . $to . '.', 'to' => $to];

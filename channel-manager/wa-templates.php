@@ -94,7 +94,9 @@ function waSend(string $template, string $to, array $params, ?string $urlSuffix,
         $bk = getBookingById($bookingId);
         $admins = adminAlertNumbers((string)($config['numbers'] ?? ADMIN_ALERT_WA_NUMBERS));
         if ($bk && isOtaSource($bk['source'] ?? '') && !in_array($to, $admins, true)) {
-            return ['status' => 'blocked_ota', 'detail' => 'Guests who booked through ' . waSourceLabel((string)$bk['source']) . ' are never messaged.'];
+            $why = 'Guests who booked through ' . waSourceLabel((string)$bk['source']) . ' are never messaged.';
+            waLogSend($template, $to, 'blocked', $why, $bookingId, $dedupeKey === null ? 'manual' : 'automatic');
+            return ['status' => 'blocked_ota', 'detail' => $why];
         }
     }
     $db = getDB();
@@ -112,14 +114,15 @@ function waSend(string $template, string $to, array $params, ?string $urlSuffix,
     }
     if ($ok) {
         if ($dedupeKey !== null) {
-            $db->prepare("UPDATE wa_template_log SET status='sent', detail=? WHERE dedupe_key=?")->execute([(string)$detail, $dedupeKey]);
+            $db->prepare("UPDATE wa_template_log SET status='sent', detail=?, context='automatic' WHERE dedupe_key=?")->execute([(string)$detail, $dedupeKey]);
         } else {
-            $db->prepare("INSERT INTO wa_template_log (booking_id, template, recipient, status, detail) VALUES (?,?,?,'sent',?)")
-               ->execute([$bookingId, $template, $to, (string)$detail]);
+            waLogSend($template, $to, 'sent', (string)$detail, $bookingId, 'manual');
         }
         return ['status' => 'sent', 'detail' => (string)$detail];
     }
     if ($dedupeKey !== null) $db->prepare("DELETE FROM wa_template_log WHERE dedupe_key=?")->execute([$dedupeKey]);
+    // The claim was released so a later run can retry; the failure itself is kept for the logs page.
+    waLogSend($template, $to, 'failed', (string)$detail, $bookingId, $dedupeKey === null ? 'manual' : 'automatic');
     error_log("WhatsApp {$template} to " . substr($to, 0, 4) . '…' . substr($to, -2) . " failed: {$detail}");
     return ['status' => 'failed', 'detail' => (string)$detail];
 }

@@ -2143,4 +2143,99 @@ test('ota rule: the per-booking WhatsApp page refuses and hides its send forms f
 });
 
 
+// ── WhatsApp Logs ─────────────────────────────────────────────
+require_once dirname(__DIR__) . '/channel-manager/whatsapp-logs-lib.php';
+
+function waLogRows(array $where = []): array
+{
+    $sql = 'SELECT template, recipient, status, context, booking_id, detail FROM wa_template_log';
+    $args = [];
+    if ($where) {
+        $sql .= ' WHERE ' . implode(' AND ', array_map(fn($k) => "{$k} = ?", array_keys($where)));
+        $args = array_values($where);
+    }
+    $q = getDB()->prepare($sql . ' ORDER BY id');
+    $q->execute($args);
+    return $q->fetchAll();
+}
+
+test('wa logs: sent, failed and blocked sends are all logged with how they went out', function (): void {
+    $b = ownBooking();
+    $sent = [];
+    waSend('kfs_checkin_reminder', '919876543210', waCheckinParams($b), null, (int)$b['id'], null, waCapture($sent), alertConfig());
+    waSend('kfs_checkin_reminder', '919876543210', waCheckinParams($b), null, (int)$b['id'], 'logs:auto:' . $b['id'], waCapture($sent, false), alertConfig());
+    $ota = ownBooking(['source' => 'agoda']);
+    waSend('kfs_checkin_reminder', '919876543210', waCheckinParams($ota), null, (int)$ota['id'], null, waCapture($sent), alertConfig());
+
+    $rows = waLogRows(['booking_id' => (int)$b['id']]);
+    assertSame([['sent', 'manual'], ['failed', 'automatic']], array_map(fn($r) => [$r['status'], $r['context']], $rows));
+    assertContains('131026', $rows[1]['detail'], 'the Meta error is kept');
+    $blocked = waLogRows(['booking_id' => (int)$ota['id']]);
+    assertSame('blocked', $blocked[0]['status']);
+    assertContains('Agoda', $blocked[0]['detail']);
+});
+
+test('wa logs: the direct-booking alert is logged per admin recipient', function (): void {
+    $id = directBooking(['check_in' => '2034-02-01', 'check_out' => '2034-02-02']);
+    $sent = [];
+    notifyAdminsOfDirectBooking($id, fakeTransport($sent), alertConfig());
+    $rows = waLogRows(['booking_id' => $id, 'template' => 'kfs_direct_booking_alert']);
+    assertSame(['917200390283', '919028001639'], array_column($rows, 'recipient'));
+    assertSame(['sent', 'sent'], array_column($rows, 'status'));
+});
+
+test('wa logs: past sends are imported once, never twice', function (): void {
+    $id = directBooking(['check_in' => '2034-03-01', 'check_out' => '2034-03-02']);
+    getDB()->prepare("UPDATE bookings SET guest_confirm_sent_at = '2026-09-01 10:00:00' WHERE id = ?")->execute([$id]);
+    waBackfillLegacyLogs();
+    waBackfillLegacyLogs();
+    $rows = waLogRows(['booking_id' => $id, 'template' => 'kfs_booking_confirmed']);
+    assertSame(1, count($rows));
+    assertSame('automatic (before logs)', $rows[0]['context']);
+});
+
+test('wa logs: filters turn IST dates into UTC bounds and match numbers and booking numbers', function (): void {
+    assertSame('2026-09-24 18:30:00', waLogUtcBound('2026-09-25', false), 'midnight IST is 18:30 UTC the day before');
+    assertSame('2026-09-25 18:29:59', waLogUtcBound('2026-09-25', true));
+    [$sql, $args] = waLogWhere(waLogFilters(['status' => 'failed', 'q' => '#0362', 'template' => 'kfs_checkin_reminder']));
+    assertContains('status = ?', $sql);
+    assertContains('booking_id = ?', $sql);
+    assertTrue(in_array(362, $args, true));
+    [$sql2] = waLogWhere(waLogFilters(['status' => 'nonsense', 'template' => 'not_a_template']));
+    assertContains("status IN ('sent','failed','blocked')", $sql2, 'bad input falls back to the default view');
+    assertNotContains('template = ?', $sql2);
+});
+
+test('wa logs: the page renders for an admin, exports CSV, and is closed to everyone else', function (): void {
+    $db = sys_get_temp_dir() . '/kfs-wa-logs-' . getmypid() . '.sqlite';
+    @unlink($db);
+    $run = function (array $get, bool $admin) use ($db): string {
+        $script = sys_get_temp_dir() . '/kfs-wa-logs-' . getmypid() . '.php';
+        file_put_contents($script, '<?php putenv("KFS_DB_PATH=' . $db . '"); session_start();'
+            . ($admin ? '$_SESSION["admin_logged_in"]=true;' : '')
+            . '$_SERVER["REQUEST_METHOD"]="GET"; $_GET=' . var_export($get, true) . ';'
+            . 'require ' . var_export(dirname(__DIR__) . '/channel-manager/db.php', true) . ';'
+            . 'getDB()->exec("INSERT INTO wa_template_log (booking_id, template, recipient, status, detail, context) VALUES (7, \'kfs_checkin_reminder\', \'919876543210\', \'failed\', \'<script>x</script>\', \'automatic\')");'
+            . 'include ' . var_export(dirname(__DIR__) . '/channel-manager/whatsapp-logs.php', true) . ';');
+        $out = (string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' 2>&1');
+        @unlink($script);
+        return $out;
+    };
+    $html = $run([], true);
+    assertContains('WhatsApp Logs', $html);
+    assertContains('Check-in reminder', $html);
+    assertContains('+919876543210', $html);
+    assertContains('&lt;script&gt;', $html, 'error text is escaped');
+    assertNotContains('<script>x</script>', $html);
+    assertNotContains('Fatal', $html);
+    $csv = $run(['export' => 'csv'], true);
+    assertContains('"When (IST)",Message,Template,To,Booking,Result,Context,Detail', $csv);
+    assertContains('kfs_checkin_reminder,919876543210,#0007,failed,automatic', $csv);
+    assertNotContains('WhatsApp Logs', $run([], false), 'no session, no logs');
+    @unlink($db);
+    $admin = file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php');
+    assertContains("'wa_logs'   => ['📜', 'WhatsApp Logs',     'whatsapp-logs.php', 0]", $admin);
+});
+
+
 runTests();

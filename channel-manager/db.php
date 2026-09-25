@@ -332,6 +332,15 @@ function _initSchema(PDO $db): void {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
     }
 
+    $waLogMigrations = [
+        // Why a message went out: 'automatic', 'manual', or e.g. 'Bill KFS/26-27/0003'.
+        "ALTER TABLE wa_template_log ADD COLUMN context TEXT DEFAULT ''",
+    ];
+    foreach ($waLogMigrations as $sql) {
+        try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
+    }
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_wa_template_log_created ON wa_template_log(created_at)");
+
     $billMigrations = [
         // Last WhatsApp send of the invoice (UTC), who it went to, and the last error.
         "ALTER TABLE bills ADD COLUMN wa_sent_at TEXT DEFAULT ''",

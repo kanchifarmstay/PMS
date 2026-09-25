@@ -1331,6 +1331,7 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
       'wa_inbox'  => ['💬', 'WA Inbox',          'admin.php?section=wa_inbox', $waUnread],
       'pricing'   => ['💡', 'Pricing',           'admin.php?section=pricing', $pendingCount],
       'bills'     => ['🧾', 'Bills / GST Invoice', 'bill.php', 0],
+      'wa_logs'   => ['📜', 'WhatsApp Logs',     'whatsapp-logs.php', 0],
       'analytics' => ['📈', 'Analytics',         'admin.php?section=analytics', 0],
       'channels'  => ['🔗', 'Channels',          'admin.php?section=channels', 0],
       'export'    => ['📤', 'iCal Export',       'admin.php?section=export', 0],
