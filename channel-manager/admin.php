@@ -10,6 +10,7 @@ require_once __DIR__ . '/whatsapp.php';
 require_once __DIR__ . '/demand-engine.php';
 require_once __DIR__ . '/guest-whatsapp.php';
 require_once __DIR__ . '/wa-templates.php';
+require_once __DIR__ . '/accounts-service.php';
 
 startSecureSession();
 
@@ -67,6 +68,7 @@ if (!empty($_SESSION['admin_logged_in'])) {
             header('Location: admin.php?section=bookings&flash=' . urlencode($e->getMessage())); exit;
         }
         if ($id) {
+            acctSyncFromBooking((int)$id, 'Recorded when the booking was added');
             sendWhatsAppNotification(buildBookingMessage(array_merge($data, ['id' => $id])));
             // Guest confirmation: the approved kfs_booking_confirmed template, sent after
             // the redirect. Skips OTA sources, blocks and bookings with no phone.
@@ -161,12 +163,16 @@ if (!empty($_SESSION['admin_logged_in'])) {
             'notes'           => trim((string)($_POST['notes'] ?? '')),
         ];
         $beforeEdit = getBookingById($id);
+        // An older booking gets its opening ledger entry BEFORE the edit, so a change
+        // to amount paid is recorded as the difference, not the whole old balance.
+        acctBackfillOpeningBalances($id);
         try {
             updateConfirmedBooking($id, $data);
         } catch (Throwable $e) {
             header('Location: admin.php?section=' . $returnSec . '&flash=' . urlencode($e->getMessage()));
             exit;
         }
+        acctSyncFromBooking($id, 'Changed in booking edit');
         $afterEdit = getBookingById($id);
         // WhatsApp: booking updated / payment received / cancelled, after the redirect.
         if ($beforeEdit && $afterEdit) waDefer(fn() => waOnBookingEdited($beforeEdit, $afterEdit));
@@ -1334,6 +1340,7 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
       'bills'     => ['🧾', 'Bills / GST Invoice', 'bill.php', 0],
       'wa_logs'   => ['📜', 'WhatsApp Logs',     'whatsapp-logs.php', 0],
       'backups'   => ['🗄️', 'Backups',           'backups.php', 0],
+      'accounts'  => ['📒', 'Accounts & GST',    'accounts.php', 0],
       'analytics' => ['📈', 'Analytics',         'admin.php?section=analytics', 0],
       'channels'  => ['🔗', 'Channels',          'admin.php?section=channels', 0],
       'export'    => ['📤', 'iCal Export',       'admin.php?section=export', 0],
@@ -3136,6 +3143,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
             <a href="bill.php?new=1&amp;booking=<?= (int)$b['id'] ?>" target="_blank" class="btn btn-sm btn-grey" title="Create a GST bill for this booking">🧾 Bill</a>
             <?php if ($waNum): ?><a href="https://wa.me/<?= preg_replace('/\D/','',$waNum) ?>" target="_blank" class="btn btn-sm btn-grey" title="Open WhatsApp chat">💬</a><?php endif; ?>
             <a href="booking-whatsapp.php?id=<?= (int)$b['id'] ?>" class="btn btn-sm btn-grey" title="Send WhatsApp templates (cancellation, refund, reminders)">📨</a>
+            <a href="booking-payments.php?id=<?= (int)$b['id'] ?>" class="btn btn-sm btn-grey" title="Payments, refunds and history">💰</a>
             <?php if ($b['status']==='confirmed'): ?>
             <form method="POST" style="display:inline" onsubmit="return confirm('Cancel booking #<?= $b['id'] ?> (<?= htmlspecialchars(addslashes($b['guest_name'])) ?>)?')">
               <?= csrfField() ?>
@@ -4541,6 +4549,7 @@ function showBookingModal(b) {
         <a href="booking-pdf.php?id=${b.id}" target="_blank" class="btn btn-grey btn-sm">📄 PDF Receipt</a>
         <a href="bill.php?new=1&booking=${b.id}" target="_blank" class="btn btn-grey btn-sm">🧾 GST Bill</a>
         <a href="booking-whatsapp.php?id=${b.id}" class="btn btn-grey btn-sm">📨 WhatsApp messages</a>
+        <a href="booking-payments.php?id=${b.id}" class="btn btn-grey btn-sm">💰 Payments</a>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         ${b.status === 'confirmed' ? `

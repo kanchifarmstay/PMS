@@ -7,6 +7,7 @@ require_once __DIR__ . '/sync.php';
 require_once __DIR__ . '/demand-engine.php';
 require_once __DIR__ . '/wa-templates.php';
 require_once __DIR__ . '/backup-service.php';
+require_once __DIR__ . '/accounts-service.php';
 
 $isCli = PHP_SAPI === 'cli';
 $providedToken = (string)($_GET['token'] ?? '');
@@ -42,6 +43,7 @@ try {
 }
 // Daily verified database backup (once per IST day). Never stops the sync.
 $backup = runDailyBackup();
+try { acctBackfillOpeningBalances(); } catch (Throwable $e) { error_log('Payment ledger backfill failed: ' . $e->getMessage()); }
 
 $summary = [
     'status'=>$errors === [] ? 'ok' : 'partial',

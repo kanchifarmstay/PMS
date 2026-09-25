@@ -6,6 +6,7 @@ require_once __DIR__ . '/channel-manager/db.php';
 require_once __DIR__ . '/channel-manager/payment-service.php';
 require_once __DIR__ . '/channel-manager/admin-alerts.php';
 require_once __DIR__ . '/channel-manager/guest-whatsapp.php';
+require_once __DIR__ . '/channel-manager/accounts-service.php';
 require_once __DIR__ . '/channel-manager/api.php';
 
 sendJsonHeaders('POST');
@@ -22,6 +23,7 @@ $paymentId = trim((string)($payment['id'] ?? ''));
 if ($orderId === '' || $paymentId === '') jsonResponse(['error'=>'Webhook is missing payment identifiers.'], 422);
 try {
     $bookingId = finalizeVerifiedRazorpayPayment($orderId, $paymentId);
+    acctSyncFromBooking($bookingId, 'Razorpay payment');
     deferAdminBookingAlert($bookingId);
     deferGuestBookingConfirmation($bookingId);
     jsonResponse(['ok'=>true, 'bookingId'=>$bookingId]);

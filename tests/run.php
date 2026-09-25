@@ -2421,4 +2421,135 @@ test('front desk: page, check-in form and register render; the register exports 
 });
 
 
+// ── Accounts: payment ledger, refunds, collections, GST report ──
+require_once dirname(__DIR__) . '/channel-manager/accounts-service.php';
+
+test('accounts: bookings with money but no history get one opening entry, once', function (): void {
+    $b = ownBooking(['amount' => 5000, 'amount_paid' => 1500, 'payment_method' => 'cash']);
+    acctBackfillOpeningBalances();
+    acctBackfillOpeningBalances();
+    $l = acctLedger((int)$b['id']);
+    assertSame(1, count($l));
+    assertSame(['payment', 150000, 'cash', 'Recorded before payment history'], [$l[0]['kind'], (int)$l[0]['amount_paise'], $l[0]['method'], $l[0]['note']]);
+    assertSame(150000, acctNetPaise((int)$b['id']));
+});
+
+test('accounts: the ledger follows amount paid through the add and edit forms', function (): void {
+    $b = ownBooking(['amount' => 6000, 'amount_paid' => 2000, 'payment_method' => 'upi']);
+    acctSyncFromBooking((int)$b['id'], 'Recorded when the booking was added');
+    assertSame(0, acctSyncFromBooking((int)$b['id'], 'again'), 'already in line: nothing written');
+    updateBooking((int)$b['id'], array_merge($b, ['amount_paid' => 3500]));
+    acctSyncFromBooking((int)$b['id'], 'Changed in booking edit');
+    updateBooking((int)$b['id'], array_merge(getBookingById((int)$b['id']), ['amount_paid' => 3000]));
+    acctSyncFromBooking((int)$b['id'], 'Changed in booking edit');
+    $l = acctLedger((int)$b['id']);
+    assertSame([['payment', 200000], ['payment', 150000], ['correction', -50000]], array_map(fn($e) => [$e['kind'], (int)$e['amount_paise']], $l));
+    assertSame(300000, acctNetPaise((int)$b['id']));
+});
+
+test('accounts: payments and refunds update the booking; refunds cannot exceed what is held', function (): void {
+    $b = ownBooking(['amount' => 6000, 'amount_paid' => 0, 'payment_method' => 'cash']);
+    acctRecord((int)$b['id'], 'payment', '4,000', 'upi', 'UPI123', date('Y-m-d'), 'advance');
+    $after = getBookingById((int)$b['id']);
+    assertSame([4000.0, 'partial', 'upi'], [(float)$after['amount_paid'], $after['payment_status'], $after['payment_method']]);
+    acctRecord((int)$b['id'], 'payment', 2000, 'cash', '', date('Y-m-d'), '');
+    assertSame('paid', getBookingById((int)$b['id'])['payment_status']);
+    $tooMuch = false;
+    try { acctRecord((int)$b['id'], 'refund', 7000, 'upi', '', date('Y-m-d'), ''); } catch (InvalidArgumentException) { $tooMuch = true; }
+    assertTrue($tooMuch, 'refund above the 6,000 held is refused');
+    acctRecord((int)$b['id'], 'refund', 1500, 'upi', 'rfnd_1', date('Y-m-d'), 'cancelled a night');
+    assertSame(4500.0, (float)getBookingById((int)$b['id'])['amount_paid']);
+    foreach ([['payment', 0], ['payment', -5], ['bogus', 100]] as [$k, $amt]) {
+        $bad = false;
+        try { acctRecord((int)$b['id'], $k, $amt, 'upi', '', date('Y-m-d'), ''); } catch (InvalidArgumentException) { $bad = true; }
+        assertTrue($bad, "{$k} {$amt} refused");
+    }
+    $future = false;
+    try { acctRecord((int)$b['id'], 'payment', 10, 'upi', '', date('Y-m-d', strtotime('+2 days')), ''); } catch (InvalidArgumentException) { $future = true; }
+    assertTrue($future, 'no future-dated money');
+});
+
+test('accounts: voiding needs a reason, keeps the row, and drops it from the totals', function (): void {
+    $b = ownBooking(['amount' => 5000, 'amount_paid' => 0]);
+    $id = acctRecord((int)$b['id'], 'payment', 5000, 'cash', '', date('Y-m-d'), 'typed twice');
+    $noReason = false;
+    try { acctVoid($id, ''); } catch (InvalidArgumentException) { $noReason = true; }
+    assertTrue($noReason);
+    acctVoid($id, 'Duplicate entry');
+    assertSame(0, acctNetPaise((int)$b['id']));
+    assertSame('unpaid', getBookingById((int)$b['id'])['payment_status']);
+    $l = acctLedger((int)$b['id']);
+    assertSame([1, 'Duplicate entry'], [(int)$l[0]['voided'], $l[0]['void_reason']]);
+});
+
+test('accounts: collections add up by method, refunds and voids handled', function (): void {
+    $day = '2037-05-10';
+    $b = ownBooking(['check_in' => '2037-05-10', 'check_out' => '2037-05-11', 'amount' => 9000, 'amount_paid' => 0]);
+    $ins = getDB()->prepare('INSERT INTO payments (booking_id, kind, amount_paise, method, paid_on, voided) VALUES (?,?,?,?,?,?)');
+    $ins->execute([(int)$b['id'], 'payment', 500000, 'upi', $day, 0]);
+    $ins->execute([(int)$b['id'], 'payment', 300000, 'cash', $day, 0]);
+    $ins->execute([(int)$b['id'], 'refund', 100000, 'upi', $day, 0]);
+    $ins->execute([(int)$b['id'], 'payment', 999900, 'cash', $day, 1]);
+    $c = acctCollections($day, $day);
+    assertSame([800000, 100000, 700000], [$c['received'], $c['refunded'], $c['net']]);
+    assertSame(['upi' => 400000, 'cash' => 300000], $c['by_method']);
+    assertSame(3, count($c['rows']), 'the voided entry is not listed');
+});
+
+test('accounts: the GST report totals issued invoices and lists, but does not count, cancelled ones', function (): void {
+    freshBills();
+    $mixed = [['desc' => 'Room', 'sac' => '996311', 'qty' => 1, 'rate' => 9000, 'gst' => 18], ['desc' => 'Dinner', 'sac' => '996331', 'qty' => 2, 'rate' => 500, 'gst' => 5]];
+    saveBill(sampleBill(['invoice_date' => '2037-06-05']));
+    saveBill(array_merge(sampleBill(['invoice_date' => '2037-06-06']), ['items' => normaliseBillItems($mixed)]));
+    cancelBill(saveBill(sampleBill(['invoice_date' => '2037-06-07'])));
+    saveBill(sampleBill(['invoice_date' => '2037-07-01']));
+    $g = acctGstReport('2037-06');
+    assertSame(3, count($g['invoices']));
+    assertSame([2, 1], [$g['totals']['count'], $g['totals']['cancelled']]);
+    $one = computeBill(sampleBill()['items'], true);
+    $two = computeBill(normaliseBillItems($mixed), true);
+    assertSame($one['taxable'] + $two['taxable'], $g['totals']['taxable']);
+    assertSame($one['cgst'] + $two['cgst'], $g['totals']['cgst']);
+    assertSame(['18|996311', '5|996311', '5|996331'], array_map(fn($r) => $r['gst'] . '|' . $r['sac'], $g['by_rate']));
+    assertSame($g['totals']['taxable'], array_sum(array_column($g['by_rate'], 'taxable')), 'by-rate rows add up to the total');
+});
+
+test('accounts: wired into add, edit, both Razorpay paths and cron; pages render with CSV', function (): void {
+    $root = dirname(__DIR__);
+    $admin = file_get_contents("{$root}/channel-manager/admin.php");
+    assertContains("acctSyncFromBooking((int)\$id, 'Recorded when the booking was added');", $admin);
+    assertContains('acctBackfillOpeningBalances($id);', $admin);
+    assertContains("acctSyncFromBooking(\$id, 'Changed in booking edit');", $admin);
+    assertContains('booking-payments.php?id=<?= (int)$b[\'id\'] ?>', $admin);
+    foreach (['confirm_booking.php', 'razorpay-webhook.php'] as $f) assertContains("acctSyncFromBooking(\$bookingId, 'Razorpay payment');", file_get_contents("{$root}/{$f}"));
+    assertContains('acctBackfillOpeningBalances();', file_get_contents("{$root}/channel-manager/cron.php"));
+
+    $db = sys_get_temp_dir() . '/kfs-acct-' . getmypid() . '.sqlite';
+    @unlink($db);
+    $run = function (string $page, array $get) use ($db, $root): string {
+        $script = sys_get_temp_dir() . '/kfs-acct-' . getmypid() . '.php';
+        file_put_contents($script, '<?php putenv("KFS_DB_PATH=' . $db . '"); session_start(); $_SESSION["admin_logged_in"]=true;'
+            . '$_SERVER["REQUEST_METHOD"]="GET"; $_GET=' . var_export($get, true) . ';'
+            . 'require ' . var_export("{$root}/channel-manager/db.php", true) . ';'
+            . 'if (!getDB()->query("SELECT COUNT(*) FROM bookings")->fetchColumn()) addBooking(["room_id"=>"tent","room_name"=>"Tent","check_in"=>date("Y-m-d"),"check_out"=>date("Y-m-d", strtotime("+1 day")),"guest_name"=>"Ledger <b>","source"=>"phone","amount"=>3000,"amount_paid"=>1000,"payment_method"=>"cash","status"=>"confirmed"]);'
+            . 'include ' . var_export("{$root}/channel-manager/{$page}", true) . ';');
+        $out = (string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' 2>&1');
+        @unlink($script);
+        return $out;
+    };
+    $pay = $run('booking-payments.php', ['id' => '1']);
+    assertContains('Payments · #0001', $pay);
+    assertContains('Recorded before payment history', $pay);
+    assertContains('Ledger &lt;b&gt;', $pay);
+    assertNotContains('Fatal', $pay);
+    $coll = $run('accounts.php', []);
+    assertContains('Net collected', $coll);
+    assertNotContains('Fatal', $coll);
+    assertContains('Date,Booking,Guest,Room,Source,Type,Method,Amount,Reference,Note', $run('accounts.php', ['export' => 'csv']));
+    assertContains('Tax by rate', $run('accounts.php', ['view' => 'gst']));
+    assertContains('"Invoice no","Invoice date",Customer', $run('accounts.php', ['view' => 'gst', 'export' => 'csv']));
+    @unlink($db);
+});
+
+
 runTests();

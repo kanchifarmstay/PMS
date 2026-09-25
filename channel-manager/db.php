@@ -306,6 +306,23 @@ function _initSchema(PDO $db): void {
             created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- The payment ledger (see accounts-service.php). bookings.amount_paid is
+        -- kept equal to its net total. Entries are voided, never deleted.
+        CREATE TABLE IF NOT EXISTS payments (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            booking_id   INTEGER NOT NULL,
+            kind         TEXT NOT NULL,
+            amount_paise INTEGER NOT NULL,
+            method       TEXT NOT NULL DEFAULT 'cash',
+            reference    TEXT DEFAULT '',
+            paid_on      DATE NOT NULL,
+            note         TEXT DEFAULT '',
+            voided       INTEGER NOT NULL DEFAULT 0,
+            void_reason  TEXT DEFAULT '',
+            voided_at    DATETIME,
+            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         -- Housekeeping state of each physical room.
         CREATE TABLE IF NOT EXISTS room_status (
             room_id    TEXT PRIMARY KEY,
@@ -377,6 +394,8 @@ function _initSchema(PDO $db): void {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
     }
     $db->exec("CREATE INDEX IF NOT EXISTS idx_wa_template_log_created ON wa_template_log(created_at)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_payments_booking ON payments(booking_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_payments_paid_on ON payments(paid_on)");
 
     $billMigrations = [
         // Last WhatsApp send of the invoice (UTC), who it went to, and the last error.
