@@ -65,7 +65,7 @@ function sendGuestBookingConfirmation(int $bookingId, ?callable $transport = nul
         if ($config['token'] === '' || $config['phone_id'] === '') return ['status' => 'not_configured', 'detail' => ''];
         if (bookingPdfToken($bookingId) === '') return ['status' => 'not_configured', 'detail' => 'KFS_DOCUMENT_SIGNING_SECRET is not set'];
         $b = getBookingById($bookingId);
-        if (!$b || ($b['status'] ?? '') !== 'confirmed' || !in_array($b['source'] ?? '', GUEST_CONFIRM_SOURCES, true)) {
+        if (!$b || ($b['status'] ?? '') !== 'confirmed' || !in_array($b['source'] ?? '', GUEST_CONFIRM_SOURCES, true) || isOtaSource($b['source'] ?? '')) {
             return ['status' => 'skipped', 'detail' => ''];
         }
         $created = kfsDbTimestamp($b['created_at'] ?? '');

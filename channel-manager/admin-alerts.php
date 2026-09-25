@@ -41,6 +41,18 @@ function adminAlertNumbers(string $csv): array {
     return array_map('strval', array_keys($out));
 }
 
+/**
+ * Owner rule (2026-09-25): guests who booked through Airbnb, Booking.com, Agoda
+ * or MakeMyTrip get NO WhatsApp message from the property - not a confirmation,
+ * not a reminder, not an invoice, not a manual send. Admin alerts ABOUT those
+ * bookings still go to the admin numbers. Matched loosely so "Booking.com",
+ * "goibibo" or "mmt" typed by hand are caught too.
+ */
+function isOtaSource(?string $source): bool {
+    $s = strtolower(trim((string)$source));
+    return $s !== '' && (bool)preg_match('/airbnb|booking\.?com|agoda|makemytrip|make ?my ?trip|goibibo|ingoibibo|\bmmt\b|expedia/', $s);
+}
+
 /** A phone as WhatsApp wants it: digits with country code; a bare 10-digit number is Indian, a leading 0 is dropped. */
 function whatsAppNumber(string $phone): ?string {
     $digits = preg_replace('/\D/', '', $phone);

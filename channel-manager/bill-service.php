@@ -424,6 +424,14 @@ function billInvoiceTemplatePayload(array $row, string $to, string $template, st
     ];
 }
 
+/** A bill linked to an Airbnb / Booking.com / Agoda / MakeMyTrip booking. Those guests are never messaged. */
+function billIsForOtaBooking(array $row): bool {
+    $bookingId = (int)($row['data']['booking_id'] ?? $row['booking_id'] ?? 0);
+    if ($bookingId <= 0) return false;
+    $b = getBookingById($bookingId);
+    return $b !== null && isOtaSource($b['source'] ?? '');
+}
+
 /** Meta's error codes, said the way the owner needs to hear them. */
 function billWhatsAppErrorText(string $detail): string {
     return match (true) {
@@ -441,6 +449,7 @@ function sendBillOnWhatsApp(int $id, ?callable $transport = null, ?array $config
     $row = getBill($id);
     if (!$row) return ['ok' => false, 'message' => 'Bill not found.'];
     if ($row['status'] === 'cancelled') return ['ok' => false, 'message' => 'A cancelled invoice is not sent.'];
+    if (billIsForOtaBooking($row)) return ['ok' => false, 'message' => 'This bill is for a booking made through a booking platform. Those guests are not messaged on WhatsApp — print or email the bill instead.'];
     $config ??= ['token' => ADMIN_ALERT_WA_TOKEN, 'phone_id' => ADMIN_ALERT_WA_PHONE_ID,
                  'template' => INVOICE_WA_TEMPLATE, 'language' => 'en'];
     if ($config['token'] === '' || $config['phone_id'] === '') {
