@@ -2079,6 +2079,41 @@ test('wa templates: OTA alerts - first run only records, then each new reservati
     assertSame(0, waDetectNewOtaReservations(waCapture($again), alertConfig())['alerted']);
 });
 
+test('wa templates: OTA alerts - a feed that re-issues the UID does not re-announce the stay', function (): void {
+    resetAvailabilityData();
+    setSetting('wa_ota_seeded', '1');
+    getDB()->prepare("UPDATE wa_template_log SET dedupe_key = NULL WHERE dedupe_key LIKE 'ota:%'")->execute();
+    // MakeMyTrip gave one Wooden Cottage night five UIDs in a day (2026-09-25).
+    insertOtaBlock('wooden-cottage', 'makemytrip', 'uid-1', '2032-04-03', '2032-04-04');
+    $sent = [];
+    assertSame(1, waDetectNewOtaReservations(waCapture($sent), alertConfig())['alerted']);
+    foreach (['uid-2', 'uid-3'] as $uid) {
+        getDB()->exec("DELETE FROM external_blocks WHERE platform = 'makemytrip'");
+        insertOtaBlock('wooden-cottage', 'makemytrip', $uid, '2032-04-03', '2032-04-04');
+        assertSame(0, waDetectNewOtaReservations(waCapture($sent), alertConfig())['alerted'], $uid);
+    }
+    assertSame(2, count($sent), 'one alert per admin, once');
+
+    // Still alerts for what really is new: another room, or other dates.
+    insertOtaBlock('tent', 'makemytrip', 'uid-4', '2032-04-03', '2032-04-04');
+    insertOtaBlock('wooden-cottage', 'makemytrip', 'uid-5', '2032-04-10', '2032-04-11');
+    assertSame(2, waDetectNewOtaReservations(waCapture($sent), alertConfig())['alerted']);
+});
+
+test('wa templates: OTA alerts - a claim made before rooms were recorded still covers a later UID', function (): void {
+    resetAvailabilityData();
+    setSetting('wa_ota_seeded', '1');
+    getDB()->prepare("UPDATE wa_template_log SET dedupe_key = NULL WHERE dedupe_key LIKE 'ota:%'")->execute();
+    insertOtaBlock('wooden-cottage', 'makemytrip', 'old-uid', '2032-05-03', '2032-05-04');
+    getDB()->exec("INSERT INTO wa_template_log (dedupe_key, template, status) VALUES ('ota:makemytrip:old-uid:2032-05-03:2032-05-04', 'kfs_admin_ota_booking', 'sent')");
+    $sent = [];
+    assertSame(0, waDetectNewOtaReservations(waCapture($sent), alertConfig())['alerted'], 'already announced');
+    getDB()->exec("DELETE FROM external_blocks WHERE platform = 'makemytrip'");
+    insertOtaBlock('wooden-cottage', 'makemytrip', 'new-uid', '2032-05-03', '2032-05-04');
+    assertSame(0, waDetectNewOtaReservations(waCapture($sent), alertConfig())['alerted'], 'rotated UID');
+    assertSame([], $sent);
+});
+
 test('wa templates: wired into admin edit, admin cancel and cron, with the per-booking page linked', function (): void {
     $root = dirname(__DIR__) . '/channel-manager';
     $admin = file_get_contents("{$root}/admin.php");
