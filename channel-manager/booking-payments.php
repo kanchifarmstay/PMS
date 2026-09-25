@@ -16,6 +16,8 @@ require_once __DIR__ . '/wa-templates.php';
 
 startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) { header('Location: admin.php'); exit; }
+require_once __DIR__ . '/auth.php';
+requirePermission('payments.add');
 
 function ph(mixed $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
@@ -28,11 +30,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireValidCsrfToken($_POST['csrf_token'] ?? null);
     $act = (string)($_POST['action'] ?? '');
     try {
+        if (in_array($act, ['refund', 'void'], true) && !userCan('payments.refund')) throw new InvalidArgumentException('Your role cannot record refunds or void entries.');
         $before = getBookingById($id);
         if ($act === 'payment' || $act === 'refund') {
             acctRecord($id, $act, $_POST['amount'] ?? '', (string)($_POST['method'] ?? ''), (string)($_POST['reference'] ?? ''),
                 (string)($_POST['paid_on'] ?? ''), (string)($_POST['note'] ?? ''));
             $after = getBookingById($id);
+            kfsAudit($act === 'payment' ? 'payment_added' : 'refund_recorded', 'booking', $id, 'Rs. ' . ($_POST['amount'] ?? '') . ' ' . ($_POST['method'] ?? '') . ' ' . trim((string)($_POST['reference'] ?? '')));
             if ($act === 'payment') {
                 waDefer(fn() => waOnBookingEdited($before, $after));
                 $msg = 'Payment recorded.';
@@ -52,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } elseif ($act === 'void') {
             acctVoid((int)($_POST['entry_id'] ?? 0), (string)($_POST['reason'] ?? ''));
+            kfsAudit('payment_voided', 'booking', $id, 'Entry ' . (int)($_POST['entry_id'] ?? 0) . ': ' . trim((string)($_POST['reason'] ?? '')));
             $msg = 'Entry voided.';
         } else {
             throw new InvalidArgumentException('Unknown action.');
@@ -144,6 +149,7 @@ $balance = $total - $net;
     </form>
   </div>
 
+  <?php if (userCan('payments.refund')): ?>
   <div class="card">
     <h2>Record a refund</h2>
     <form method="POST" class="grid" onsubmit="return confirm('Record this refund?')">
@@ -158,6 +164,7 @@ $balance = $total - $net;
       <div><button class="btn btn-warn" type="submit">Record refund</button></div>
     </form>
   </div>
+  <?php endif; ?>
 
   <div class="card">
     <h2>History</h2>
@@ -174,7 +181,7 @@ $balance = $total - $net;
           <td class="num"><?= $sign ?>Rs. <?= ph(waMoneyFromPaise(abs((int)$e['amount_paise']))) ?></td>
           <td><?= ph(trim($e['reference'] . ($e['reference'] !== '' && $e['note'] !== '' ? ' · ' : '') . $e['note'])) ?: '<span class="muted">—</span>' ?></td>
           <td class="why"><?php if ($void): ?><span class="muted" style="font-size:12px">Voided: <?= ph($e['void_reason']) ?></span>
-            <?php else: ?><details><summary>Void</summary>
+            <?php elseif (userCan('payments.refund')): ?><details><summary>Void</summary>
               <form method="POST" style="display:flex;gap:6px;margin-top:6px"><?= csrfField() ?><input type="hidden" name="action" value="void"><input type="hidden" name="id" value="<?= (int)$b['id'] ?>"><input type="hidden" name="entry_id" value="<?= (int)$e['id'] ?>">
                 <input name="reason" placeholder="Why?" required style="width:140px"><button class="btn btn-sm" type="submit">Void</button></form></details><?php endif; ?></td>
         </tr>

@@ -16,6 +16,8 @@ require_once __DIR__ . '/wa-templates.php';
 
 startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) { header('Location: admin.php'); exit; }
+require_once __DIR__ . '/auth.php';
+requirePermission('whatsapp');
 
 function e(mixed $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
@@ -65,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($r['status'] === 'not_configured') $err = 'WhatsApp is not configured (KFS_WA_TOKEN / KFS_WA_PHONE_ID).';
         elseif ($r['status'] !== 'sent') $err = waManualErrorText($r['detail']);
     }
+    kfsAudit($err === '' ? 'whatsapp_sent' : 'whatsapp_failed', 'booking', (int)$b['id'], $template . ($err !== '' ? ': ' . $err : ''));
     $q = $err === '' ? 'ok=' . rawurlencode(($template) . ' sent to +' . $to) : 'err=' . rawurlencode($err);
     header('Location: booking-whatsapp.php?id=' . (int)$b['id'] . '&' . $q); exit;
 }

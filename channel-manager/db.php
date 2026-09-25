@@ -323,6 +323,32 @@ function _initSchema(PDO $db): void {
             created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- Staff accounts (see auth.php). The KFS_ADMIN_PASSWORD_HASH login is a
+        -- built-in owner and is not a row here.
+        CREATE TABLE IF NOT EXISTS users (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            name          TEXT NOT NULL,
+            username      TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role          TEXT NOT NULL DEFAULT 'frontdesk',
+            active        INTEGER NOT NULL DEFAULT 1,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login_at DATETIME
+        );
+
+        -- Who did what (see auth.php kfsAudit()).
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER,
+            username   TEXT DEFAULT '',
+            action     TEXT NOT NULL,
+            entity     TEXT DEFAULT '',
+            entity_id  TEXT,
+            detail     TEXT DEFAULT '',
+            ip         TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         -- Housekeeping state of each physical room.
         CREATE TABLE IF NOT EXISTS room_status (
             room_id    TEXT PRIMARY KEY,
@@ -395,6 +421,8 @@ function _initSchema(PDO $db): void {
     }
     $db->exec("CREATE INDEX IF NOT EXISTS idx_wa_template_log_created ON wa_template_log(created_at)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_payments_booking ON payments(booking_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_audit_log_login ON audit_log(action, username, created_at)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_payments_paid_on ON payments(paid_on)");
 
     $billMigrations = [

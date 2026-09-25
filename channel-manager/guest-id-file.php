@@ -11,6 +11,8 @@ require_once __DIR__ . '/frontdesk-service.php';
 
 startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) { http_response_code(403); exit('Access denied.'); }
+require_once __DIR__ . '/auth.php';
+requirePermission('frontdesk');
 
 $path = fdIdFilePath((string)($_GET['f'] ?? ''));
 if ($path === null) { http_response_code(404); exit('Not found.'); }
