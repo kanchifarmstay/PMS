@@ -281,6 +281,39 @@ function _initSchema(PDO $db): void {
             UNIQUE(fy, seq)
         );
 
+        -- Guest register: photo ID for every guest checked in (see frontdesk-service.php).
+        -- Aadhaar numbers are stored as the last four digits only.
+        CREATE TABLE IF NOT EXISTS guest_ids (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            booking_id          INTEGER NOT NULL,
+            name                TEXT NOT NULL,
+            id_type             TEXT NOT NULL,
+            id_number           TEXT NOT NULL,
+            id_photo            TEXT DEFAULT '',
+            nationality         TEXT DEFAULT 'Indian',
+            is_foreign          INTEGER DEFAULT 0,
+            phone               TEXT DEFAULT '',
+            passport_no         TEXT DEFAULT '',
+            passport_expiry     TEXT DEFAULT '',
+            visa_no             TEXT DEFAULT '',
+            visa_type           TEXT DEFAULT '',
+            visa_expiry         TEXT DEFAULT '',
+            arrived_india_on    TEXT DEFAULT '',
+            coming_from         TEXT DEFAULT '',
+            next_destination    TEXT DEFAULT '',
+            form_c_submitted_at TEXT DEFAULT '',
+            form_c_reference    TEXT DEFAULT '',
+            created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Housekeeping state of each physical room.
+        CREATE TABLE IF NOT EXISTS room_status (
+            room_id    TEXT PRIMARY KEY,
+            status     TEXT NOT NULL DEFAULT 'ready',
+            note       TEXT DEFAULT '',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         -- Every WhatsApp template sent (see wa-templates.php). dedupe_key is
         -- claimed BEFORE an automatic send so it can only ever go out once;
         -- manual sends have no key and are only logged.
@@ -310,6 +343,10 @@ function _initSchema(PDO $db): void {
         "ALTER TABLE bookings ADD COLUMN admin_alert_sent_at TEXT DEFAULT ''",
         // When the guest's WhatsApp confirmation went out (UTC); '' = not sent. See guest-whatsapp.php.
         "ALTER TABLE bookings ADD COLUMN guest_confirm_sent_at TEXT DEFAULT ''",
+        // What happened at the gate; separate from `status`, never affects availability.
+        "ALTER TABLE bookings ADD COLUMN stay_status TEXT DEFAULT 'expected'",
+        "ALTER TABLE bookings ADD COLUMN checked_in_at DATETIME",
+        "ALTER TABLE bookings ADD COLUMN checked_out_at DATETIME",
     ];
     foreach ($migrations as $sql) {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
