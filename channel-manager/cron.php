@@ -5,6 +5,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/sync.php';
 require_once __DIR__ . '/demand-engine.php';
+require_once __DIR__ . '/wa-templates.php';
 
 $isCli = PHP_SAPI === 'cli';
 $providedToken = (string)($_GET['token'] ?? '');
@@ -31,12 +32,20 @@ if (trim((string)@file_get_contents($lastSeedFile)) !== $today) {
     $seeded = seedDemandEvents();
     file_put_contents($lastSeedFile, $today, LOCK_EX);
 }
+// WhatsApp: new OTA reservations, check-in / balance reminders, morning summary.
+// Isolated: a WhatsApp problem must never stop the calendar sync.
+try {
+    $whatsapp = waRunScheduledJobs();
+} catch (Throwable $e) {
+    $whatsapp = ['error' => $e->getMessage()];
+}
 
 $summary = [
     'status'=>$errors === [] ? 'ok' : 'partial',
     'calendars'=>count($results),
     'active_blocks'=>$totalBlocks,
     'demand_events_seeded'=>$seeded,
+    'whatsapp'=>$whatsapp,
     'errors'=>array_map(static fn(array $result): array => [
         'calendar_id'=>$result['calendar_id'], 'platform'=>$result['platform'],
         'room_id'=>$result['room_id'], 'error'=>$result['error'],

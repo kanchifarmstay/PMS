@@ -9,6 +9,7 @@ require_once __DIR__ . '/booking-service.php';
 require_once __DIR__ . '/whatsapp.php';
 require_once __DIR__ . '/demand-engine.php';
 require_once __DIR__ . '/guest-whatsapp.php';
+require_once __DIR__ . '/wa-templates.php';
 
 startSecureSession();
 
@@ -159,12 +160,16 @@ if (!empty($_SESSION['admin_logged_in'])) {
             'status'          => $status,
             'notes'           => trim((string)($_POST['notes'] ?? '')),
         ];
+        $beforeEdit = getBookingById($id);
         try {
             updateConfirmedBooking($id, $data);
         } catch (Throwable $e) {
             header('Location: admin.php?section=' . $returnSec . '&flash=' . urlencode($e->getMessage()));
             exit;
         }
+        $afterEdit = getBookingById($id);
+        // WhatsApp: booking updated / payment received / cancelled, after the redirect.
+        if ($beforeEdit && $afterEdit) waDefer(fn() => waOnBookingEdited($beforeEdit, $afterEdit));
         header('Location: admin.php?section=' . $returnSec . '&flash=Booking+updated+successfully');
         exit;
     }
@@ -186,7 +191,12 @@ if (!empty($_SESSION['admin_logged_in'])) {
         if (!in_array($returnSec, ['bookings', 'calendar', 'overview', 'day', 'week', 'month', 'blocked'], true)) {
             $returnSec = 'bookings';
         }
-        if ($id > 0) cancelBooking($id);
+        if ($id > 0) {
+            cancelBooking($id);
+            $cancelled = getBookingById($id);
+            // WhatsApp alert to the admins; the guest message (it carries a refund) is sent from booking-whatsapp.php.
+            if ($cancelled) waDefer(fn() => waOnBookingCancelled($cancelled));
+        }
         header('Location: admin.php?section=' . $returnSec . '&flash=Booking+cancelled');
         exit;
     }
@@ -3122,6 +3132,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
             <a href="<?= $pdfUrl ?>" target="_blank" class="btn btn-sm btn-grey" title="View / Download PDF">📄 PDF</a>
             <a href="bill.php?new=1&amp;booking=<?= (int)$b['id'] ?>" target="_blank" class="btn btn-sm btn-grey" title="Create a GST bill for this booking">🧾 Bill</a>
             <?php if ($waNum): ?><a href="https://wa.me/<?= preg_replace('/\D/','',$waNum) ?>" target="_blank" class="btn btn-sm btn-grey" title="Open WhatsApp chat">💬</a><?php endif; ?>
+            <a href="booking-whatsapp.php?id=<?= (int)$b['id'] ?>" class="btn btn-sm btn-grey" title="Send WhatsApp templates (cancellation, refund, reminders)">📨</a>
             <?php if ($b['status']==='confirmed'): ?>
             <form method="POST" style="display:inline" onsubmit="return confirm('Cancel booking #<?= $b['id'] ?> (<?= htmlspecialchars(addslashes($b['guest_name'])) ?>)?')">
               <?= csrfField() ?>
@@ -4526,6 +4537,7 @@ function showBookingModal(b) {
         ${b.guest_phone ? `<a href="https://wa.me/${b.guest_phone.replace(/\D/g,'')}" target="_blank" class="btn btn-grey btn-sm">💬 WhatsApp</a>` : ''}
         <a href="booking-pdf.php?id=${b.id}" target="_blank" class="btn btn-grey btn-sm">📄 PDF Receipt</a>
         <a href="bill.php?new=1&booking=${b.id}" target="_blank" class="btn btn-grey btn-sm">🧾 GST Bill</a>
+        <a href="booking-whatsapp.php?id=${b.id}" class="btn btn-grey btn-sm">📨 WhatsApp messages</a>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         ${b.status === 'confirmed' ? `
