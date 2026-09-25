@@ -6,6 +6,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/sync.php';
 require_once __DIR__ . '/demand-engine.php';
 require_once __DIR__ . '/wa-templates.php';
+require_once __DIR__ . '/backup-service.php';
 
 $isCli = PHP_SAPI === 'cli';
 $providedToken = (string)($_GET['token'] ?? '');
@@ -39,6 +40,8 @@ try {
 } catch (Throwable $e) {
     $whatsapp = ['error' => $e->getMessage()];
 }
+// Daily verified database backup (once per IST day). Never stops the sync.
+$backup = runDailyBackup();
 
 $summary = [
     'status'=>$errors === [] ? 'ok' : 'partial',
@@ -46,6 +49,7 @@ $summary = [
     'active_blocks'=>$totalBlocks,
     'demand_events_seeded'=>$seeded,
     'whatsapp'=>$whatsapp,
+    'backup'=>$backup['status'],
     'errors'=>array_map(static fn(array $result): array => [
         'calendar_id'=>$result['calendar_id'], 'platform'=>$result['platform'],
         'room_id'=>$result['room_id'], 'error'=>$result['error'],
