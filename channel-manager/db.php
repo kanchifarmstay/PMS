@@ -280,6 +280,20 @@ function _initSchema(PDO $db): void {
             updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(fy, seq)
         );
+
+        -- Every WhatsApp template sent (see wa-templates.php). dedupe_key is
+        -- claimed BEFORE an automatic send so it can only ever go out once;
+        -- manual sends have no key and are only logged.
+        CREATE TABLE IF NOT EXISTS wa_template_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            dedupe_key  TEXT UNIQUE,
+            booking_id  INTEGER,
+            template    TEXT NOT NULL,
+            recipient   TEXT DEFAULT '',
+            status      TEXT NOT NULL,
+            detail      TEXT DEFAULT '',
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     ");
 
     // Safe schema migrations for existing installs (SQLite ignores duplicates)

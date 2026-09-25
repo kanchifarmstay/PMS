@@ -1929,4 +1929,162 @@ test('guest confirmation: wired into both Razorpay paths and admin add-booking, 
 });
 
 
+// ── The other approved WhatsApp templates (wa-templates.php) ──
+require_once dirname(__DIR__) . '/channel-manager/wa-templates.php';
+
+function waCapture(array &$sent, bool $ok = true): callable
+{
+    return function (array $config, array $payload) use (&$sent, $ok): array {
+        $sent[] = ['to' => $payload['to'], 'template' => $payload['template']['name'],
+                   'params' => array_column($payload['template']['components'][0]['parameters'], 'text')];
+        return $ok ? [true, 'wamid.t'] : [false, 'HTTP 400 131026 undeliverable'];
+    };
+}
+
+function waTemplatesSent(array $sent): array { return array_column($sent, 'template'); }
+
+function ownBooking(array $over = []): array
+{
+    static $day = 0;
+    $day += 3;
+    $in = date('Y-m-d', strtotime('2031-09-01 +' . $day . ' days'));
+    $out = date('Y-m-d', strtotime($in . ' +2 days'));
+    $id = addBooking($over + ['room_id' => 'tent', 'room_name' => 'Tent', 'check_in' => $in, 'check_out' => $out,
+        'guest_name' => 'Asha', 'guest_phone' => '98765 43210', 'source' => 'phone',
+        'amount' => 6000, 'amount_paid' => 2000, 'payment_method' => 'upi', 'status' => 'confirmed']);
+    return getBookingById($id);
+}
+
+test('wa templates: payloads are flattened for Meta and carry the URL suffix only when given', function (): void {
+    $p = waPayload('kfs_checkin_reminder', '919876543210', ["Asha\nK", 'Sat, 26 Sep 2026', ''], null);
+    assertSame(['Asha K', 'Sat, 26 Sep 2026', '-'], array_column($p['template']['components'][0]['parameters'], 'text'));
+    assertSame(1, count($p['template']['components']));
+    $q = waPayload('kfs_booking_confirmed', '919876543210', ['a'], 'id=1&token=x');
+    assertSame('id=1&token=x', $q['template']['components'][1]['parameters'][0]['text']);
+});
+
+test('wa templates: a dedupe key sends once; a failed send releases it for a retry', function (): void {
+    $sent = [];
+    $a = waSend('kfs_checkin_reminder', '919876543210', ['A', 'B', 'C'], null, null, 'test:once', waCapture($sent), alertConfig());
+    $b = waSend('kfs_checkin_reminder', '919876543210', ['A', 'B', 'C'], null, null, 'test:once', waCapture($sent), alertConfig());
+    assertSame(['sent', 'duplicate'], [$a['status'], $b['status']]);
+    $fail = [];
+    assertSame('failed', waSend('kfs_checkin_reminder', '919876543210', ['A'], null, null, 'test:retry', waCapture($fail, false), alertConfig())['status']);
+    assertSame('sent', waSend('kfs_checkin_reminder', '919876543210', ['A'], null, null, 'test:retry', waCapture($sent), alertConfig())['status']);
+    assertSame('not_configured', waSend('x', '91', [], null, null, null, waCapture($sent), alertConfig(['token' => '']))['status']);
+});
+
+test('wa templates: editing dates tells the guest once; raising amount paid tells the guest and every admin', function (): void {
+    $before = ownBooking();
+    updateBooking((int)$before['id'], array_merge($before, ['check_out' => date('Y-m-d', strtotime($before['check_out'] . ' +1 day')), 'amount_paid' => 3500]));
+    $after = getBookingById((int)$before['id']);
+    $sent = [];
+    waOnBookingEdited($before, $after, waCapture($sent), alertConfig());
+    assertSame(['kfs_booking_updated', 'kfs_payment_received', 'kfs_admin_payment_received', 'kfs_admin_payment_received'], waTemplatesSent($sent));
+    assertSame('919876543210', $sent[0]['to']);
+    assertSame(['Asha', '1,500', waBookingNo($after), 'UPI', '2,500'], $sent[1]['params'], 'payment = the increase; balance = total - paid');
+    assertSame(['917200390283', '919028001639'], [$sent[2]['to'], $sent[3]['to']]);
+    $again = [];
+    waOnBookingEdited($before, $after, waCapture($again), alertConfig());
+    assertSame([], $again, 'the same save submitted twice sends nothing more');
+});
+
+test('wa templates: OTA bookings never message the guest, but admins still hear about payments and cancellations', function (): void {
+    $before = ownBooking(['source' => 'airbnb']);
+    updateBooking((int)$before['id'], array_merge($before, ['amount_paid' => 6000]));
+    $sent = [];
+    waOnBookingEdited($before, getBookingById((int)$before['id']), waCapture($sent), alertConfig());
+    assertSame(['kfs_admin_payment_received', 'kfs_admin_payment_received'], waTemplatesSent($sent));
+    $cancel = [];
+    waOnBookingCancelled(getBookingById((int)$before['id']), waCapture($cancel), alertConfig());
+    waOnBookingCancelled(getBookingById((int)$before['id']), waCapture($cancel), alertConfig());
+    assertSame(['kfs_admin_booking_cancelled', 'kfs_admin_booking_cancelled'], waTemplatesSent($cancel), 'once per admin, not twice');
+    assertSame('Airbnb', $cancel[0]['params'][4]);
+    $blocked = [];
+    waOnBookingCancelled(ownBooking(['source' => 'blocked']), waCapture($blocked), alertConfig());
+    assertSame([], $blocked);
+});
+
+test('wa templates: cancelling through Edit is treated as a cancellation, not an update', function (): void {
+    $before = ownBooking();
+    updateBooking((int)$before['id'], array_merge($before, ['status' => 'cancelled']));
+    $sent = [];
+    waOnBookingEdited($before, getBookingById((int)$before['id']), waCapture($sent), alertConfig());
+    assertSame(['kfs_admin_booking_cancelled', 'kfs_admin_booking_cancelled'], waTemplatesSent($sent));
+});
+
+test('wa templates: check-in and balance reminders go the day before, after 10:00, once', function (): void {
+    $withBalance = ownBooking(['check_in' => '2031-12-11', 'check_out' => '2031-12-12']);
+    ownBooking(['check_in' => '2031-12-11', 'check_out' => '2031-12-13', 'room_id' => 'tree-house', 'room_name' => 'Tree House', 'amount_paid' => 6000]);
+    ownBooking(['check_in' => '2031-12-11', 'check_out' => '2031-12-12', 'room_id' => 'wooden-villa', 'room_name' => 'Wooden Villa', 'source' => 'booking.com']);
+    $early = [];
+    waRunScheduledJobs(strtotime('2031-12-10 09:30'), waCapture($early), alertConfig());
+    assertSame([], array_values(array_filter(waTemplatesSent($early), fn($t) => str_contains($t, 'reminder'))), 'nothing before 10:00');
+    $sent = [];
+    $r = waRunScheduledJobs(strtotime('2031-12-10 10:15'), waCapture($sent), alertConfig());
+    assertSame(2, $r['checkin'], 'both own bookings, not the Booking.com one');
+    assertSame(1, $r['balance'], 'only the one with money due');
+    $bal = array_values(array_filter($sent, fn($s) => $s['template'] === 'kfs_balance_reminder'))[0];
+    assertSame(['Asha', waBookingNo($withBalance), 'Thu, 11 Dec 2031', '4,000'], $bal['params']);
+    $again = [];
+    $r2 = waRunScheduledJobs(strtotime('2031-12-10 10:30'), waCapture($again), alertConfig());
+    assertSame([0, 0], [$r2['checkin'], $r2['balance']]);
+});
+
+test('wa templates: the morning summary goes once a day after 08:00 with real counts', function (): void {
+    resetAvailabilityData();
+    ownBooking(['check_in' => '2032-01-05', 'check_out' => '2032-01-07', 'room_id' => 'white-villa-full-floor', 'room_name' => 'White Villa — Full 1st Floor', 'amount' => 9000, 'amount_paid' => 4000]);
+    ownBooking(['check_in' => '2032-01-03', 'check_out' => '2032-01-05']);
+    insertOtaBlock('tent', 'airbnb', 'arr@airbnb.com', '2032-01-05', '2032-01-06');
+    $none = [];
+    waRunScheduledJobs(strtotime('2032-01-05 07:50'), waCapture($none), alertConfig());
+    assertFalse(in_array('kfs_admin_daily_summary', waTemplatesSent($none), true));
+    $sent = [];
+    waRunScheduledJobs(strtotime('2032-01-05 08:05'), waCapture($sent), alertConfig());
+    $sum = array_values(array_filter($sent, fn($s) => $s['template'] === 'kfs_admin_daily_summary'));
+    assertSame(2, count($sum), 'one per admin');
+    // Arrivals: the full-floor booking + the Airbnb block. Departure: the tent booking.
+    // Occupied tonight: White Villa rooms 1 and 2 (the floor expands) + the tent.
+    assertSame(['Mon, 05 Jan 2032', '2', '1', '3 of ' . count(waPhysicalRooms()), '5,000'], $sum[0]['params']);
+    $again = [];
+    waRunScheduledJobs(strtotime('2032-01-05 12:00'), waCapture($again), alertConfig());
+    assertFalse(in_array('kfs_admin_daily_summary', waTemplatesSent($again), true));
+});
+
+test('wa templates: OTA alerts - first run only records, then each new reservation alerts once', function (): void {
+    resetAvailabilityData();
+    setSetting('wa_ota_seeded', '');
+    getDB()->prepare("UPDATE wa_template_log SET dedupe_key = NULL WHERE dedupe_key LIKE 'ota:%'")->execute();
+    insertOtaBlock('tent', 'agoda', 'old@agoda', '2032-02-01', '2032-02-03');
+    $first = [];
+    $r = waDetectNewOtaReservations(waCapture($first), alertConfig());
+    assertSame([1, 0], [$r['seeded'], $r['alerted']]);
+    assertSame([], $first, 'reservations that existed before the feature are not announced');
+
+    insertOtaBlock('tent', 'agoda', 'new@agoda', '2032-03-01', '2032-03-03');
+    insertOtaBlock('natures-nest', 'airbnb', 'shared@airbnb', '2032-03-10', '2032-03-12');
+    insertOtaBlock('tranquil-retreat', 'airbnb', 'shared@airbnb', '2032-03-10', '2032-03-12');
+    $sent = [];
+    $r = waDetectNewOtaReservations(waCapture($sent), alertConfig());
+    assertSame(2, $r['alerted'], 'one alert per reservation, even when Airbnb repeats it across rooms');
+    assertSame(4, count($sent), 'two reservations x two admins');
+    assertSame(['Agoda', 'Tent', 'Mon, 01 Mar 2032', 'Wed, 03 Mar 2032', 'Not shared by Agoda'], $sent[0]['params']);
+    assertSame("Nature's Nest, Tranquil Retreat", $sent[2]['params'][1]);
+    $again = [];
+    assertSame(0, waDetectNewOtaReservations(waCapture($again), alertConfig())['alerted']);
+});
+
+test('wa templates: wired into admin edit, admin cancel and cron, with the per-booking page linked', function (): void {
+    $root = dirname(__DIR__) . '/channel-manager';
+    $admin = file_get_contents("{$root}/admin.php");
+    assertContains('waDefer(fn() => waOnBookingEdited($beforeEdit, $afterEdit));', $admin);
+    assertContains('waDefer(fn() => waOnBookingCancelled($cancelled));', $admin);
+    assertContains('booking-whatsapp.php?id=<?= (int)$b[\'id\'] ?>', $admin);
+    assertContains('booking-whatsapp.php?id=${b.id}', $admin);
+    $cron = file_get_contents("{$root}/cron.php");
+    assertContains('$whatsapp = waRunScheduledJobs();', $cron);
+    assertContains("'whatsapp'=>\$whatsapp", $cron);
+});
+
+
 runTests();
