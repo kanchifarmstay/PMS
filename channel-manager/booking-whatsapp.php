@@ -33,7 +33,7 @@ $b = $id ? getBookingById($id) : null;
 if (!$b) { http_response_code(404); die('Booking not found.'); }
 
 $to = whatsAppNumber((string)(($b['whatsapp_number'] ?? '') ?: ($b['guest_phone'] ?? '')));
-$isOta = !in_array($b['source'], GUEST_CONFIRM_SOURCES, true);
+$isOta = isOtaSource($b['source']);
 $flash = ['ok' => (string)($_GET['ok'] ?? ''), 'err' => (string)($_GET['err'] ?? '')];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -54,7 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         default        => ['', [], null],
     };
     $err = '';
-    if ($template === '') $err = 'Unknown message.';
+    if ($isOta) $err = 'Guests who booked through ' . waSourceLabel($b['source']) . ' are never messaged on WhatsApp.';
+    elseif ($template === '') $err = 'Unknown message.';
     elseif ($to === null) $err = 'This booking has no valid guest phone or WhatsApp number. Edit the booking first.';
     elseif ($kind === 'confirmation' && bookingPdfToken((int)$b['id']) === '') $err = 'KFS_DOCUMENT_SIGNING_SECRET is not set, so the confirmation link would not open.';
     elseif (in_array($kind, ['payment', 'refund'], true) && $amount < 0.01) $err = 'Enter the amount.';
@@ -126,7 +127,8 @@ $confirmSent = ($b['guest_confirm_sent_at'] ?? '') !== '';
   <?php if ($flash['ok'] !== ''): ?><div class="flash ok">✓ <?= e($flash['ok']) ?></div><?php endif; ?>
   <?php if ($flash['err'] !== ''): ?><div class="flash err"><?= e($flash['err']) ?></div><?php endif; ?>
   <?php if ($to === null): ?><div class="flash err">No valid guest phone or WhatsApp number on this booking — edit the booking to add one.</div>
-  <?php elseif ($isOta): ?><div class="flash warn">This is a <?= e(waSourceLabel($b['source'])) ?> booking. Automatic guest messages are off for OTA bookings; anything sent here is sent by hand.</div><?php endif; ?>
+  <?php endif; ?>
+  <?php if ($isOta): ?><div class="flash warn">This is a <?= e(waSourceLabel($b['source'])) ?> booking. Guests who book through Airbnb, Booking.com, Agoda or MakeMyTrip are never messaged on WhatsApp, so nothing can be sent from here.</div><?php endif; ?>
 
   <div class="card">
     <h2>Booking</h2>
@@ -140,6 +142,7 @@ $confirmSent = ($b['guest_confirm_sent_at'] ?? '') !== '';
     </div>
   </div>
 
+  <?php if (!$isOta): ?>
   <div class="card">
     <h2>Send a message</h2>
     <?php
@@ -162,6 +165,7 @@ $confirmSent = ($b['guest_confirm_sent_at'] ?? '') !== '';
         '<input name="amount" inputmode="decimal" placeholder="Amount Rs." required><input name="reference" placeholder="Reference" required>');
     ?>
   </div>
+  <?php endif; ?>
 
   <div class="card">
     <h2>Sent for this booking</h2>

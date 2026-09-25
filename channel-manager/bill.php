@@ -587,7 +587,9 @@ if ($mode === 'invoice') {
           <input type="hidden" name="bill_id" value="<?= (int)$row['id'] ?>">
           <button class="btn btn-danger" type="submit">Cancel invoice</button>
         </form>
-        <?php if ($guestUrl !== ''):
+        <?php if (billIsForOtaBooking($row)): ?>
+          <span class="hint" style="margin:0">No WhatsApp: booked through a booking platform.</span>
+        <?php elseif ($guestUrl !== ''):
           $gPhone = preg_replace('/\D/', '', $bill['guest']['phone']);
           if (strlen($gPhone) === 10) $gPhone = '91' . $gPhone;
           $waText = 'Hello ' . $bill['guest']['name'] . ', here is your invoice ' . $row['invoice_no'] . ' from ' . $biz['trade_name'] . ': ' . $guestUrl; ?>

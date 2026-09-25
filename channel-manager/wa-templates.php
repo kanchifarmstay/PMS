@@ -64,7 +64,7 @@ function waSourceLabel(string $s): string {
 }
 
 function waGuestNumber(array $b): ?string {
-    if (!in_array($b['source'] ?? '', GUEST_CONFIRM_SOURCES, true)) return null;
+    if (!in_array($b['source'] ?? '', GUEST_CONFIRM_SOURCES, true) || isOtaSource($b['source'] ?? '')) return null;
     return whatsAppNumber((string)(($b['whatsapp_number'] ?? '') ?: ($b['guest_phone'] ?? '')));
 }
 
@@ -90,6 +90,13 @@ function waSend(string $template, string $to, array $params, ?string $urlSuffix,
                 ?callable $transport = null, ?array $config = null): array {
     $config ??= waConfig();
     if ($config['token'] === '' || $config['phone_id'] === '') return ['status' => 'not_configured', 'detail' => ''];
+    if ($bookingId !== null) {
+        $bk = getBookingById($bookingId);
+        $admins = adminAlertNumbers((string)($config['numbers'] ?? ADMIN_ALERT_WA_NUMBERS));
+        if ($bk && isOtaSource($bk['source'] ?? '') && !in_array($to, $admins, true)) {
+            return ['status' => 'blocked_ota', 'detail' => 'Guests who booked through ' . waSourceLabel((string)$bk['source']) . ' are never messaged.'];
+        }
+    }
     $db = getDB();
     if ($dedupeKey !== null) {
         $claim = $db->prepare("INSERT OR IGNORE INTO wa_template_log (dedupe_key, booking_id, template, recipient, status)

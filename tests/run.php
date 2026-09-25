@@ -2087,4 +2087,60 @@ test('wa templates: wired into admin edit, admin cancel and cron, with the per-b
 });
 
 
+// ── Owner rule: never WhatsApp a guest who booked through a platform ──
+test('ota rule: every way of writing the four platforms is recognised, our own sources are not', function (): void {
+    foreach (['airbnb', 'Airbnb', 'booking.com', 'Booking.com', 'bookingcom', 'agoda', 'AGODA', 'makemytrip', 'Make My Trip', 'goibibo', 'mmt', 'expedia'] as $s) {
+        assertTrue(isOtaSource($s), "{$s} is a platform");
+    }
+    foreach (['direct', 'phone', 'manual', 'razorpay', 'cash', '', null] as $s) {
+        assertFalse(isOtaSource($s), var_export($s, true) . ' is ours');
+    }
+});
+
+test('ota rule: no guest message of any kind reaches a platform guest, even with their phone on file', function (): void {
+    foreach (['airbnb', 'booking.com', 'agoda', 'makemytrip'] as $src) {
+        $b = ownBooking(['source' => $src, 'whatsapp_number' => '98765 43210']);
+        $sent = [];
+        // Automatic confirmation.
+        assertTrue(in_array(sendGuestBookingConfirmation((int)$b['id'], waCapture($sent), alertConfig())['status'], ['skipped', 'not_configured'], true));
+        // Edit: dates + payment -> only the admin payment alert.
+        updateBooking((int)$b['id'], array_merge($b, ['check_out' => date('Y-m-d', strtotime($b['check_out'] . ' +1 day')), 'amount_paid' => 6000]));
+        waOnBookingEdited($b, getBookingById((int)$b['id']), waCapture($sent), alertConfig());
+        // The sender itself refuses a direct attempt to message the guest.
+        $direct = waSend('kfs_checkin_reminder', '919876543210', waCheckinParams($b), null, (int)$b['id'], null, waCapture($sent), alertConfig());
+        assertSame('blocked_ota', $direct['status'], $src);
+        foreach ($sent as $s) assertFalse($s['to'] === '919876543210', "{$src}: nothing to the guest ({$s['template']})");
+        assertSame(['kfs_admin_payment_received', 'kfs_admin_payment_received'], waTemplatesSent($sent), "{$src}: admins still told");
+    }
+});
+
+test('ota rule: day-before reminders skip platform bookings', function (): void {
+    ownBooking(['check_in' => '2033-04-11', 'check_out' => '2033-04-12', 'source' => 'agoda']);
+    ownBooking(['check_in' => '2033-04-11', 'check_out' => '2033-04-12', 'room_id' => 'tree-house', 'room_name' => 'Tree House', 'source' => 'Booking.com']);
+    $sent = [];
+    $r = waRunScheduledJobs(strtotime('2033-04-10 10:30'), waCapture($sent), alertConfig());
+    assertSame([0, 0], [$r['checkin'], $r['balance']]);
+});
+
+test('ota rule: a bill for a platform booking cannot be sent on WhatsApp; the bill page shows why', function (): void {
+    $b = ownBooking(['source' => 'airbnb']);
+    $billId = saveBill(sampleBill(['booking_id' => (int)$b['id']]));
+    assertTrue(billIsForOtaBooking(getBill($billId)));
+    $never = function (): array { throw new RuntimeException('must not be called'); };
+    $r = sendBillOnWhatsApp($billId, $never, invoiceWaConfig());
+    assertFalse($r['ok']);
+    assertContains('booking platform', $r['message']);
+    assertFalse(billIsForOtaBooking(getBill(saveBill(sampleBill()))), 'a walk-in bill is unaffected');
+    $src = file_get_contents(dirname(__DIR__) . '/channel-manager/bill.php');
+    assertContains('<?php if (billIsForOtaBooking($row)): ?>', $src);
+});
+
+test('ota rule: the per-booking WhatsApp page refuses and hides its send forms for a platform booking', function (): void {
+    $src = file_get_contents(dirname(__DIR__) . '/channel-manager/booking-whatsapp.php');
+    assertContains('$isOta = isOtaSource($b[\'source\']);', $src);
+    assertContains("if (\$isOta) \$err = 'Guests who booked through '", $src);
+    assertContains('<?php if (!$isOta): ?>', $src);
+});
+
+
 runTests();
