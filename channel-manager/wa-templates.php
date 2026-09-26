@@ -269,14 +269,22 @@ function waDailySummaryParams(string $today): array {
  * 2026-09-25. Each claim row keeps its rooms in `detail` ("rooms=a,b") so a later UID for
  * the same room and dates is known. Two different reservations cannot hold one room on the
  * same dates, so matching on the room loses nothing.
+ *
+ * Airbnb is the one feed that tells a reservation from a block: a booking is `Reserved`, and
+ * `Airbnb (Not available)` is a host block, a buffer night, the far end of the booking window
+ * (which moves a day later every day) or our own bookings echoed back. Alerting on those sent
+ * "New Airbnb booking" twice on 2026-09-26 with no Airbnb booking anywhere, so only `Reserved`
+ * alerts. Booking.com and Agoda label everything alike, so they are not filtered.
  */
 function waDetectNewOtaReservations(?callable $transport = null, ?array $config = null): array {
     $db = getDB();
     $today = date('Y-m-d');
-    $rows = $db->prepare("SELECT platform, external_uid, room_id, check_in, check_out FROM external_blocks WHERE check_out > ? ORDER BY check_in");
+    $rows = $db->prepare("SELECT platform, external_uid, room_id, check_in, check_out, summary FROM external_blocks WHERE check_out > ? ORDER BY check_in");
     $rows->execute([$today]);
     $groups = [];
     foreach ($rows->fetchAll() as $r) {
+        if (strtolower($r['platform']) === 'airbnb' && stripos((string)$r['summary'], 'reserved') === false) continue;
+        unset($r['summary']);
         $k = 'ota:' . $r['platform'] . ':' . $r['external_uid'] . ':' . $r['check_in'] . ':' . $r['check_out'];
         $groups[$k] ??= $r + ['rooms' => []];
         $groups[$k]['rooms'][$r['room_id']] = true;
