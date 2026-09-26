@@ -1317,14 +1317,14 @@ test('booking deletion permanently removes record and frees up calendar inventor
     assertTrue(isInventoryAvailable('tent', '2030-06-01', '2030-06-03'));
 });
 
-function insertOtaBlock(string $roomId, string $platform, string $uid, string $checkIn, string $checkOut): int
+function insertOtaBlock(string $roomId, string $platform, string $uid, string $checkIn, string $checkOut, string $summary = 'CLOSED - Not available'): int
 {
     $db = getDB();
     $db->prepare("INSERT INTO external_calendars (room_id, platform, ical_url) VALUES (?,?,?)")
        ->execute([$roomId, $platform, "https://example.com/{$roomId}-{$platform}.ics"]);
     $calendarId = (int)$db->lastInsertId();
     $db->prepare("INSERT INTO external_blocks (calendar_id, room_id, platform, external_uid, check_in, check_out, summary) VALUES (?,?,?,?,?,?,?)")
-       ->execute([$calendarId, $roomId, $platform, $uid, $checkIn, $checkOut, 'CLOSED - Not available']);
+       ->execute([$calendarId, $roomId, $platform, $uid, $checkIn, $checkOut, $summary]);
     return (int)$db->lastInsertId();
 }
 
@@ -2067,8 +2067,8 @@ test('wa templates: OTA alerts - first run only records, then each new reservati
     assertSame([], $first, 'reservations that existed before the feature are not announced');
 
     insertOtaBlock('tent', 'agoda', 'new@agoda', '2032-03-01', '2032-03-03');
-    insertOtaBlock('natures-nest', 'airbnb', 'shared@airbnb', '2032-03-10', '2032-03-12');
-    insertOtaBlock('tranquil-retreat', 'airbnb', 'shared@airbnb', '2032-03-10', '2032-03-12');
+    insertOtaBlock('natures-nest', 'airbnb', 'shared@airbnb', '2032-03-10', '2032-03-12', 'Reserved');
+    insertOtaBlock('tranquil-retreat', 'airbnb', 'shared@airbnb', '2032-03-10', '2032-03-12', 'Reserved');
     $sent = [];
     $r = waDetectNewOtaReservations(waCapture($sent), alertConfig());
     assertSame(2, $r['alerted'], 'one alert per reservation, even when Airbnb repeats it across rooms');
@@ -2112,6 +2112,23 @@ test('wa templates: OTA alerts - a claim made before rooms were recorded still c
     insertOtaBlock('wooden-cottage', 'makemytrip', 'new-uid', '2032-05-03', '2032-05-04');
     assertSame(0, waDetectNewOtaReservations(waCapture($sent), alertConfig())['alerted'], 'rotated UID');
     assertSame([], $sent);
+});
+
+test('wa templates: OTA alerts - an Airbnb block is not announced as a booking, a reservation is', function (): void {
+    resetAvailabilityData();
+    setSetting('wa_ota_seeded', '1');
+    getDB()->prepare("UPDATE wa_template_log SET dedupe_key = NULL WHERE dedupe_key LIKE 'ota:%'")->execute();
+    // 2026-09-26: our own bookings echoed back, and the booking-window tail that grows daily.
+    insertOtaBlock('natures-nest', 'airbnb', 'echo@airbnb', '2032-06-25', '2032-06-27', 'Airbnb (Not available)');
+    insertOtaBlock('tent', 'airbnb', 'window@airbnb', '2033-06-12', '2033-06-27', 'Airbnb (Not available)');
+    $sent = [];
+    assertSame(0, waDetectNewOtaReservations(waCapture($sent), alertConfig())['alerted']);
+    assertSame([], $sent);
+    insertOtaBlock('wooden-cottage', 'airbnb', 'real@airbnb', '2032-07-01', '2032-07-03', 'Reserved');
+    // Booking.com labels a real reservation "CLOSED - Not available", so it still alerts.
+    insertOtaBlock('tent', 'booking.com', 'real@booking.com', '2032-07-10', '2032-07-11');
+    assertSame(2, waDetectNewOtaReservations(waCapture($sent), alertConfig())['alerted']);
+    assertSame('Airbnb', $sent[0]['params'][0]);
 });
 
 test('wa templates: wired into admin edit, admin cancel and cron, with the per-booking page linked', function (): void {
