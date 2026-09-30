@@ -217,6 +217,30 @@ button {
     align-items: center;
 }
 
+.navbar-links .nav-link,
+.navbar-links .booking-btn {
+    white-space: nowrap;
+}
+
+/* Eight links plus Book Now: tighten between the hamburger breakpoint and wide desktop */
+@media (min-width: 769px) and (max-width: 1280px) {
+    .navbar-links { gap: 1.25rem; }
+    .navbar-links .nav-link { font-size: 0.88rem; }
+}
+
+@media (min-width: 769px) and (max-width: 960px) {
+    .navbar-links { gap: 0.8rem; }
+    .navbar-links .nav-link { font-size: 0.8rem; }
+    .navbar-links .booking-btn { padding: 0.5rem 0.9rem; font-size: 0.8rem; }
+}
+
+@media (min-width: 769px) and (max-width: 860px) {
+    .navbar-container { padding-left: 0.75rem; padding-right: 0.75rem; }
+    .navbar-links { gap: 0.55rem; }
+    .navbar-links .nav-link { font-size: 0.74rem; }
+    .navbar-links .booking-btn { padding: 0.45rem 0.7rem; font-size: 0.74rem; }
+}
+
 .nav-link {
     font-family: var(--font-body);
     font-weight: 500;
