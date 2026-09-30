@@ -464,6 +464,7 @@ function renderNavbar() {
                 <a href="gallery.html" class="nav-link ${isActive('gallery.html')}">Gallery</a>
                 <a href="accommodations.html" class="nav-link ${isActive('accommodations.html')}">Accommodations</a>
                 <a href="reviews.html" class="nav-link ${isActive('reviews.html')}">Customer Reviews</a>
+                <a href="activities.html" class="nav-link ${isActive('activities.html')}">Activities</a>
                 <a href="attractions.html" class="nav-link ${isActive('attractions.html')}">Attractions</a>
                 <a href="food-menu.html" class="nav-link ${isActive('food-menu.html')}">Food Menu</a>
                 <a href="contact.html" class="nav-link ${isActive('contact.html')}">Contact Us</a>
@@ -500,7 +501,7 @@ function renderFooter() {
                 <ul>
                     <li><a href="index.html">Home</a></li>
                     <li><a href="accommodations.html">Accommodations</a></li>
-                    <li><a href="index.html#activities">Activities</a></li>
+                    <li><a href="activities.html">Activities</a></li>
                     <li><a href="gallery.html">Gallery</a></li>
                     <li><a href="reviews.html">Customer Reviews</a></li>
                     <li><a href="attractions.html">Attractions</a></li>
