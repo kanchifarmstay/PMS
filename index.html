@@ -29,9 +29,25 @@
     <div class="home-page">
         <!-- Hero Section -->
         <section id="home" class="hero-section">
-            <video autoplay loop muted playsinline class="hero-video" poster="assets/images/farm-hero.jpg">
-                <source src="assets/videos/hero-video.MP4" type="video/mp4">
-            </video>
+            <!-- The source is attached by the script below, not in markup, so a phone gets
+                 the 480p loop (~1.9 MB), a wider screen the 720p one (~4 MB), and Save-Data or
+                 reduced-motion visitors only the poster. The 238 MB original this replaces
+                 is still on the server in assets/videos/ (excluded from deploys). -->
+            <video autoplay loop muted playsinline preload="none" class="hero-video"
+                poster="assets/images/farm-hero.jpg"
+                data-src-small="assets/hero/hero-video-480.mp4"
+                data-src-large="assets/hero/hero-video-720.mp4"></video>
+            <script>
+                (function () {
+                    var v = document.querySelector('.hero-video');
+                    var c = navigator.connection || {};
+                    if (!v || c.saveData || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+                    var large = matchMedia('(min-width: 900px)').matches;
+                    v.src = v.getAttribute(large ? 'data-src-large' : 'data-src-small');
+                    var p = v.play();
+                    if (p && p.catch) p.catch(function () {});
+                })();
+            </script>
             <div class="hero-overlay"></div>
             <div class="hero-content container">
                 <h1>More than a stay, It's a getaway</h1>
