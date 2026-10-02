@@ -54,4 +54,6 @@ channel-manager/.last_demand_seed
 !.env.example
 *.MP4
 *.mp4
+# The small hero loops (2-4 MB) ARE committed, so they deploy with the site.
+!assets/hero/*.mp4
 assets/videos/
