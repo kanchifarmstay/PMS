@@ -4,7 +4,7 @@
  */
 
 const CACHE_PREFIX = 'kfs-public-';
-const CACHE = CACHE_PREFIX + 'v4';
+const CACHE = CACHE_PREFIX + 'v5';  // v5: photos recompressed in place, new hero video
 const STATIC = [
   '/',
   '/index.html',

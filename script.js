@@ -17,7 +17,7 @@ const rooms = [
             "assets/images/wooden-villa-swing-4.jpg",
             "assets/images/wooden-villa-swing-5.jpg",
             "assets/images/gallery-room-swing.jpg",
-            "assets/images/wooden-villa-bathroom.png"
+            "assets/images/wooden-villa-bathroom.jpg"
         ],
         price: "₹3,000 / night",
         weekendPrice: "₹3,500 / night",
@@ -979,7 +979,7 @@ const galleryImages = [
     { src: 'assets/images/wooden-villa-swing-4.jpg', caption: 'Wooden Villa — Living Area', category: 'accommodations' },
     { src: 'assets/images/wooden-villa-swing-5.jpg', caption: 'Wooden Villa — Room', category: 'accommodations' },
     { src: 'assets/images/gallery-room-swing.jpg',   caption: 'Wooden Villa — Swing Room', category: 'accommodations' },
-    { src: 'assets/images/wooden-villa-bathroom.png', caption: 'Wooden Villa — Bathroom', category: 'accommodations' },
+    { src: 'assets/images/wooden-villa-bathroom.jpg', caption: 'Wooden Villa — Bathroom', category: 'accommodations' },
     { src: 'assets/images/villa-exterior.jpg',        caption: 'Wooden Villa — Exterior', category: 'accommodations' },
 
     // --- White Villa ---
