@@ -4236,8 +4236,8 @@ if ($lastSyncResults):
     ['📅 Request Dates',    "Could you please share your preferred check-in and check-out dates, and the number of guests?"],
     ['✅ Availability',     "Great news! The room is available for your selected dates. Would you like to confirm the booking?"],
     ['💰 Payment Details',  "To confirm your booking, please transfer the advance:\n\nBank: " . BANK_NAME . "\nA/C No: " . (BANK_ACCOUNT_NO ?: 'xxxxxxx') . "\nIFSC: " . (BANK_IFSC ?: 'xxxxxxx') . (UPI_ID ? "\nUPI: " . UPI_ID : '') . "\n\nKindly share the payment screenshot once done."],
-    ['🗺️ Arrival Info',    "We look forward to your arrival! 🏡\nCheck-in time: 3:00 PM\nAddress: Madikeri, Coorg, Karnataka\nGoogle Maps: https://maps.google.com/?q=Coorg+Karnataka\n\nFeel free to call us if you need any assistance."],
-    ['👋 Checkout Reminder',"Good morning! 🌅 Just a reminder that checkout is at 11:00 AM today.\nWe hope you had a wonderful stay! Please let us know if you need anything before you leave."],
+    ['🗺️ Arrival Info',    "We look forward to your arrival! 🏡\nCheck-in time: 11:00 AM\nAddress: Madikeri, Coorg, Karnataka\nGoogle Maps: https://maps.google.com/?q=Coorg+Karnataka\n\nFeel free to call us if you need any assistance."],
+    ['👋 Checkout Reminder',"Just a reminder that checkout is at 10:00 PM today.\nWe hope you had a wonderful stay! Please let us know if you need anything before you leave."],
   ];
 ?>
 

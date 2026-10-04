@@ -161,7 +161,7 @@ $confirmSent = ($b['guest_confirm_sent_at'] ?? '') !== '';
     $row('payment', 'Payment received', 'Sent automatically when you raise “amount paid” in Edit. Balance now: Rs. ' . e(waMoney($balance)) . '.',
         '<input name="amount" inputmode="decimal" placeholder="Amount Rs." required><select name="method"><option value="upi">UPI</option><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="online">Online payment</option></select>');
     $row('balance', 'Balance reminder', 'Balance due at check-in: Rs. ' . e(waMoney($balance)) . '. Sent automatically the day before check-in.');
-    $row('checkin', 'Check-in reminder', 'Date, room, 3 PM check-in, photo ID and directions. Sent automatically the day before.');
+    $row('checkin', 'Check-in reminder', 'Date, room, 11 AM check-in, photo ID and directions. Sent automatically the day before.');
     $row('cancelled', 'Booking cancelled', 'Tell the guest the booking is cancelled and the refund amount (0 if none).',
         '<input name="amount" inputmode="decimal" placeholder="Refund Rs." value="0">');
     $row('refund', 'Refund processed', 'After the refund is issued. Needs the amount and the reference.',

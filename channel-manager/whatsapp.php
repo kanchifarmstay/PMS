@@ -89,8 +89,8 @@ function sendMetaWABookingConfirmation(array $b): bool {
     $msg .= "*Booking Confirmed — Kanchi Farm Stay*\n";
     $msg .= "━━━━━━━━━━━━━━━\n";
     $msg .= "📍 Room: {$b['room_name']}\n";
-    $msg .= "📅 Check-in: " . date('D, d M Y', strtotime($b['check_in'])) . " (3 PM)\n";
-    $msg .= "🚪 Check-out: " . date('D, d M Y', strtotime($b['check_out'])) . " (11 AM)\n";
+    $msg .= "📅 Check-in: " . date('D, d M Y', strtotime($b['check_in'])) . " (11 AM)\n";
+    $msg .= "🚪 Check-out: " . date('D, d M Y', strtotime($b['check_out'])) . " (10 PM)\n";
     $msg .= "🌙 Duration: {$nights} night" . ($nights !== 1 ? 's' : '') . "\n";
     if (!empty($b['amount']) && $b['amount'] > 0) {
         $msg .= "💰 Total: ₹" . number_format($b['amount']) . "\n";
