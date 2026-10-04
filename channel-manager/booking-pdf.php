@@ -277,7 +277,7 @@ function pmLabel(string $pm): string {
       <div class="stay-date">
         <div class="stay-lbl">CHECK-IN</div>
         <div class="stay-val"><?= date('d M Y', strtotime($b['check_in'])) ?></div>
-        <div class="stay-day"><?= date('l', strtotime($b['check_in'])) ?> · 3:00 PM</div>
+        <div class="stay-day"><?= date('l', strtotime($b['check_in'])) ?> · 11:00 AM</div>
       </div>
       <div class="nights-badge">
         <div class="nights-num"><?= $nights ?></div>
@@ -286,7 +286,7 @@ function pmLabel(string $pm): string {
       <div class="stay-date">
         <div class="stay-lbl">CHECK-OUT</div>
         <div class="stay-val"><?= date('d M Y', strtotime($b['check_out'])) ?></div>
-        <div class="stay-day"><?= date('l', strtotime($b['check_out'])) ?> · 11:00 AM</div>
+        <div class="stay-day"><?= date('l', strtotime($b['check_out'])) ?> · 10:00 PM</div>
       </div>
     </div>
 
@@ -314,8 +314,8 @@ function pmLabel(string $pm): string {
         <div class="grid-2">
           <div><div class="field-lbl">ROOM / PROPERTY</div><div class="field-val"><?= htmlspecialchars($b['room_name']) ?></div></div>
           <div><div class="field-lbl">SOURCE</div><div class="field-val-sm"><?= htmlspecialchars(ucwords(str_replace(['.','_'], [' ', ' '], $b['source']))) ?></div></div>
-          <div><div class="field-lbl">CHECK-IN TIME</div><div class="field-val-sm">3:00 PM</div></div>
-          <div><div class="field-lbl">CHECK-OUT TIME</div><div class="field-val-sm">11:00 AM</div></div>
+          <div><div class="field-lbl">CHECK-IN TIME</div><div class="field-val-sm">11:00 AM</div></div>
+          <div><div class="field-lbl">CHECK-OUT TIME</div><div class="field-val-sm">10:00 PM</div></div>
           <?php if ($b['booking_ref']): ?>
           <div style="grid-column:span 2"><div class="field-lbl">BOOKING REF</div><div class="field-val-sm"><?= htmlspecialchars($b['booking_ref']) ?></div></div>
           <?php endif; ?>
@@ -401,7 +401,7 @@ function pmLabel(string $pm): string {
       <div class="card-hd"><h3>Property Policies</h3></div>
       <div class="card-bd">
         <?php foreach ([
-          'Check-in: 3:00 PM · Check-out: 11:00 AM (early/late subject to availability).',
+          'Check-in: 11:00 AM · Check-out: 10:00 PM (early/late subject to availability).',
           'Cancellations within 48 hours of check-in are non-refundable. 50% refund applies before that.',
           'Please carry a valid Government-issued photo ID for all adult guests.',
           'Pets, outside alcohol, and loud music after 10 PM are not permitted.',
