@@ -58,3 +58,8 @@ channel-manager/.last_demand_seed
 !assets/hero/*.mp4
 assets/videos/
 Picturestou/
+
+# Google Sheet tracker exports and the CSVs made from them hold guest names.
+# This repo is public: never commit them.
+*.xlsx
+tracker-import/

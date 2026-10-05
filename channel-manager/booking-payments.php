@@ -7,11 +7,15 @@
  * bookings, and the admins), exactly as raising amount paid in Edit does. A
  * refund can optionally send kfs_refund_processed; platform guests are refused
  * by waSend() whatever is ticked.
+ *
+ * Food & extras (charges-service.php) are listed here too. They are not part of
+ * the room total, send no WhatsApp, and a charge left unpaid goes on the bill.
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/accounts-service.php';
+require_once __DIR__ . '/charges-service.php';
 require_once __DIR__ . '/wa-templates.php';
 
 startSecureSession();
@@ -30,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireValidCsrfToken($_POST['csrf_token'] ?? null);
     $act = (string)($_POST['action'] ?? '');
     try {
-        if (in_array($act, ['refund', 'void'], true) && !userCan('payments.refund')) throw new InvalidArgumentException('Your role cannot record refunds or void entries.');
+        if (in_array($act, ['refund', 'void', 'charge_void'], true) && !userCan('payments.refund')) throw new InvalidArgumentException('Your role cannot record refunds or void entries.');
         $before = getBookingById($id);
         if ($act === 'payment' || $act === 'refund') {
             acctRecord($id, $act, $_POST['amount'] ?? '', (string)($_POST['method'] ?? ''), (string)($_POST['reference'] ?? ''),
@@ -54,6 +58,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+        } elseif ($act === 'charge_add') {
+            chargeAdd($id, (string)($_POST['kind'] ?? ''), (string)($_POST['description'] ?? ''), $_POST['amount'] ?? '',
+                (string)($_POST['charged_on'] ?? ''), (string)($_POST['method'] ?? ''));
+            kfsAudit('charge_added', 'booking', $id, ($_POST['kind'] ?? '') . ' Rs. ' . ($_POST['amount'] ?? '') . ' ' . trim((string)($_POST['description'] ?? '')));
+            $msg = 'Charge added.';
+        } elseif ($act === 'charge_collect') {
+            chargeCollect((int)($_POST['charge_id'] ?? 0), (string)($_POST['method'] ?? ''));
+            kfsAudit('charge_collected', 'booking', $id, 'Charge ' . (int)($_POST['charge_id'] ?? 0) . ' ' . ($_POST['method'] ?? ''));
+            $msg = 'Charge marked as paid.';
+        } elseif ($act === 'charge_void') {
+            chargeVoid((int)($_POST['charge_id'] ?? 0), (string)($_POST['reason'] ?? ''));
+            kfsAudit('charge_voided', 'booking', $id, 'Charge ' . (int)($_POST['charge_id'] ?? 0) . ': ' . trim((string)($_POST['reason'] ?? '')));
+            $msg = 'Charge voided.';
         } elseif ($act === 'void') {
             acctVoid((int)($_POST['entry_id'] ?? 0), (string)($_POST['reason'] ?? ''));
             kfsAudit('payment_voided', 'booking', $id, 'Entry ' . (int)($_POST['entry_id'] ?? 0) . ': ' . trim((string)($_POST['reason'] ?? '')));
@@ -72,6 +89,8 @@ $ledger = acctLedger($id);
 $net = acctNetPaise($id);
 $total = (int)round((float)$b['amount'] * 100);
 $balance = $total - $net;
+$charges = chargesForBooking($id);
+$chargeSum = chargeTotals($id);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -165,6 +184,46 @@ $balance = $total - $net;
     </form>
   </div>
   <?php endif; ?>
+
+
+  <div class="card">
+    <h2>Food &amp; extras</h2>
+    <p class="muted" style="margin:0 0 10px;font-size:12px">Not part of the room total above. Leave “Paid by” empty if the guest will pay at checkout - it goes on the bill.
+      <?php if ($chargeSum['total'] > 0): ?><br><strong>Rs. <?= ph(waMoneyFromPaise($chargeSum['total'])) ?></strong> in total<?= $chargeSum['unpaid'] > 0 ? ', <strong style="color:#92400e">Rs. ' . ph(waMoneyFromPaise($chargeSum['unpaid'])) . ' not paid yet</strong>' : ', all paid' ?>.<?php endif; ?></p>
+    <form method="POST" class="grid">
+      <?= csrfField() ?><input type="hidden" name="action" value="charge_add"><input type="hidden" name="id" value="<?= (int)$b['id'] ?>">
+      <div><label>For *</label><select name="kind"><?php foreach (CHARGE_KINDS as $k => $l): ?><option value="<?= ph($k) ?>"><?= ph($l) ?></option><?php endforeach; ?></select></div>
+      <div><label>What</label><input name="description" placeholder="e.g. dinner, 4 people"></div>
+      <div><label>Amount Rs. *</label><input name="amount" inputmode="decimal" required></div>
+      <div><label>Date *</label><input type="date" name="charged_on" value="<?= ph(min(date('Y-m-d'), $b['check_out'])) ?>" max="<?= ph(date('Y-m-d')) ?>" required></div>
+      <div><label>Paid by</label><select name="method"><option value="">Not paid yet</option><?php foreach (ACCT_METHODS as $k => $l): if ($k === 'ota') continue; ?><option value="<?= ph($k) ?>"><?= ph($l) ?></option><?php endforeach; ?></select></div>
+      <div><button class="btn btn-primary" type="submit">Add charge</button></div>
+    </form>
+    <?php if ($charges): ?>
+    <div class="tbl" style="margin-top:12px">
+    <table>
+      <thead><tr><th>Date</th><th>For</th><th style="text-align:right">Amount</th><th>Paid</th><th></th></tr></thead>
+      <tbody>
+      <?php foreach ($charges as $c): $void = (int)$c['voided'] === 1; ?>
+        <tr class="<?= $void ? 'voided' : '' ?>">
+          <td><?= ph(date('d M Y', strtotime($c['charged_on']))) ?></td>
+          <td><?= ph(CHARGE_KINDS[$c['kind']] ?? $c['kind']) ?><?= $c['description'] !== '' ? '<div class="muted" style="font-size:12px">' . ph($c['description']) . '</div>' : '' ?></td>
+          <td class="num">Rs. <?= ph(waMoneyFromPaise((int)$c['amount_paise'])) ?></td>
+          <td><?php if ($c['method'] !== ''): ?><?= ph(ACCT_METHODS[$c['method']] ?? $c['method']) ?>
+            <?php elseif (!$void): ?><form method="POST" style="display:flex;gap:6px"><?= csrfField() ?><input type="hidden" name="action" value="charge_collect"><input type="hidden" name="id" value="<?= (int)$b['id'] ?>"><input type="hidden" name="charge_id" value="<?= (int)$c['id'] ?>">
+              <select name="method" style="width:auto"><?php foreach (ACCT_METHODS as $k => $l): if ($k === 'ota') continue; ?><option value="<?= ph($k) ?>" <?= $k === 'upi' ? 'selected' : '' ?>><?= ph($l) ?></option><?php endforeach; ?></select>
+              <button class="btn btn-sm" type="submit">Mark paid</button></form><?php endif; ?></td>
+          <td class="why"><?php if ($void): ?><span class="muted" style="font-size:12px">Voided: <?= ph($c['void_reason']) ?></span>
+            <?php elseif (userCan('payments.refund')): ?><details><summary>Void</summary>
+              <form method="POST" style="display:flex;gap:6px;margin-top:6px"><?= csrfField() ?><input type="hidden" name="action" value="charge_void"><input type="hidden" name="id" value="<?= (int)$b['id'] ?>"><input type="hidden" name="charge_id" value="<?= (int)$c['id'] ?>">
+                <input name="reason" placeholder="Why?" required style="width:140px"><button class="btn btn-sm" type="submit">Void</button></form></details><?php endif; ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    </div>
+    <?php endif; ?>
+  </div>
 
   <div class="card">
     <h2>History</h2>

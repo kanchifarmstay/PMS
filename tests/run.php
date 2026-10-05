@@ -2714,4 +2714,206 @@ test('roles: admin.php gates every POST action and section, and audits the impor
 });
 
 
+// ── Food & extras, expenses, monthly summary, Google Sheet import ──
+require_once dirname(__DIR__) . '/channel-manager/charges-service.php';
+require_once dirname(__DIR__) . '/channel-manager/import-tracker.php';
+
+function pastBooking(array $over = []): array
+{
+    static $n = 0;
+    $n++;
+    $in = $over['check_in'] ?? date('Y-m-d', strtotime('2019-03-01 +' . ($n * 3) . ' days'));
+    $id = addBooking($over + ['room_id' => 'tree-house', 'room_name' => 'Tree House', 'check_in' => $in,
+        'check_out' => date('Y-m-d', strtotime($in . ' +1 day')), 'guest_name' => 'Test Guest', 'source' => 'phone',
+        'amount' => 3000, 'amount_paid' => 0, 'status' => 'confirmed']);
+    return getBookingById($id);
+}
+
+function sheetRow(array $over = []): array
+{
+    return $over + ['key' => 'Mar-r9', 'status' => 'confirmed', 'issues' => '', 'guest_name' => 'Meera Krishnan', 'rooms' => 'tent',
+        'check_in' => '2018-03-10', 'check_out' => '2018-03-12', 'source' => 'manual', 'amount' => '4500.00', 'received' => '',
+        'food' => '850.00', 'method' => 'other', 'entered_by' => 'Staff A', 'notes' => '', 'sheet_property' => 'tent',
+        'sheet_check_in' => '', 'sheet_check_out' => ''];
+}
+
+test('charges: food is kept apart from the room total, collected later, voided with a reason', function (): void {
+    $b = pastBooking();
+    $id = chargeAdd((int)$b['id'], 'food', 'dinner for 4', '1,200', $b['check_in'], '');
+    chargeAdd((int)$b['id'], 'extra', 'bonfire', 500, $b['check_in'], 'upi');
+    assertSame(['total' => 170000, 'unpaid' => 120000], chargeTotals((int)$b['id']));
+    assertSame(3000.0, (float)getBookingById((int)$b['id'])['amount'], 'the room total is not touched');
+    assertSame(0, acctNetPaise((int)$b['id']), 'nor is the payment ledger');
+    chargeCollect($id, 'cash');
+    assertSame(0, chargeTotals((int)$b['id'])['unpaid']);
+    $twice = false;
+    try { chargeCollect($id, 'cash'); } catch (InvalidArgumentException) { $twice = true; }
+    assertTrue($twice, 'cannot be collected twice');
+    $noReason = false;
+    try { chargeVoid($id, ' '); } catch (InvalidArgumentException) { $noReason = true; }
+    assertTrue($noReason);
+    chargeVoid($id, 'typed on the wrong booking');
+    assertSame(50000, chargeTotals((int)$b['id'])['total']);
+    foreach ([[0, $b['check_in'], 'food'], [100, date('Y-m-d', strtotime('+3 days')), 'food'], [100, $b['check_in'], 'spa']] as [$amt, $day, $kind]) {
+        $bad = false;
+        try { chargeAdd((int)$b['id'], $kind, '', $amt, $day, ''); } catch (InvalidArgumentException) { $bad = true; }
+        assertTrue($bad, "refused: {$amt} {$day} {$kind}");
+    }
+});
+
+test('charges: the bill lists food and extras, and counts only the paid ones as paid', function (): void {
+    $b = pastBooking(['amount' => 4000, 'amount_paid' => 4000]);
+    chargeAdd((int)$b['id'], 'food', 'lunch', 600, $b['check_in'], 'cash');
+    chargeAdd((int)$b['id'], 'food', '', 400, $b['check_in'], '');
+    $d = billDraftFromBooking(getBookingById((int)$b['id']));
+    assertSame(3, count($d['items']));
+    assertSame(['Food & beverages — lunch', '996331', 60000], [$d['items'][1]['desc'], $d['items'][1]['sac'], $d['items'][1]['rate']]);
+    assertSame(460000, $d['paid'], 'room 4,000 + paid food 600; the unpaid 400 is still due');
+    assertSame(500000, computeBill($d['items'], true)['grand']);
+});
+
+test('expenses: added, listed by month, voided entries kept but not totalled', function (): void {
+    $a = expenseAdd('2019-07-03', 'groceries', 'milk, curd', 640, 'cash');
+    expenseAdd('2019-07-04', 'gas_fuel', 'cylinder', '1,500', 'upi');
+    expenseAdd('2019-08-01', 'groceries', 'next month', 99, 'cash');
+    expenseVoid($a, 'entered twice');
+    $x = expensesBetween('2019-07-01', '2019-07-31');
+    assertSame(2, count($x['rows']));
+    assertSame(150000, $x['total']);
+    assertSame(['gas_fuel' => 150000], $x['by_category']);
+    foreach ([['2019-07-03', 'caviar', 10, 'cash'], ['2019-07-03', 'groceries', 0, 'cash'], ['2019-07-03', 'groceries', 10, ''],
+              [date('Y-m-d', strtotime('+2 days')), 'groceries', 10, 'cash']] as [$d, $c, $amt, $m]) {
+        $bad = false;
+        try { expenseAdd($d, $c, '', $amt, $m); } catch (InvalidArgumentException) { $bad = true; }
+        assertTrue($bad, "refused: {$d} {$c} {$amt} {$m}");
+    }
+});
+
+test('expenses: live databases keep their empty legacy `expenses` table, and ours sits beside it', function (): void {
+    $path = sys_get_temp_dir() . '/kfs-legacy-' . getmypid() . '.sqlite';
+    @unlink($path);
+    $db = new PDO('sqlite:' . $path);
+    $db->exec("CREATE TABLE expenses (id INTEGER PRIMARY KEY, property_id INTEGER, expense_date DATE, amount REAL)");
+    try {
+        _initSchema($db);
+        $cols = array_column($db->query('PRAGMA table_info(expenses)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        assertTrue(in_array('expense_date', $cols, true), 'the legacy table is left exactly as it was');
+        $cols = array_column($db->query('PRAGMA table_info(farm_expenses)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        assertTrue(in_array('spent_on', $cols, true));
+    } finally {
+        $db = null;
+        @unlink($path);
+    }
+});
+
+test('monthly summary: room by check-in month, food, expenses and a profit that adds up', function (): void {
+    $b = pastBooking(['check_in' => '2017-04-10', 'amount' => 5000, 'amount_paid' => 0]);
+    acctRecord((int)$b['id'], 'payment', 3000, 'upi', '', '2017-04-11', '');
+    chargeAdd((int)$b['id'], 'food', '', 1000, '2017-04-10', '');
+    pastBooking(['check_in' => '2017-04-20', 'amount' => 2000, 'status' => 'cancelled']);
+    pastBooking(['check_in' => '2017-04-22', 'amount' => 0, 'source' => 'blocked', 'guest_name' => 'Blocked']);
+    expenseAdd('2017-04-15', 'staff', 'wages', 1500, 'cash');
+    $s = monthlySummary(2017);
+    $apr = $s['months']['2017-04'];
+    assertSame([1, 500000, 300000, 200000, 100000, 100000, 150000], [$apr['bookings'], $apr['room'], $apr['received'], $apr['pending'], $apr['food'], $apr['food_unpaid'], $apr['expenses']]);
+    assertSame([600000, 450000], [$apr['revenue'], $apr['net']]);
+    assertSame(0.75, $apr['margin']);
+    assertSame(null, $s['months']['2017-05']['margin'], 'no revenue, no margin - not a division by zero');
+    assertSame(450000, $s['total']['net']);
+    assertSame(['staff' => 150000], $s['by_category']);
+});
+
+test('sheet import: a new row becomes a booking with the money, food and a note, and nothing can message anyone', function (): void {
+    $r = trackerImport([sheetRow()], [], true, '2026-10-05');
+    $x = $r['bookings']['Mar-r9'][0];
+    assertSame('new', $x['action']);
+    $b = getBookingById((int)$x['booking_id']);
+    assertSame([4500.0, 4500.0, 'paid', 'manual', 'confirmed', 'checked_out'], [(float)$b['amount'], (float)$b['amount_paid'], $b['payment_status'], $b['source'], $b['status'], $b['stay_status']]);
+    assertSame(['sheet-import', 'sheet-import'], [$b['guest_confirm_sent_at'], $b['admin_alert_sent_at']], 'both one-time WhatsApp slots are claimed');
+    assertContains('Entered by Staff A', $b['notes']);
+    $l = acctLedger((int)$b['id']);
+    assertSame([1, TRACKER_ASSUMED_NOTE, '2018-03-12'], [count($l), $l[0]['note'], $l[0]['paid_on']]);
+    assertSame(['total' => 85000, 'unpaid' => 0], chargeTotals((int)$b['id']));
+    $again = trackerImport([sheetRow()], [], true, '2026-10-05');
+    assertSame('done', $again['bookings']['Mar-r9'][0]['action'], 'a second run changes nothing');
+    assertSame(1, count(acctLedger((int)$b['id'])));
+});
+
+test('sheet import: a row for two rooms splits into two bookings whose money adds up exactly', function (): void {
+    $r = trackerImport([sheetRow(['key' => 'Apr-r5', 'rooms' => 'tent;wooden-cottage', 'check_in' => '2018-04-01', 'check_out' => '2018-04-02',
+        'amount' => '5001.00', 'received' => '3001.00', 'method' => 'upi'])], [], true, '2026-10-05');
+    [$a, $b] = array_map(fn($x) => getBookingById((int)$x['booking_id']), $r['bookings']['Apr-r5']);
+    assertSame([2500.5, 2500.5], [(float)$a['amount'], (float)$b['amount']]);
+    assertSame(3001.0, (float)$a['amount_paid'] + (float)$b['amount_paid'], 'the sheet\'s own received figure, not an assumption');
+    assertSame('partial', $a['payment_status']);
+    assertSame(85000, chargeTotals((int)$a['id'])['total'], 'the food bill goes on the first room only');
+    assertSame(0, chargeTotals((int)$b['id'])['total']);
+    assertContains('Split from one sheet row', $b['notes']);
+});
+
+test('sheet import: an existing PMS booking for the same guest only gets its blanks filled', function (): void {
+    $id = addBooking(['room_id' => 'tent', 'room_name' => 'Tent', 'check_in' => '2018-05-03', 'check_out' => '2018-05-05',
+        'guest_name' => 'Meera K', 'source' => 'airbnb', 'amount' => 0, 'amount_paid' => 0, 'status' => 'confirmed']);
+    $r = trackerImport([sheetRow(['key' => 'May-r4', 'check_in' => '2018-05-03', 'check_out' => '2018-05-05', 'method' => 'ota', 'source' => 'airbnb'])], [], true, '2026-10-05');
+    assertSame(['match', $id], [$r['bookings']['May-r4'][0]['action'], $r['bookings']['May-r4'][0]['booking_id']]);
+    $b = getBookingById($id);
+    assertSame([4500.0, 4500.0, 'Meera K'], [(float)$b['amount'], (float)$b['amount_paid'], $b['guest_name']], 'amount filled, the PMS name kept');
+    assertSame(['ota'], array_column(acctLedger($id), 'method'));
+    assertSame(85000, chargeTotals($id)['total']);
+    assertSame('', $b['guest_confirm_sent_at'], 'a matched booking is not otherwise changed');
+    $again = trackerImport([sheetRow(['key' => 'May-r4', 'check_in' => '2018-05-03', 'check_out' => '2018-05-05'])], [], true, '2026-10-05');
+    assertSame('done', $again['bookings']['May-r4'][0]['action']);
+    assertSame(1, count(acctLedger($id)));
+});
+
+test('sheet import: a different guest in the same room is a conflict and nothing is written', function (): void {
+    $id = addBooking(['room_id' => 'tent', 'room_name' => 'Tent', 'check_in' => '2018-06-03', 'check_out' => '2018-06-04',
+        'guest_name' => 'Arjun Raman', 'source' => 'phone', 'amount' => 0, 'amount_paid' => 0, 'status' => 'confirmed']);
+    $r = trackerImport([sheetRow(['key' => 'June-r4', 'check_in' => '2018-06-03', 'check_out' => '2018-06-04'])], [], true, '2026-10-05');
+    assertSame('conflict', $r['bookings']['June-r4'][0]['action']);
+    assertContains('Arjun Raman', $r['bookings']['June-r4'][0]['detail']);
+    assertSame([0.0, 0, 0], [(float)getBookingById($id)['amount'], count(acctLedger($id)), chargeTotals($id)['total']]);
+    assertTrue(trackerSameGuest('gopi', 'Gopinath R'));
+    assertTrue(trackerSameGuest('Shailesh Kakkar', 'shailesh'));
+    assertFalse(trackerSameGuest('priyanka', 'anikita rajeshwari'));
+});
+
+test('sheet import: review, skip and future rows write nothing; the dry run rolls everything back', function (): void {
+    $before = (int)getDB()->query('SELECT COUNT(*) FROM bookings')->fetchColumn();
+    $r = trackerImport([
+        sheetRow(['key' => 'Jul-r1', 'status' => 'review', 'issues' => 'dates unreadable']),
+        sheetRow(['key' => 'Jul-r2', 'status' => 'skip']),
+        sheetRow(['key' => 'Jul-r3', 'check_in' => '2026-10-04', 'check_out' => '2026-10-07']),
+        sheetRow(['key' => 'Jul-r4', 'check_in' => '2018-07-20', 'check_out' => '2018-07-21']),
+    ], [['key' => 'exp-r4', 'status' => 'ok', 'issues' => '', 'spent_on' => '2018-07-01', 'category' => 'meat_fish', 'description' => 'chicken', 'amount' => '220.00']],
+        false, '2026-10-05');
+    assertSame(['review', 'skip', 'future', 'new'], array_map(fn($k) => $r['bookings'][$k][0]['action'], ['Jul-r1', 'Jul-r2', 'Jul-r3', 'Jul-r4']));
+    assertSame('new', $r['expenses']['exp-r4']['action']);
+    assertSame(22000, $r['summary'][2018]['months']['2018-07']['expenses'], 'the dry run reports what the import would produce');
+    assertSame($before, (int)getDB()->query('SELECT COUNT(*) FROM bookings')->fetchColumn(), 'and then writes nothing');
+    assertSame(0, (int)getDB()->query("SELECT COUNT(*) FROM farm_expenses WHERE import_ref = 'sheet:exp-r4'")->fetchColumn());
+    $applied = trackerImport([], [['key' => 'exp-r4', 'status' => 'ok', 'issues' => '', 'spent_on' => '2018-07-01', 'category' => 'meat_fish', 'description' => 'chicken', 'amount' => '220.00']], true, '2026-10-05');
+    assertSame('new', $applied['expenses']['exp-r4']['action']);
+    $again = trackerImport([], [['key' => 'exp-r4', 'status' => 'ok', 'issues' => '', 'spent_on' => '2018-07-01', 'category' => 'meat_fish', 'description' => 'chicken', 'amount' => '220.00']], true, '2026-10-05');
+    assertSame('done', $again['expenses']['exp-r4']['action']);
+});
+
+test('sheet import: money splits never lose a paisa', function (): void {
+    assertSame([3334, 3333, 3333], trackerSplit(10000, 3));
+    assertSame([0, 0], trackerSplit(0, 2));
+});
+
+test('roles: expenses are open to front desk, voiding and the summary are not, and the importer is CLI-only', function (): void {
+    assertTrue(userCan('expenses', ['role' => 'frontdesk']));
+    assertFalse(userCan('accounts', ['role' => 'frontdesk']));
+    $page = file_get_contents(dirname(__DIR__) . '/channel-manager/expenses.php');
+    assertContains("requirePermission('expenses')", $page);
+    assertContains("!userCan('accounts')", $page, 'voiding an expense needs accounts');
+    $pay = file_get_contents(dirname(__DIR__) . '/channel-manager/booking-payments.php');
+    assertContains("['refund', 'void', 'charge_void']", $pay, 'voiding a food charge needs the refund permission');
+    $imp = file_get_contents(dirname(__DIR__) . '/channel-manager/import-tracker.php');
+    assertContains("if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }", $imp);
+});
+
+
 runTests();

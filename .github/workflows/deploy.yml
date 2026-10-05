@@ -84,6 +84,7 @@ jobs:
             --exclude='._*' --exclude='**/._*' --exclude='.DS_Store' \
             --exclude='.gitignore' --exclude='.env.example' \
             --exclude='DEPLOYMENT.md' --exclude='README.md' --exclude='serve.ps1' \
+            --exclude='tools' --exclude='tools/**' \
             -e "ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.KFS_SSH_PORT }} -o StrictHostKeyChecking=yes -o BatchMode=yes" \
             ./ "${{ secrets.KFS_SSH_USER }}@${{ secrets.KFS_SSH_HOST }}:domains/kanchifarmstay.com/public_html/"
 

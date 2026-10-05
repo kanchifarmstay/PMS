@@ -230,6 +230,19 @@ function billDraftFromBooking(array $b): array {
     [$qty, $rate] = $amount % $nights === 0 ? [$nights, intdiv($amount, $nights)] : [1, $amount];
     $desc = 'Accommodation — ' . $b['room_name'] . ' (' . date('d M', strtotime($b['check_in']))
         . ' – ' . date('d M Y', strtotime($b['check_out'])) . ', ' . $nights . ' night' . ($nights === 1 ? '' : 's') . ')';
+    // Food & extras from charges-service.php, one line each. Those already paid count as paid.
+    $chargeItems = [];
+    $chargesPaid = 0;
+    if (!empty($b['id'])) {
+        $q = getDB()->prepare('SELECT kind, description, amount_paise, method FROM booking_charges WHERE booking_id = ? AND voided = 0 ORDER BY charged_on, id');
+        $q->execute([(int)$b['id']]);
+        foreach ($q->fetchAll() as $c) {
+            $preset = BILL_ITEM_PRESETS[$c['kind']] ?? BILL_ITEM_PRESETS['other'];
+            $chargeItems[] = ['desc' => $c['description'] !== '' ? $preset['label'] . ' — ' . $c['description'] : $preset['label'],
+                'sac' => $preset['sac'], 'qty' => 1, 'rate' => (int)$c['amount_paise'], 'gst' => $preset['gst']];
+            if ($c['method'] !== '') $chargesPaid += (int)$c['amount_paise'];
+        }
+    }
     return [
         'booking_id'   => (int)$b['id'],
         'invoice_date' => date('Y-m-d'),
@@ -247,11 +260,11 @@ function billDraftFromBooking(array $b): array {
             'ref'       => (string)($b['booking_ref'] ?? ''),
         ],
         'inclusive' => true,
-        'items' => $amount > 0 ? [[
+        'items' => array_merge($amount > 0 ? [[
             'desc' => $desc, 'sac' => '996311', 'qty' => $qty, 'rate' => $rate,
             'gst' => defaultRoomGstRate(intdiv($amount, $nights), true),
-        ]] : [],
-        'paid'           => rupeesToPaise($b['amount_paid'] ?? 0),
+        ]] : [], $chargeItems),
+        'paid'           => rupeesToPaise($b['amount_paid'] ?? 0) + $chargesPaid,
         'payment_method' => (string)($b['payment_method'] ?? ''),
         'notes'          => '',
     ];

@@ -370,6 +370,42 @@ function _initSchema(PDO $db): void {
             detail      TEXT DEFAULT '',
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Food and other extras on a stay (see charges-service.php). Separate
+        -- from bookings.amount, which stays the room tariff the ledger is
+        -- measured against. method '' = not collected yet. Voided, never deleted.
+        CREATE TABLE IF NOT EXISTS booking_charges (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            booking_id   INTEGER NOT NULL,
+            kind         TEXT NOT NULL DEFAULT 'food',
+            description  TEXT DEFAULT '',
+            amount_paise INTEGER NOT NULL,
+            charged_on   DATE NOT NULL,
+            method       TEXT DEFAULT '',
+            import_ref   TEXT DEFAULT '',
+            voided       INTEGER NOT NULL DEFAULT 0,
+            void_reason  TEXT DEFAULT '',
+            created_by   TEXT DEFAULT '',
+            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Money spent running the farm stay (groceries, gas, wages...). Not
+        -- `expenses`: live databases still carry an empty legacy table of that
+        -- name with other columns, from an older version of this app.
+        CREATE TABLE IF NOT EXISTS farm_expenses (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            spent_on     DATE NOT NULL,
+            category     TEXT NOT NULL,
+            description  TEXT DEFAULT '',
+            amount_paise INTEGER NOT NULL,
+            method       TEXT NOT NULL DEFAULT 'cash',
+            note         TEXT DEFAULT '',
+            import_ref   TEXT DEFAULT '',
+            voided       INTEGER NOT NULL DEFAULT 0,
+            void_reason  TEXT DEFAULT '',
+            created_by   TEXT DEFAULT '',
+            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     ");
 
     // Safe schema migrations for existing installs (SQLite ignores duplicates)
@@ -424,6 +460,11 @@ function _initSchema(PDO $db): void {
     $db->exec("CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_audit_log_login ON audit_log(action, username, created_at)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_payments_paid_on ON payments(paid_on)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_booking_charges_booking ON booking_charges(booking_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_farm_expenses_spent_on ON farm_expenses(spent_on)");
+    // The Google Sheet import may be re-run: one row per sheet reference, ever.
+    $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_charges_import ON booking_charges(import_ref) WHERE import_ref <> ''");
+    $db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_farm_expenses_import ON farm_expenses(import_ref) WHERE import_ref <> ''");
 
     $billMigrations = [
         // Last WhatsApp send of the invoice (UTC), who it went to, and the last error.
