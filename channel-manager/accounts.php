@@ -4,6 +4,7 @@
  *
  *   accounts.php?view=collections&from=&to=[&kind=refund]   money in/out by method
  *   accounts.php?view=gst&month=YYYY-MM                     invoices + tax by rate
+ *   accounts.php?view=summary&year=YYYY                     revenue, food, expenses, profit by month
  *   &export=csv on either view                              the same rows for the accountant
  *
  * Read-only. The numbers come from accounts-service.php.
@@ -12,6 +13,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/accounts-service.php';
+require_once __DIR__ . '/charges-service.php';
 require_once __DIR__ . '/wa-templates.php';
 
 startSecureSession();
@@ -23,7 +25,8 @@ function ah(mixed $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 
 function arupee(int $paise): string { return fmtPaise($paise); }
 
 acctBackfillOpeningBalances();
-$view = ($_GET['view'] ?? 'collections') === 'gst' ? 'gst' : 'collections';
+$view = in_array($_GET['view'] ?? '', ['gst', 'summary'], true) ? (string)$_GET['view'] : 'collections';
+$year = preg_match('/^20\d{2}$/', (string)($_GET['year'] ?? '')) ? (int)$_GET['year'] : (int)date('Y');
 $isDate = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) === 1;
 $from = $isDate($_GET['from'] ?? '') ? (string)$_GET['from'] : date('Y-m-01');
 $to = $isDate($_GET['to'] ?? '') ? (string)$_GET['to'] : date('Y-m-d');
@@ -47,6 +50,20 @@ if ($view === 'collections') {
         }
         exit;
     }
+} elseif ($view === 'summary') {
+    $s = monthlySummary($year);
+    if ($csv) {
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="monthly-summary-' . $year . '.csv"');
+        $out = fopen('php://output', 'w');
+        $r2 = fn(int $p) => number_format($p / 100, 2, '.', '');
+        fputcsv($out, ['Month', 'Bookings', 'Room revenue', 'Room received', 'Room pending', 'Food & extras', 'Food not yet paid', 'Total revenue', 'Expenses', 'Net profit', 'Margin %']);
+        foreach ($s['months'] + ['Total' => $s['total']] as $ym => $m) {
+            fputcsv($out, [$ym, $m['bookings'], $r2($m['room']), $r2($m['received']), $r2($m['pending']), $r2($m['food']), $r2($m['food_unpaid']),
+                $r2($m['revenue']), $r2($m['expenses']), $r2($m['net']), $m['margin'] === null ? '' : number_format($m['margin'] * 100, 1)]);
+        }
+        exit;
+    }
 } else {
     $g = acctGstReport($month);
     if ($csv) {
@@ -63,7 +80,7 @@ if ($view === 'collections') {
         exit;
     }
 }
-$qs = fn(array $over) => 'accounts.php?' . http_build_query(array_filter(array_merge(['view' => $view, 'from' => $from, 'to' => $to, 'kind' => $kind, 'month' => $month], $over), fn($v) => $v !== '' && $v !== null));
+$qs = fn(array $over) => 'accounts.php?' . http_build_query(array_filter(array_merge(['view' => $view, 'from' => $from, 'to' => $to, 'kind' => $kind, 'month' => $month, 'year' => $view === 'summary' ? $year : ''], $over), fn($v) => $v !== '' && $v !== null));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -112,6 +129,8 @@ $qs = fn(array $over) => 'accounts.php?' . http_build_query(array_filter(array_m
   <div class="tabs">
     <a class="btn tab <?= $view === 'collections' ? 'on' : '' ?>" href="accounts.php?view=collections">Collections &amp; refunds</a>
     <a class="btn tab <?= $view === 'gst' ? 'on' : '' ?>" href="accounts.php?view=gst">GST report</a>
+    <a class="btn tab <?= $view === 'summary' ? 'on' : '' ?>" href="accounts.php?view=summary">Monthly summary</a>
+    <a class="btn" href="expenses.php">🧺 Expenses</a>
   </div>
 
 <?php if ($view === 'collections'): ?>
@@ -153,6 +172,62 @@ $qs = fn(array $over) => 'accounts.php?' . http_build_query(array_filter(array_m
     </table>
     </div>
     <p class="note">Voided entries are excluded. “Collected by OTA” is money the platform took and pays out to you, not cash in hand.</p>
+  </div>
+
+<?php elseif ($view === 'summary'): $t = $s['total']; $pct = fn($m) => $m === null ? '—' : number_format($m * 100, 1) . '%'; ?>
+  <div class="card">
+    <form class="filters" method="GET">
+      <input type="hidden" name="view" value="summary">
+      <div><label>Year</label><select name="year"><?php for ($yy = (int)date('Y'); $yy >= 2025; $yy--): ?><option <?= $yy === $year ? 'selected' : '' ?>><?= $yy ?></option><?php endfor; ?></select></div>
+      <div><button class="btn btn-primary" type="submit">Show</button></div>
+      <div><a class="btn" href="<?= ah($qs(['export' => 'csv'])) ?>">⬇ CSV</a></div>
+    </form>
+  </div>
+  <div class="stats">
+    <div class="stat"><b><?= ah(arupee($t['revenue'])) ?></b><span>Total revenue (room + food)</span></div>
+    <div class="stat"><b><?= ah(arupee($t['food'])) ?></b><span>Food &amp; extras</span></div>
+    <div class="stat <?= $t['pending'] + $t['food_unpaid'] > 0 ? 'neg' : '' ?>"><b><?= ah(arupee($t['pending'] + $t['food_unpaid'])) ?></b><span>Still to collect</span></div>
+    <div class="stat"><b><?= ah(arupee($t['expenses'])) ?></b><span>Expenses</span></div>
+    <div class="stat <?= $t['net'] < 0 ? 'neg' : '' ?>"><b><?= ah(arupee($t['net'])) ?></b><span>Net profit · <?= ah($pct($t['margin'])) ?> margin</span></div>
+  </div>
+  <div class="card">
+    <h2><?= (int)$year ?> by month</h2>
+    <div class="tbl">
+    <table>
+      <thead><tr><th>Month</th><th class="num">Bookings</th><th class="num">Room revenue</th><th class="num">Pending</th><th class="num">Food &amp; extras</th><th class="num">Total revenue</th><th class="num">Expenses</th><th class="num">Net profit</th><th class="num">Margin</th></tr></thead>
+      <tbody>
+      <?php foreach ($s['months'] as $ym => $m): if ($ym > date('Y-m') && $m['bookings'] === 0) continue; ?>
+        <tr>
+          <td><?= ah(date('M Y', strtotime($ym . '-01'))) ?></td>
+          <td class="num"><?= (int)$m['bookings'] ?></td>
+          <td class="num"><?= ah(arupee($m['room'])) ?></td>
+          <td class="num" style="<?= $m['pending'] > 0 ? 'color:#92400e' : '' ?>"><?= ah(arupee($m['pending'])) ?></td>
+          <td class="num"><?= ah(arupee($m['food'])) ?></td>
+          <td class="num"><?= ah(arupee($m['revenue'])) ?></td>
+          <td class="num"><?= ah(arupee($m['expenses'])) ?></td>
+          <td class="num" style="<?= $m['net'] < 0 ? 'color:#b91c1c' : '' ?>"><?= ah(arupee($m['net'])) ?></td>
+          <td class="num"><?= ah($pct($m['margin'])) ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+      <tfoot><tr><td>Total</td><td class="num"><?= (int)$t['bookings'] ?></td><td class="num"><?= ah(arupee($t['room'])) ?></td><td class="num"><?= ah(arupee($t['pending'])) ?></td><td class="num"><?= ah(arupee($t['food'])) ?></td><td class="num"><?= ah(arupee($t['revenue'])) ?></td><td class="num"><?= ah(arupee($t['expenses'])) ?></td><td class="num"><?= ah(arupee($t['net'])) ?></td><td class="num"><?= ah($pct($t['margin'])) ?></td></tr></tfoot>
+    </table>
+    </div>
+    <p class="note">Room revenue and pending are counted in the month of check-in; food on the day it was charged; expenses on the day they were spent. Cancelled bookings and blocked dates are left out.</p>
+  </div>
+  <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+    <div class="card"><h2>By source</h2><div class="tbl"><table><tbody>
+      <?php foreach ($s['by_source'] as $src => $r): ?><tr><td><?= ah(waSourceLabel($src)) ?></td><td class="num"><?= (int)$r['bookings'] ?></td><td class="num"><?= ah(arupee($r['room'])) ?></td></tr><?php endforeach; ?>
+      <?php if (!$s['by_source']): ?><tr><td class="muted">No bookings.</td></tr><?php endif; ?>
+    </tbody></table></div></div>
+    <div class="card"><h2>By room</h2><div class="tbl"><table><tbody>
+      <?php foreach ($s['by_room'] as $r): ?><tr><td><?= ah($r['name']) ?></td><td class="num"><?= (int)$r['bookings'] ?></td><td class="num"><?= ah(arupee($r['room'])) ?></td></tr><?php endforeach; ?>
+      <?php if (!$s['by_room']): ?><tr><td class="muted">No bookings.</td></tr><?php endif; ?>
+    </tbody></table></div></div>
+    <div class="card"><h2>Expenses by category</h2><div class="tbl"><table><tbody>
+      <?php foreach ($s['by_category'] as $cat => $amt): ?><tr><td><?= ah(EXPENSE_CATEGORIES[$cat] ?? $cat) ?></td><td class="num"><?= ah(arupee($amt)) ?></td></tr><?php endforeach; ?>
+      <?php if (!$s['by_category']): ?><tr><td class="muted">No expenses recorded.</td></tr><?php endif; ?>
+    </tbody></table></div></div>
   </div>
 
 <?php else: $t = $g['totals']; ?>

@@ -1372,6 +1372,7 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
       'bills'     => ['🧾', 'Bills / GST Invoice', 'bill.php', 0],
       'wa_logs'   => ['📜', 'WhatsApp Logs',     'whatsapp-logs.php', 0],
       'backups'   => ['🗄️', 'Backups',           'backups.php', 0],
+      'expenses'  => ['🧺', 'Expenses',          'expenses.php', 0],
       'accounts'  => ['📒', 'Accounts & GST',    'accounts.php', 0],
       'analytics' => ['📈', 'Analytics',         'admin.php?section=analytics', 0],
       'channels'  => ['🔗', 'Channels',          'admin.php?section=channels', 0],
@@ -1379,7 +1380,7 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
     ];
     $navPermission = ['blocked' => 'bookings.edit', 'demand' => 'settings', 'wa_inbox' => 'whatsapp', 'pricing' => 'settings',
         'analytics' => 'settings', 'channels' => 'settings', 'export' => 'settings', 'bills' => 'bills', 'wa_logs' => 'whatsapp',
-        'backups' => 'backups', 'accounts' => 'accounts', 'frontdesk' => 'frontdesk'];
+        'backups' => 'backups', 'accounts' => 'accounts', 'expenses' => 'expenses', 'frontdesk' => 'frontdesk'];
     $navItems['audit'] = ['🕵️', 'Change history', 'audit.php', 0];
     $navItems['staff'] = ['👥', 'Staff & roles', 'staff.php', 0];
     $navPermission += ['audit' => 'audit', 'staff' => 'staff'];

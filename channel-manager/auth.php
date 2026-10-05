@@ -6,7 +6,7 @@
  *   owner      everything, including staff accounts
  *   manager    everything except staff accounts
  *   frontdesk  bookings (view/add/edit), Front Desk, bills, WhatsApp, taking
- *              payments - no deletes, refunds, voids, accounts, backups,
+ *              payments, adding expenses - no deletes, refunds, voids, accounts, backups,
  *              pricing, channels, analytics or staff
  *
  * The KFS_ADMIN_PASSWORD_HASH login keeps working as a built-in owner
@@ -24,8 +24,8 @@ const KFS_ROLES = ['owner' => 'Owner', 'manager' => 'Manager', 'frontdesk' => 'F
 const KFS_PERMISSIONS = [
     'owner'     => ['*'],
     'manager'   => ['bookings.view', 'bookings.edit', 'bookings.delete', 'frontdesk', 'bills', 'whatsapp', 'payments.add',
-                    'payments.refund', 'accounts', 'backups', 'audit', 'settings'],
-    'frontdesk' => ['bookings.view', 'bookings.edit', 'frontdesk', 'bills', 'whatsapp', 'payments.add'],
+                    'payments.refund', 'accounts', 'expenses', 'backups', 'audit', 'settings'],
+    'frontdesk' => ['bookings.view', 'bookings.edit', 'frontdesk', 'bills', 'whatsapp', 'payments.add', 'expenses'],
 ];
 const KFS_LOGIN_MAX_FAILURES = 5;
 const KFS_LOGIN_WINDOW_MINUTES = 15;
