@@ -1070,6 +1070,31 @@ table.tbl { width:100%; border-collapse:collapse; font-size:.85rem; }
 .pay-paid   { background:#dcfce7; color:#166534; }
 .pay-partial{ background:#fef9c3; color:#854d0e; }
 .pay-unpaid { background:#fee2e2; color:#991b1b; }
+/* Bookings: All / To collect switch, and the date-wise collection view */
+.view-tabs { display:flex; gap:.35rem; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.view-tabs a { padding:.5rem .9rem; font-size:.84rem; font-weight:600; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; text-decoration:none; }
+.view-tabs a.active { color:var(--primary-dark); border-bottom-color:var(--primary); }
+.collect-summary { font-size:.9rem; padding:.6rem .85rem; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; }
+.collect-summary strong { font-size:1.05rem; color:#9a3412; }
+.collect-day td { background:#f0faf3; font-weight:700; font-size:.84rem; color:var(--primary-dark); }
+.collect-day td span { margin-left:.4rem; font-weight:600; color:var(--text-muted); }
+.collect-tbl th, .collect-tbl td { padding:.55rem .7rem; }
+.collect-due { font-weight:800; color:#9a3412; white-space:nowrap; }
+.collect-overdue { margin:.75rem 1.35rem 1rem; border:1px solid #fecaca; border-radius:8px; }
+@media (max-width:768px) {
+  /* Phone: one card per stay instead of a sideways-scrolling table */
+  table.collect-tbl { min-width:0; }
+  .collect-tbl thead { display:none; }
+  .collect-tbl tr:not(.collect-day) { display:grid; grid-template-columns:1fr 1fr; gap:.45rem .9rem; padding:.75rem .9rem; border-bottom:1px solid var(--border); }
+  .collect-tbl td { display:block; padding:0; border:none; white-space:normal !important; }
+  .collect-tbl td[data-label]::before { content:attr(data-label); display:block; font-size:.64rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
+  .collect-tbl .collect-due { font-size:1.05rem; }
+  .collect-tbl .collect-act { grid-column:1 / -1; }
+  .collect-tbl .collect-act .btn-primary { flex:1; }
+  .collect-day td { display:block; padding:.55rem .9rem; }
+  .collect-overdue { margin:.75rem .6rem 1rem; }
+}
+.collect-overdue summary { cursor:pointer; padding:.6rem .85rem; font-weight:700; font-size:.86rem; color:#991b1b; background:#fef2f2; border-radius:8px; }
 .balance-cell { font-size:.78rem; color:#e65100; font-weight:700; }
 .pdf-link { display:inline-flex; align-items:center; gap:.25rem; font-size:.75rem; color:var(--primary); border:1px solid var(--primary); border-radius:5px; padding:.15rem .5rem; white-space:nowrap; }
 .pdf-link:hover { background:var(--primary); color:#fff; }
@@ -3116,8 +3141,123 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
   </div>
 </div>
 
+<?php
+  $bview = ($_GET['bview'] ?? '') === 'collect' ? 'collect' : 'all';
+  // Food charges per booking (booking_charges, kind 'food'), in one query rather than one per row.
+  $foodBills = [];
+  foreach (getDB()->query("SELECT booking_id, SUM(amount_paise) AS total, SUM(CASE WHEN method = '' THEN amount_paise ELSE 0 END) AS unpaid
+      FROM booking_charges WHERE kind = 'food' AND voided = 0 GROUP BY booking_id") as $fr) {
+      $foodBills[(int)$fr['booking_id']] = ['total' => (int)$fr['total'] / 100, 'unpaid' => (int)$fr['unpaid'] / 100];
+  }
+?>
 <div class="panel">
   <div class="panel-hd"><h3>📋 All Bookings</h3><span class="sub">Excludes blocked dates — <a href="admin.php?section=blocked" style="color:var(--primary)">manage blocks →</a></span></div>
+  <div class="panel-bd" style="padding-bottom:0">
+    <div class="view-tabs">
+      <a href="admin.php?section=bookings" class="<?= $bview === 'all' ? 'active' : '' ?>">📋 All bookings</a>
+      <a href="admin.php?section=bookings&amp;bview=collect" class="<?= $bview === 'collect' ? 'active' : '' ?>">💰 To collect (date-wise)</a>
+    </div>
+  </div>
+<?php if ($bview === 'collect'):
+  // Front-desk view: what each stay still owes (room balance + food not yet paid), grouped by check-in day.
+  $today  = date('Y-m-d');
+  $isDate = fn($v) => is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && strtotime($v) !== false;
+  $cFrom  = $isDate($_GET['from'] ?? null) ? $_GET['from'] : $today;
+  $cTo    = $isDate($_GET['to'] ?? null) ? $_GET['to'] : date('Y-m-d', strtotime($cFrom . ' +7 days'));
+  if ($cTo < $cFrom) $cTo = $cFrom;
+  $otaSources = ['airbnb', 'booking.com', 'agoda', 'makemytrip'];
+  $cGroups = []; $cOverdue = [];
+  foreach ($allBookings as $b) {
+      if ($b['source'] === 'blocked' || $b['status'] !== 'confirmed') continue;
+      $roomDue = max(0, (float)($b['amount'] ?? 0) - (float)($b['amount_paid'] ?? 0));
+      $foodDue = $foodBills[(int)$b['id']]['unpaid'] ?? 0;
+      if ($roomDue + $foodDue <= 0) continue;
+      $row = ['b' => $b, 'room' => $roomDue, 'food' => $foodDue, 'due' => $roomDue + $foodDue];
+      if ($b['check_out'] < $today) { $cOverdue[] = $row; continue; }          // gone, still owing
+      if ($b['check_in'] > $cTo || $b['check_out'] < $cFrom) continue;         // outside the range
+      $cGroups[$b['check_in'] < $cFrom ? '0' : $b['check_in']][] = $row;       // '0' = arrived earlier, still here
+  }
+  ksort($cGroups);
+  usort($cOverdue, fn($x, $y) => strcmp($y['b']['check_out'], $x['b']['check_out']));
+  $sumDue  = fn(array $rows) => array_sum(array_column($rows, 'due'));
+  $cTotal  = array_sum(array_map($sumDue, $cGroups));
+  $cCount  = array_sum(array_map('count', $cGroups));
+  $dayName = function (string $d) use ($today): string {
+      if ($d === $today) return 'Today · ' . date('D j M', strtotime($d));
+      if ($d === date('Y-m-d', strtotime($today . ' +1 day'))) return 'Tomorrow · ' . date('D j M', strtotime($d));
+      return date('D j M Y', strtotime($d));
+  };
+  $rangeUrl = fn(string $f, string $t) => 'admin.php?section=bookings&amp;bview=collect&amp;from=' . $f . '&amp;to=' . $t;
+  $collectRow = function (array $r) use ($otaSources) {
+      $b = $r['b']; $waNum = $b['whatsapp_number'] ?: $b['guest_phone']; ?>
+        <tr>
+          <td data-label="Property" style="font-weight:600"><?= htmlspecialchars($b['room_name']) ?></td>
+          <td data-label="Guest">
+            <div style="font-weight:600;cursor:pointer;color:var(--primary-dark)" onclick="showBookingModal(<?= bookingJson($b) ?>)" title="View booking details"><?= htmlspecialchars($b['guest_name']) ?></div>
+            <?php if ($b['guest_phone']): ?><div class="muted" style="font-size:.76rem"><?= htmlspecialchars($b['guest_phone']) ?></div><?php endif; ?>
+          </td>
+          <td data-label="Stay" style="white-space:nowrap">
+            <?= date('j M', strtotime($b['check_in'])) ?> → <?= date('j M', strtotime($b['check_out'])) ?>
+            <div class="muted" style="font-size:.72rem"><?= nights($b['check_in'], $b['check_out']) ?> nt · <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $b['stay_status'] ?? 'expected'))) ?></div>
+          </td>
+          <td data-label="Source"><?= badge($b['source']) ?><?php if ($r['room'] > 0 && in_array($b['source'], $otaSources, true)): ?><div class="muted" style="font-size:.7rem">Check if <?= htmlspecialchars(sourceName($b['source'])) ?> collected it</div><?php endif; ?></td>
+          <td data-label="Room balance"><?= $r['room'] > 0 ? fmt($r['room']) . '<div class="muted" style="font-size:.7rem">of ' . fmt((float)$b['amount']) . '</div>' : '<span class="muted">—</span>' ?></td>
+          <td data-label="Food unpaid"><?= $r['food'] > 0 ? fmt($r['food']) : '<span class="muted">—</span>' ?></td>
+          <td data-label="To collect" class="collect-due"><?= fmt($r['due']) ?></td>
+          <td class="collect-act" style="white-space:nowrap">
+            <a href="booking-payments.php?id=<?= (int)$b['id'] ?>" class="btn btn-sm btn-primary" title="Record a payment or mark food paid">💰 Collect</a>
+            <?php if ($waNum): ?><a href="https://wa.me/<?= preg_replace('/\D/', '', $waNum) ?>" target="_blank" class="btn btn-sm btn-grey" title="Open WhatsApp chat">💬</a><?php endif; ?>
+          </td>
+        </tr>
+  <?php };
+?>
+  <div class="panel-bd" style="padding-bottom:.5rem">
+    <form method="GET" class="search-bar" style="margin-bottom:.6rem">
+      <input type="hidden" name="section" value="bookings"><input type="hidden" name="bview" value="collect">
+      <label class="muted" style="font-size:.8rem">From <input type="date" name="from" value="<?= htmlspecialchars($cFrom) ?>" style="min-width:0"></label>
+      <label class="muted" style="font-size:.8rem">To <input type="date" name="to" value="<?= htmlspecialchars($cTo) ?>" style="min-width:0"></label>
+      <button type="submit" class="btn btn-sm btn-primary">Show</button>
+      <a href="<?= $rangeUrl($today, $today) ?>" class="btn btn-sm btn-grey">Today</a>
+      <a href="<?= $rangeUrl($today, date('Y-m-d', strtotime($today . ' +7 days'))) ?>" class="btn btn-sm btn-grey">Next 7 days</a>
+      <a href="<?= $rangeUrl($today, date('Y-m-d', strtotime($today . ' +30 days'))) ?>" class="btn btn-sm btn-grey">Next 30 days</a>
+    </form>
+    <div class="collect-summary">
+      <strong><?= fmt($cTotal) ?></strong> to collect from <?= $cCount ?> stay<?= $cCount === 1 ? '' : 's' ?>, <?= date('j M', strtotime($cFrom)) ?> – <?= date('j M', strtotime($cTo)) ?>
+      <?php if ($cOverdue): ?> · <a href="#collect-overdue" style="color:#991b1b;font-weight:600"><?= fmt($sumDue($cOverdue)) ?> still owed by <?= count($cOverdue) ?> checked-out guest<?= count($cOverdue) === 1 ? '' : 's' ?></a><?php endif; ?>
+      <div class="muted" style="font-size:.74rem;margin-top:.2rem">To collect = room balance + food not yet paid. Paid stays are hidden.</div>
+    </div>
+  </div>
+  <div class="tbl-wrap">
+    <table class="tbl collect-tbl">
+      <thead>
+        <tr><th>Property</th><th>Guest</th><th>Stay</th><th>Source</th><th>Room balance</th><th>Food unpaid</th><th>To collect</th><th></th></tr>
+      </thead>
+      <tbody>
+        <?php if (!$cGroups): ?>
+        <tr><td colspan="8" class="muted" style="text-align:center;padding:1.5rem">Nothing to collect for these dates. 🎉</td></tr>
+        <?php endif; ?>
+        <?php foreach ($cGroups as $day => $rows): ?>
+        <tr class="collect-day"><td colspan="8">
+          <?= $day === '0' ? 'Arrived before ' . date('j M', strtotime($cFrom)) . ' · still staying' : $dayName($day) ?>
+          <span>· <?= count($rows) ?> stay<?= count($rows) === 1 ? '' : 's' ?> · <?= fmt($sumDue($rows)) ?></span>
+        </td></tr>
+        <?php foreach ($rows as $r) $collectRow($r); ?>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+  <?php if ($cOverdue): ?>
+  <details id="collect-overdue" class="collect-overdue">
+    <summary>⚠️ Checked out, still owing — <?= count($cOverdue) ?> stay<?= count($cOverdue) === 1 ? '' : 's' ?> · <?= fmt($sumDue($cOverdue)) ?></summary>
+    <div class="tbl-wrap">
+      <table class="tbl collect-tbl">
+        <thead><tr><th>Property</th><th>Guest</th><th>Stay</th><th>Source</th><th>Room balance</th><th>Food unpaid</th><th>To collect</th><th></th></tr></thead>
+        <tbody><?php foreach ($cOverdue as $r) $collectRow($r); ?></tbody>
+      </table>
+    </div>
+  </details>
+  <?php endif; ?>
+<?php else: ?>
   <div class="panel-bd" style="padding-bottom:.5rem">
     <div class="search-bar">
       <input type="text" id="searchQ" placeholder="Search guest, room, ref…" oninput="filterBookings()">
@@ -3143,7 +3283,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
   <div class="tbl-wrap">
     <table class="tbl" id="bookingsTable">
       <thead>
-        <tr><th>#</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Nts</th><th>Guest</th><th>Source</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>#</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Nts</th><th>Guest</th><th>Source</th><th>Total</th><th>Paid</th><th>Balance</th><th>Food bill</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         <?php foreach (array_filter($allBookings, fn($b) => $b['source'] !== 'blocked') as $b):
@@ -3179,6 +3319,12 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
             <span class="pay-pill pay-<?= $pstatus ?>"><?= $pstatus === 'paid' ? '✓ Paid' : ($pstatus === 'partial' ? '½ ' . fmt($bBalance) . ' due' : 'Unpaid') ?></span>
             <?php else: ?><span class="muted">—</span><?php endif; ?>
           </td>
+          <td>
+            <?php $food = $foodBills[(int)$b['id']] ?? null; if ($food): ?>
+            <a href="booking-payments.php?id=<?= (int)$b['id'] ?>#food" style="color:inherit" title="Food charges on this stay"><?= fmt($food['total']) ?></a>
+            <?php if ($food['unpaid'] > 0): ?><div class="muted" style="font-size:.72rem;color:#92400e"><?= fmt($food['unpaid']) ?> unpaid</div><?php endif; ?>
+            <?php else: ?><span class="muted">—</span><?php endif; ?>
+          </td>
           <td><span class="status-<?= $b['status'] ?>"><?= ucfirst($b['status']) ?></span></td>
           <td style="white-space:nowrap">
             <button type="button" class="btn btn-sm btn-primary" onclick="openEditBookingModal(<?= $bJson ?>)" title="Edit Booking / Change Dates">✏️ Edit</button>
@@ -3209,6 +3355,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
       </tbody>
     </table>
   </div>
+<?php endif; ?>
 </div>
 
 <!-- ══════════════════════════════════════════════
