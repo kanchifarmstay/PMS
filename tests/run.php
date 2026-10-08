@@ -2916,4 +2916,120 @@ test('roles: expenses are open to front desk, voiding and the summary are not, a
 });
 
 
+// ── GST return (GSTR-1 / GSTR-3B figures) ──
+require_once dirname(__DIR__) . '/channel-manager/gst-return-service.php';
+
+test('gst return: periods, FY quarters and the quarter a date falls in', function (): void {
+    setSetting('gst_registered_from', '2000-01-01');   // these tests run in 2015; the real date is checked below
+    assertSame(['2015-07-01', '2015-09-30', ['2015-07', '2015-08', '2015-09']], array_values(array_slice(gstPeriod('2015-07:3'), 0, 2)) + [2 => gstPeriod('2015-07:3')['months']]);
+    assertSame('Jul–Sep 2015 (Q2 FY 2015-16)', gstPeriod('2015-07:3')['label']);
+    assertSame(['2015-02-01', '2015-02-28'], [gstPeriod('2015-02')['from'], gstPeriod('2015-02')['to']]);
+    assertSame([1, 2, 3, 4], [gstFyQuarter('2026-04-01'), gstFyQuarter('2026-09-30'), gstFyQuarter('2026-12-31'), gstFyQuarter('2027-03-01')]);
+    assertSame('2026-10:3', gstQuarterSpec('2026-11-15'));
+    assertSame('2027-01:3', gstQuarterSpec('2027-03-31'));
+    $threw = false;
+    try { gstPeriod('2015-13'); } catch (InvalidArgumentException $e) { $threw = true; }
+    assertTrue($threw, 'month 13 is refused');
+});
+
+test('gst return: stays at check-out, food on its date, 18% over Rs 7,500, OTA in table 14, bills replace their booking', function (): void {
+    $a = pastBooking(['check_in' => '2015-07-30', 'check_out' => '2015-08-01', 'amount' => 6300]);       // 3,150 a night -> 5%
+    chargeAdd((int)$a['id'], 'food', 'lunch', 1050, '2015-08-01', '');
+    $b = pastBooking(['check_in' => '2015-08-04', 'check_out' => '2015-08-05', 'amount' => 10500, 'source' => 'airbnb']); // 10,000 pre-tax -> 18%
+    pastBooking(['check_in' => '2015-08-05', 'check_out' => '2015-08-06', 'amount' => 5000, 'status' => 'cancelled']);
+    $zero = pastBooking(['check_in' => '2015-08-06', 'check_out' => '2015-08-07', 'amount' => 0]);
+    $c = pastBooking(['check_in' => '2015-08-08', 'check_out' => '2015-08-09', 'amount' => 99999]);  // replaced by its bill
+    saveBill(sampleBill(['booking_id' => (int)$c['id'], 'invoice_date' => '2015-08-10', 'guest' => ['gstin' => '29ABCDE1234F1Z5']]));
+    saveBill(sampleBill(['invoice_date' => '2015-08-11']));   // unlinked B2C copy: listed in table 13, not counted twice
+
+    $r = gstReturn('2015-07:3');
+    assertSame(0, $r['by_month']['2015-07']['taxable'], 'a stay counts in its check-out month, not check-in');
+    assertSame(600000 + 100000 + 889831 + 857143, $r['total']['taxable']);
+    assertSame($r['total']['cgst'] + $r['total']['sgst'], $r['total']['tax']);
+    $b2cs = array_column($r['b2cs'], null, 'gst');
+    assertSame([700000, 17500, 17500], [$b2cs[5]['taxable'], $b2cs[5]['cgst'], $b2cs[5]['sgst']]);
+    assertSame([889831, 80084, 80085], [$b2cs[18]['taxable'], $b2cs[18]['cgst'], $b2cs[18]['sgst']]);
+    assertSame(1, count($r['b2b']));
+    assertSame(['29ABCDE1234F1Z5', 857143, 21428, 21429], [$r['b2b'][0]['gstin'], $r['b2b'][0]['taxable'], $r['b2b'][0]['cgst'], $r['b2b'][0]['sgst']]);
+    assertSame([['airbnb', 1, 889831]], array_map(fn($e) => [$e['key'], $e['count'], $e['taxable']], $r['eco']));
+    $hsn = array_map(fn($h) => $h['sac'] . '@' . $h['gst'], $r['hsn']['b2c']);
+    assertSame(['996311@18', '996311@5', '996331@5'], $hsn);
+    assertSame([2, 0], [$r['docs']['total'], $r['docs']['cancelled']]);
+    assertSame(3, $r['stays'], 'a, b and the billed stay; the zero-amount and cancelled ones are not supplies');
+    $why = array_map(fn($x) => $x['booking_id'] . ':' . strtok($x['why'], ' '), $r['checks']);
+    assertTrue(in_array($b['id'] . ':Taxed', $why, true), '18% stay is flagged');
+    assertTrue(in_array('0:each', $why, true), 'OTA stays are flagged, once per OTA, to check gross vs payout');
+    assertTrue(in_array($zero['id'] . ':No', $why, true), 'zero-amount stay is flagged');
+    assertSame(3, count($r['checks']));
+    $sum = array_sum(array_map(fn($m) => $m['taxable'], $r['by_month']));
+    assertSame($r['total']['taxable'], $sum, 'months add up to the period');
+
+    // Amounts entered before GST: the amount IS the taxable value, and tax goes on top.
+    $ex = array_column(gstReturn('2015-08', false)['b2cs'], null, 'gst');
+    assertSame([630000 + 105000, 15750 + 2625], [$ex[5]['taxable'], $ex[5]['cgst']]);
+    assertSame([1050000, 94500], [$ex[18]['taxable'], $ex[18]['cgst']]);
+});
+
+test('gst return: an unlinked B2B bill is counted and flagged; OTA GSTINs validate', function (): void {
+    saveBill(sampleBill(['invoice_date' => '2015-11-03', 'guest' => ['gstin' => '33ABCDE1234F1Z5']]));
+    $r = gstReturn('2015-11');
+    assertSame(1, count($r['b2b']));
+    assertSame(1, count($r['checks']));
+    assertContains('not linked to a booking', $r['checks'][0]['why']);
+    saveGstEcoGstins(['airbnb' => '33aaacz1234a1zq', 'agoda' => '']);
+    assertSame('33AAACZ1234A1ZQ', gstEcoGstins()['airbnb']);
+    $threw = false;
+    try { saveGstEcoGstins(['airbnb' => 'NOT-A-GSTIN']); } catch (InvalidArgumentException $e) { $threw = true; }
+    assertTrue($threw);
+    assertSame('33AAACZ1234A1ZQ', gstEcoGstins()['airbnb'], 'a refused save changes nothing');
+    $page = file_get_contents(dirname(__DIR__) . '/channel-manager/accounts.php');
+    assertContains("requirePermission('accounts')", $page);
+    assertContains('requireValidCsrfToken', $page);
+});
+
+
+test('gst return: nothing before the registration date counts; an earlier bill showing GST is flagged', function (): void {
+    pastBooking(['check_in' => '2014-03-01', 'check_out' => '2014-03-02', 'amount' => 2100]);   // before registration
+    pastBooking(['check_in' => '2014-03-10', 'check_out' => '2014-03-12', 'amount' => 4200]);   // in-house across the date: invoiced at check-out, counts
+    saveBill(sampleBill(['invoice_date' => '2014-03-05']));                                      // shows 5% GST, before registration
+    setSetting('gst_registered_from', '2014-03-11');
+    try {
+        $r = gstReturn('2014-03');
+        assertSame(['2014-03-11', '2014-03-11'], [$r['registered_from'], $r['from']]);
+        assertSame(400000, $r['total']['taxable'], 'only the stay checking out on or after the date');
+        assertSame(0, $r['docs']['total'], 'the earlier bill is not in table 13');
+        assertSame(1, count($r['checks']));
+        assertContains('dated before your registration', $r['checks'][0]['why']);
+        assertSame(400000, gstReturn('2014-01:3')['total']['taxable'], 'the quarter holds the same post-registration stay');
+        assertSame(0, gstReturn('2013-10:3')['total']['taxable'], 'a quarter wholly before registration has nothing in it');
+        $threw = false;
+        try { saveGstRegisteredFrom('2999-01-01'); } catch (InvalidArgumentException $e) { $threw = true; }
+        assertTrue($threw, 'a future date is refused');
+        assertSame('2026-09-23', GST_REGISTERED_FROM_DEFAULT);
+        setSetting('gst_registered_from', '2000-01-01');
+        $soon = date('Y-m-d', strtotime('+3 days'));
+        pastBooking(['check_in' => date('Y-m-d', strtotime('+2 days')), 'check_out' => $soon, 'amount' => 1050, 'room_id' => 'tent', 'room_name' => 'Tent']);
+        $now = gstReturn(substr($soon, 0, 7));
+        assertSame(date('Y-m-d'), min($now['to'], date('Y-m-d')));
+        assertFalse(in_array($soon, array_column($now['lines'], 'date'), true), 'a stay that has not checked out yet is not in the return');
+    } finally {
+        setSetting('gst_registered_from', '2000-01-01');
+    }
+});
+
+test('gst: a group booking is several villas each under Rs 7,500, so 5% however large the total', function (): void {
+    setSetting('gst_registered_from', '2000-01-01');
+    $g = pastBooking(['check_in' => '2014-06-01', 'check_out' => '2014-06-02', 'amount' => 21200,
+        'room_id' => GROUP_INVENTORY_ID, 'room_name' => 'KanchiFarmStay (Group Booking)']);
+    $one = pastBooking(['check_in' => '2014-06-03', 'check_out' => '2014-06-04', 'amount' => 21200]);
+    assertSame(5, bookingRoomGstRate($g, 2120000, true));
+    assertSame(18, bookingRoomGstRate($one, 2120000, true), 'a single unit over the ceiling is still 18%');
+    assertSame(5, billDraftFromBooking($g)['items'][0]['gst'], 'the bill page agrees with the return');
+    $r = gstReturn('2014-06');
+    assertSame([5, 18], array_column($r['b2cs'], 'gst'));
+    assertSame(2019048, array_column($r['b2cs'], null, 'gst')[5]['taxable']);
+    $why = implode(' ', array_column($r['checks'], 'why'));
+    assertSame(1, substr_count($why, 'Taxed at 18%'), 'only the single-unit booking is flagged');
+});
+
 runTests();
