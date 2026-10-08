@@ -13,7 +13,8 @@
  *   - Booking and charge amounts are what the guest paid, GST included, the same
  *     assumption the bill page makes. Pass $inclusive = false if they are not.
  *   - Room rate is the per-night test in defaultRoomGstRate(): 5% up to
- *     Rs 7,500 a unit a night before tax, 18% above.
+ *     Rs 7,500 a unit a night before tax, 18% above. A group booking is several
+ *     villas each under the ceiling, so it is always 5% (bookingRoomGstRate).
  *   - Everything is CGST + SGST: the place of supply for a room is the property.
  *   - Money is integer paise, and every line goes through computeBill(), so the
  *     return and the invoices round the same way.
@@ -134,7 +135,7 @@ function gstReturn(string $spec, bool $inclusive = true): array {
             continue;
         }
         $nights = max(1, (int)round((strtotime($b['check_out']) - strtotime($b['check_in'])) / 86400));
-        $rate = defaultRoomGstRate(intdiv($amount, $nights), $inclusive);
+        $rate = bookingRoomGstRate($b, intdiv($amount, $nights), $inclusive);
         $add($ref + ['date' => $b['check_out'], 'kind' => 'room', 'invoice_no' => '', 'customer_gstin' => ''],
             [['desc' => 'Room — ' . $b['room_name'], 'sac' => '996311', 'qty' => 1, 'rate' => $amount, 'gst' => $rate]], $inclusive);
         if ($rate === 18) {

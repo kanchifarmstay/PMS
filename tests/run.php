@@ -3017,4 +3017,19 @@ test('gst return: nothing before the registration date counts; an earlier bill s
     }
 });
 
+test('gst: a group booking is several villas each under Rs 7,500, so 5% however large the total', function (): void {
+    setSetting('gst_registered_from', '2000-01-01');
+    $g = pastBooking(['check_in' => '2014-06-01', 'check_out' => '2014-06-02', 'amount' => 21200,
+        'room_id' => GROUP_INVENTORY_ID, 'room_name' => 'KanchiFarmStay (Group Booking)']);
+    $one = pastBooking(['check_in' => '2014-06-03', 'check_out' => '2014-06-04', 'amount' => 21200]);
+    assertSame(5, bookingRoomGstRate($g, 2120000, true));
+    assertSame(18, bookingRoomGstRate($one, 2120000, true), 'a single unit over the ceiling is still 18%');
+    assertSame(5, billDraftFromBooking($g)['items'][0]['gst'], 'the bill page agrees with the return');
+    $r = gstReturn('2014-06');
+    assertSame([5, 18], array_column($r['b2cs'], 'gst'));
+    assertSame(2019048, array_column($r['b2cs'], null, 'gst')[5]['taxable']);
+    $why = implode(' ', array_column($r['checks'], 'why'));
+    assertSame(1, substr_count($why, 'Taxed at 18%'), 'only the single-unit booking is flagged');
+});
+
 runTests();

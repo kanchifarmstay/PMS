@@ -120,6 +120,16 @@ function defaultRoomGstRate(int $perNightPaise, bool $inclusive): int {
 }
 
 /**
+ * GST rate for a booking's room line. A group booking (GROUP_INVENTORY_ID) is
+ * several villas let together, each under the Rs 7,500 ceiling, and the test is
+ * per unit - so its combined tariff never decides the rate (owner, 2026-10-08).
+ */
+function bookingRoomGstRate(array $b, int $perNightPaise, bool $inclusive): int {
+    if (($b['room_id'] ?? '') === GROUP_INVENTORY_ID) return 5;
+    return defaultRoomGstRate($perNightPaise, $inclusive);
+}
+
+/**
  * Normalise raw form rows into items. Drops blank rows; refuses a rate the
  * law does not have rather than printing it.
  */
@@ -262,7 +272,7 @@ function billDraftFromBooking(array $b): array {
         'inclusive' => true,
         'items' => array_merge($amount > 0 ? [[
             'desc' => $desc, 'sac' => '996311', 'qty' => $qty, 'rate' => $rate,
-            'gst' => defaultRoomGstRate(intdiv($amount, $nights), true),
+            'gst' => bookingRoomGstRate($b, intdiv($amount, $nights), true),
         ]] : [], $chargeItems),
         'paid'           => rupeesToPaise($b['amount_paid'] ?? 0) + $chargesPaid,
         'payment_method' => (string)($b['payment_method'] ?? ''),
