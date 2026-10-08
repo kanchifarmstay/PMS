@@ -2920,6 +2920,7 @@ test('roles: expenses are open to front desk, voiding and the summary are not, a
 require_once dirname(__DIR__) . '/channel-manager/gst-return-service.php';
 
 test('gst return: periods, FY quarters and the quarter a date falls in', function (): void {
+    setSetting('gst_registered_from', '2000-01-01');   // these tests run in 2015; the real date is checked below
     assertSame(['2015-07-01', '2015-09-30', ['2015-07', '2015-08', '2015-09']], array_values(array_slice(gstPeriod('2015-07:3'), 0, 2)) + [2 => gstPeriod('2015-07:3')['months']]);
     assertSame('Jul–Sep 2015 (Q2 FY 2015-16)', gstPeriod('2015-07:3')['label']);
     assertSame(['2015-02-01', '2015-02-28'], [gstPeriod('2015-02')['from'], gstPeriod('2015-02')['to']]);
@@ -2986,5 +2987,34 @@ test('gst return: an unlinked B2B bill is counted and flagged; OTA GSTINs valida
     assertContains('requireValidCsrfToken', $page);
 });
 
+
+test('gst return: nothing before the registration date counts; an earlier bill showing GST is flagged', function (): void {
+    pastBooking(['check_in' => '2014-03-01', 'check_out' => '2014-03-02', 'amount' => 2100]);   // before registration
+    pastBooking(['check_in' => '2014-03-10', 'check_out' => '2014-03-12', 'amount' => 4200]);   // in-house across the date: invoiced at check-out, counts
+    saveBill(sampleBill(['invoice_date' => '2014-03-05']));                                      // shows 5% GST, before registration
+    setSetting('gst_registered_from', '2014-03-11');
+    try {
+        $r = gstReturn('2014-03');
+        assertSame(['2014-03-11', '2014-03-11'], [$r['registered_from'], $r['from']]);
+        assertSame(400000, $r['total']['taxable'], 'only the stay checking out on or after the date');
+        assertSame(0, $r['docs']['total'], 'the earlier bill is not in table 13');
+        assertSame(1, count($r['checks']));
+        assertContains('dated before your registration', $r['checks'][0]['why']);
+        assertSame(400000, gstReturn('2014-01:3')['total']['taxable'], 'the quarter holds the same post-registration stay');
+        assertSame(0, gstReturn('2013-10:3')['total']['taxable'], 'a quarter wholly before registration has nothing in it');
+        $threw = false;
+        try { saveGstRegisteredFrom('2999-01-01'); } catch (InvalidArgumentException $e) { $threw = true; }
+        assertTrue($threw, 'a future date is refused');
+        assertSame('2026-09-23', GST_REGISTERED_FROM_DEFAULT);
+        setSetting('gst_registered_from', '2000-01-01');
+        $soon = date('Y-m-d', strtotime('+3 days'));
+        pastBooking(['check_in' => date('Y-m-d', strtotime('+2 days')), 'check_out' => $soon, 'amount' => 1050, 'room_id' => 'tent', 'room_name' => 'Tent']);
+        $now = gstReturn(substr($soon, 0, 7));
+        assertSame(date('Y-m-d'), min($now['to'], date('Y-m-d')));
+        assertFalse(in_array($soon, array_column($now['lines'], 'date'), true), 'a stay that has not checked out yet is not in the return');
+    } finally {
+        setSetting('gst_registered_from', '2000-01-01');
+    }
+});
 
 runTests();

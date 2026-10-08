@@ -18,6 +18,10 @@
  *   - Money is integer paise, and every line goes through computeBill(), so the
  *     return and the invoices round the same way.
  *
+ * Nothing before the date the GSTIN took effect is a taxable supply of this
+ * business: the return starts there, and a bill dated earlier that showed GST is
+ * flagged instead of counted.
+ *
  * Supplies booked through an OTA appear in B2C like every other stay AND in
  * table 14 against that OTA's GSTIN; table 14 is reported in addition, not
  * instead.
@@ -31,6 +35,20 @@ require_once __DIR__ . '/charges-service.php';
 const GST_ECO_OPERATORS = ['airbnb' => 'Airbnb', 'booking.com' => 'Booking.com', 'agoda' => 'Agoda', 'makemytrip' => 'MakeMyTrip'];
 
 const GST_SAC_NAMES = ['996311' => 'Accommodation services', '996331' => 'Food & beverage services', '999799' => 'Other services'];
+
+/** Effective date on the registration certificate (REG-06). Editable on the page; this is the date the PMS shipped with. */
+const GST_REGISTERED_FROM_DEFAULT = '2026-09-23';
+
+function gstRegisteredFrom(): string {
+    $d = getSetting('gst_registered_from', GST_REGISTERED_FROM_DEFAULT);
+    return preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) && strtotime($d) !== false ? $d : GST_REGISTERED_FROM_DEFAULT;
+}
+
+function saveGstRegisteredFrom(string $date): void {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || strtotime($date) === false) throw new InvalidArgumentException('Enter the effective date from your GST certificate.');
+    if ($date > date('Y-m-d')) throw new InvalidArgumentException('The registration date cannot be in the future.');
+    setSetting('gst_registered_from', $date);
+}
 
 function gstEcoGstins(): array {
     $out = [];
@@ -79,6 +97,9 @@ function gstQuarterSpec(string $date): string {
 function gstReturn(string $spec, bool $inclusive = true): array {
     $p = gstPeriod($spec);
     $db = getDB();
+    $reg = gstRegisteredFrom();
+    $from = max($p['from'], $reg);   // nothing before registration is a supply of this GSTIN
+    $to = min($p['to'], date('Y-m-d')); // a period still running holds only what has happened
 
     // Issued bills, and which bookings they stand in for.
     $billed = [];
@@ -86,7 +107,7 @@ function gstReturn(string $spec, bool $inclusive = true): array {
         $billed[(int)$bid] = true;
     }
     $q = $db->prepare("SELECT * FROM bills WHERE invoice_date BETWEEN ? AND ? ORDER BY fy, seq");
-    $q->execute([$p['from'], $p['to']]);
+    $q->execute([$p['from'], $to]);   // from the period start, so pre-registration bills can be flagged
     $bills = $q->fetchAll();
 
     $lines = [];   // the register: one row per taxable line
@@ -102,7 +123,7 @@ function gstReturn(string $spec, bool $inclusive = true): array {
 
     // 1. Stays that checked out in the period and are not covered by a bill.
     $q = $db->prepare("SELECT * FROM bookings WHERE status = 'confirmed' AND source <> 'blocked' AND check_out BETWEEN ? AND ? ORDER BY check_out, id");
-    $q->execute([$p['from'], $p['to']]);
+    $q->execute([$from, $to]);
     foreach ($q->fetchAll() as $b) {
         if (isset($billed[(int)$b['id']])) continue;
         $amount = rupeesToPaise($b['amount'] ?? 0);
@@ -131,7 +152,7 @@ function gstReturn(string $spec, bool $inclusive = true): array {
     // 2. Food and extras charged in the period, on stays not covered by a bill.
     $q = $db->prepare("SELECT c.*, b.guest_name, b.room_name FROM booking_charges c JOIN bookings b ON b.id = c.booking_id
         WHERE c.voided = 0 AND c.charged_on BETWEEN ? AND ? ORDER BY c.charged_on, c.id");
-    $q->execute([$p['from'], $p['to']]);
+    $q->execute([$from, $to]);
     foreach ($q->fetchAll() as $c) {
         if (isset($billed[(int)$c['booking_id']])) continue;
         $preset = BILL_ITEM_PRESETS[$c['kind']] ?? BILL_ITEM_PRESETS['other'];
@@ -147,6 +168,14 @@ function gstReturn(string $spec, bool $inclusive = true): array {
     //    table 4); an unlinked B2C bill is taken to be a copy of a stay already counted.
     $docs = ['from' => '', 'to' => '', 'total' => 0, 'cancelled' => 0];
     foreach ($bills as $row) {
+        if ($row['invoice_date'] < $reg) {
+            $pre = json_decode($row['data'], true) ?: [];
+            if ($row['status'] === 'issued' && array_filter($pre['items'] ?? [], fn($i) => (int)($i['gst'] ?? 0) > 0)) {
+                $checks[] = ['booking_id' => 0, 'guest' => (string)($pre['guest']['name'] ?? $row['guest_name']), 'room' => $row['invoice_no'] . ', ' . date('j M Y', strtotime($row['invoice_date'])), 'source' => '',
+                    'why' => 'This bill shows GST but is dated before your registration (' . date('j M Y', strtotime($reg)) . '), so it is left out of this return. Ask your CA whether to cancel and re-issue it without GST, or pay the GST it shows.'];
+            }
+            continue;
+        }
         $docs['from'] = $docs['from'] ?: $row['invoice_no'];
         $docs['to'] = $row['invoice_no'];
         $docs['total']++;
@@ -204,6 +233,9 @@ function gstReturn(string $spec, bool $inclusive = true): array {
 
     return [
         'period'   => $p,
+        'registered_from' => $reg,
+        'from'     => $from,
+        'to'       => $to,
         'total'    => $total + ['tax' => $total['cgst'] + $total['sgst']],
         'by_month' => $byMonth,
         'b2cs'     => array_values($b2cs),

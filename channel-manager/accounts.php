@@ -75,9 +75,14 @@ if ($view === 'collections') {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         requireValidCsrfToken($_POST['csrf_token'] ?? null);
         try {
-            saveGstEcoGstins((array)($_POST['eco'] ?? []));
-            kfsAudit('gst_eco_gstins_saved', 'settings', null, json_encode(gstEcoGstins()));
-            header('Location: accounts.php?view=gstr&period=' . urlencode($period) . ($inclusive ? '' : '&excl=1') . '#eco');
+            if (isset($_POST['registered_from'])) {
+                saveGstRegisteredFrom((string)$_POST['registered_from']);
+                kfsAudit('gst_registered_from_saved', 'settings', null, (string)$_POST['registered_from']);
+            } else {
+                saveGstEcoGstins((array)($_POST['eco'] ?? []));
+                kfsAudit('gst_eco_gstins_saved', 'settings', null, json_encode(gstEcoGstins()));
+            }
+            header('Location: accounts.php?view=gstr&period=' . urlencode($period) . ($inclusive ? '' : '&excl=1') . (isset($_POST['registered_from']) ? '' : '#eco'));
             exit;
         } catch (InvalidArgumentException $e) {
             $ecoError = $e->getMessage();
@@ -303,6 +308,14 @@ $qs = fn(array $over) => 'accounts.php?' . http_build_query(array_filter(array_m
       <div><button class="btn btn-primary" type="submit">Show</button></div>
       <div><a class="btn" href="<?= ah('accounts.php?view=gstr&period=' . urlencode($period) . ($inclusive ? '' : '&excl=1') . '&export=csv') ?>">⬇ Register CSV</a></div>
     </form>
+    <form method="POST" class="filters" style="margin-top:10px">
+      <?= csrfField() ?>
+      <div><label>GST registered from (certificate)</label><input type="date" name="registered_from" value="<?= ah($r['registered_from']) ?>" max="<?= ah(date('Y-m-d')) ?>"></div>
+      <div><button class="btn" type="submit">Save date</button></div>
+    </form>
+    <?php if ($ecoError): ?><p class="err"><?= ah($ecoError) ?></p><?php endif; ?>
+    <?php if ($r['from'] > $r['period']['from']): ?><p class="note"><b>Counting from <?= ah(date('j M Y', strtotime($r['from']))) ?></b>, the date your GSTIN took effect<?= $r['from'] > $r['period']['to'] ? ' — this whole period is before it, so there is nothing to file for it.' : '. Stays and food before that are not part of this return.' ?></p><?php endif; ?>
+    <?php if ($r['to'] < $r['period']['to']): ?><p class="note"><b>So far — up to <?= ah(date('j M Y', strtotime($r['to']))) ?>.</b> This period has not ended; stays checking out later are added as they happen.</p><?php endif; ?>
     <p class="note">Every confirmed stay is counted in the month it checks out, every food charge on its date. A stay with a bill linked to it uses the bill instead. GSTIN <?= ah($biz['gstin']) ?> · place of supply <?= ah($pos) ?> (CGST + SGST for every guest).</p>
   </div>
 
