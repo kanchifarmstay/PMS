@@ -3143,9 +3143,17 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
   <div class="tbl-wrap">
     <table class="tbl" id="bookingsTable">
       <thead>
-        <tr><th>#</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Nts</th><th>Guest</th><th>Source</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>#</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Nts</th><th>Guest</th><th>Source</th><th>Total</th><th>Paid</th><th>Balance</th><th>Food bill</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
+        <?php
+          // Food charges per booking (booking_charges, kind 'food'), in one query rather than one per row.
+          $foodBills = [];
+          foreach (getDB()->query("SELECT booking_id, SUM(amount_paise) AS total, SUM(CASE WHEN method = '' THEN amount_paise ELSE 0 END) AS unpaid
+              FROM booking_charges WHERE kind = 'food' AND voided = 0 GROUP BY booking_id") as $fr) {
+              $foodBills[(int)$fr['booking_id']] = ['total' => (int)$fr['total'] / 100, 'unpaid' => (int)$fr['unpaid'] / 100];
+          }
+        ?>
         <?php foreach (array_filter($allBookings, fn($b) => $b['source'] !== 'blocked') as $b):
           $bTotal   = (float)($b['amount']      ?? 0);
           $bPaid    = (float)($b['amount_paid'] ?? 0);
@@ -3177,6 +3185,12 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
           <td>
             <?php if ($bTotal > 0): ?>
             <span class="pay-pill pay-<?= $pstatus ?>"><?= $pstatus === 'paid' ? '✓ Paid' : ($pstatus === 'partial' ? '½ ' . fmt($bBalance) . ' due' : 'Unpaid') ?></span>
+            <?php else: ?><span class="muted">—</span><?php endif; ?>
+          </td>
+          <td>
+            <?php $food = $foodBills[(int)$b['id']] ?? null; if ($food): ?>
+            <a href="booking-payments.php?id=<?= (int)$b['id'] ?>#food" style="color:inherit" title="Food charges on this stay"><?= fmt($food['total']) ?></a>
+            <?php if ($food['unpaid'] > 0): ?><div class="muted" style="font-size:.72rem;color:#92400e"><?= fmt($food['unpaid']) ?> unpaid</div><?php endif; ?>
             <?php else: ?><span class="muted">—</span><?php endif; ?>
           </td>
           <td><span class="status-<?= $b['status'] ?>"><?= ucfirst($b['status']) ?></span></td>

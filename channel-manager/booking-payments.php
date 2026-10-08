@@ -186,7 +186,7 @@ $chargeSum = chargeTotals($id);
   <?php endif; ?>
 
 
-  <div class="card">
+  <div class="card" id="food">
     <h2>Food &amp; extras</h2>
     <p class="muted" style="margin:0 0 10px;font-size:12px">Not part of the room total above. Leave “Paid by” empty if the guest will pay at checkout - it goes on the bill.
       <?php if ($chargeSum['total'] > 0): ?><br><strong>Rs. <?= ph(waMoneyFromPaise($chargeSum['total'])) ?></strong> in total<?= $chargeSum['unpaid'] > 0 ? ', <strong style="color:#92400e">Rs. ' . ph(waMoneyFromPaise($chargeSum['unpaid'])) . ' not paid yet</strong>' : ', all paid' ?>.<?php endif; ?></p>
