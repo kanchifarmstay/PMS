@@ -371,6 +371,9 @@ function updateConfirmedBooking(int $id, array $data): void
         $data['payment_method'] = trim((string)($data['payment_method'] ?? $existing['payment_method']));
         $data['payment_status'] = trim((string)($data['payment_status'] ?? $existing['payment_status']));
         $data['notes'] = trim((string)($data['notes'] ?? $existing['notes']));
+        // A caller that does not mention the counts keeps them; the edit form always sends both.
+        if (!array_key_exists('adults', $data)) $data['adults'] = $existing['adults'] ?? null;
+        if (!array_key_exists('children', $data)) $data['children'] = $existing['children'] ?? null;
 
         updateBooking($id, $data);
         kfsCommitTransaction($db, $owned);

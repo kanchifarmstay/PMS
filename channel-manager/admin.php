@@ -75,6 +75,8 @@ if (!empty($_SESSION['admin_logged_in'])) {
             'payment_method'  => $pmeth,
             'payment_status'  => $pstatus,
             'notes'           => trim($_POST['notes'] ?? ''),
+            'adults'          => kfsGuestCount($_POST['adults'] ?? null, 1),
+            'children'        => kfsGuestCount($_POST['children'] ?? null),
             'status'          => 'confirmed',
         ];
         try {
@@ -177,6 +179,8 @@ if (!empty($_SESSION['admin_logged_in'])) {
             'payment_status'  => $pstatus,
             'status'          => $status,
             'notes'           => trim((string)($_POST['notes'] ?? '')),
+            'adults'          => kfsGuestCount($_POST['adults'] ?? null, 1),
+            'children'        => kfsGuestCount($_POST['children'] ?? null),
         ];
         $beforeEdit = getBookingById($id);
         // An older booking gets its opening ledger entry BEFORE the edit, so a change
@@ -190,7 +194,7 @@ if (!empty($_SESSION['admin_logged_in'])) {
         }
         acctSyncFromBooking($id, 'Changed in booking edit');
         $changes = [];
-        foreach (['room_name', 'check_in', 'check_out', 'guest_name', 'amount', 'amount_paid', 'status'] as $f) {
+        foreach (['room_name', 'check_in', 'check_out', 'guest_name', 'adults', 'children', 'amount', 'amount_paid', 'status'] as $f) {
             if ($beforeEdit && (string)$beforeEdit[$f] !== (string)$data[$f]) $changes[] = $f . ': ' . $beforeEdit[$f] . ' → ' . $data[$f];
         }
         kfsAudit('booking_edited', 'booking', $id, implode('; ', $changes));
@@ -554,6 +558,9 @@ function bookingJson(array $b): string {
         'payment_status'  => (string)($b['payment_status'] ?? $pstatus),
         'status'          => (string)($b['status'] ?? 'confirmed'),
         'notes'           => (string)($b['notes'] ?? ''),
+        'adults'          => kfsGuestCount($b['adults'] ?? null, 1),
+        'children'        => kfsGuestCount($b['children'] ?? null),
+        'guests_label'    => kfsGuestLabel($b),
     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
 }
 function commissionForSource(string $src): float {
@@ -3102,6 +3109,10 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
           <input type="date" name="check_out" id="bkCheckOut" required onchange="calcNights()">
         </div>
       </div>
+      <div class="form-row-3" style="margin-bottom:.75rem">
+        <div class="fld"><label>Adults</label><input type="number" name="adults" id="bkAdults" min="1" max="99" step="1" placeholder="e.g. 2"></div>
+        <div class="fld"><label>Children</label><input type="number" name="children" id="bkChildren" min="0" max="99" step="1" placeholder="e.g. 0"></div>
+      </div>
 
       <!-- Payment -->
       <div class="section-label">Payment</div>
@@ -3283,7 +3294,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
   <div class="tbl-wrap">
     <table class="tbl" id="bookingsTable">
       <thead>
-        <tr><th>#</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Nts</th><th>Guest</th><th>Source</th><th>Total</th><th>Paid</th><th>Balance</th><th>Food bill</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>#</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Nts</th><th>Guest</th><th>Adults</th><th>Children</th><th>Source</th><th>Total</th><th>Paid</th><th>Balance</th><th>Food bill</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         <?php foreach (array_filter($allBookings, fn($b) => $b['source'] !== 'blocked') as $b):
@@ -3306,6 +3317,9 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
             <?php if ($b['guest_phone']): ?><div class="muted" style="font-size:.76rem"><?= htmlspecialchars($b['guest_phone']) ?></div><?php endif; ?>
             <?php if ($b['guest_email']): ?><div class="muted" style="font-size:.73rem"><?= htmlspecialchars($b['guest_email']) ?></div><?php endif; ?>
           </td>
+          <?php $nA = kfsGuestCount($b['adults'] ?? null, 1); $nC = kfsGuestCount($b['children'] ?? null); ?>
+          <td style="text-align:center"><?= $nA === null ? '<span class="muted">—</span>' : $nA ?></td>
+          <td style="text-align:center"><?= $nC === null ? '<span class="muted">—</span>' : $nC ?></td>
           <td><?= badge($b['source']) ?></td>
           <td><?= $bTotal > 0 ? fmt($bTotal) : '—' ?></td>
           <td>
@@ -4712,6 +4726,10 @@ function showBookingModal(b) {
         <div class="bk-val">${nts} night${nts!==1?'s':''}</div>
       </div>
       <div>
+        <div class="bk-lbl">Guests</div>
+        <div class="bk-val">${b.guests_label || '<span style="color:#90a4ae;font-weight:400">Not recorded</span>'}</div>
+      </div>
+      <div>
         <div class="bk-lbl">Status</div>
         <div class="bk-val"><span class="status-${b.status}">${b.status.charAt(0).toUpperCase()+b.status.slice(1)}</span></div>
       </div>
@@ -4782,6 +4800,8 @@ function openEditBookingModal(b) {
   if (document.getElementById('editBkPaid')) document.getElementById('editBkPaid').value = b.amount_paid !== undefined ? b.amount_paid : 0;
   if (document.getElementById('editBkPayMethod')) document.getElementById('editBkPayMethod').value = b.payment_method || 'cash';
   if (document.getElementById('editBkNotes')) document.getElementById('editBkNotes').value = b.notes || '';
+  if (document.getElementById('editBkAdults')) document.getElementById('editBkAdults').value = b.adults ?? '';
+  if (document.getElementById('editBkChildren')) document.getElementById('editBkChildren').value = b.children ?? '';
 
   calcEditNights();
   updateEditBalance();
@@ -5207,6 +5227,14 @@ if ('serviceWorker' in navigator) {
         <div class="fld">
           <label>Booking Reference / OTA ID</label>
           <input type="text" name="booking_ref" id="editBkRef" placeholder="e.g. HM12345678">
+        </div>
+        <div class="fld">
+          <label>Adults</label>
+          <input type="number" name="adults" id="editBkAdults" min="1" max="99" step="1" placeholder="Not recorded">
+        </div>
+        <div class="fld">
+          <label>Children</label>
+          <input type="number" name="children" id="editBkChildren" min="0" max="99" step="1" placeholder="Not recorded">
         </div>
       </div>
 

@@ -113,13 +113,15 @@ function finalizeVerifiedRazorpayPayment(string $orderId, string $paymentId): in
         $uid = 'rzp-' . hash('sha256', $paymentId) . '@kanchifarmstay.com';
         $insert = $db->prepare("INSERT INTO bookings
             (room_id, room_name, check_in, check_out, guest_name, guest_email, guest_phone,
-             source, booking_ref, amount, amount_paid, payment_method, payment_status, status, uid, notes, is_sync_imported)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)");
+             source, booking_ref, amount, amount_paid, payment_method, payment_status, status, uid, notes, is_sync_imported,
+             adults, children)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)");
         $insert->execute([
             $row['room_id'], ROOM_IDS[$row['room_id']], $row['check_in'], $row['check_out'],
             $row['guest_name'], $row['guest_email'], $row['guest_phone'], 'direct', $paymentId,
             (float)$row['amount'], (float)$row['amount'], 'online', 'paid', 'confirmed', $uid,
             'Verified Razorpay order: ' . $orderId,
+            kfsGuestCount($row['adults'], 1), kfsGuestCount($row['children']),
         ]);
         $bookingId = (int)$db->lastInsertId();
         $db->prepare("UPDATE booking_holds SET status='confirmed', updated_at=datetime('now') WHERE token=?")

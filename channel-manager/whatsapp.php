@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/db.php';
 
 function sendWhatsAppNotification(string $message): void {
     if (WHATSAPP_PROVIDER === 'none') return;
@@ -32,6 +33,7 @@ function buildBookingMessage(array $b): string {
     $msg   .= "Check-in:  {$b['check_in']}\n";
     $msg   .= "Check-out: {$b['check_out']} ({$nights} night" . ($nights !== 1 ? 's' : '') . ")\n";
     $msg   .= "Guest: " . ($b['guest_name'] ?: 'Guest') . "\n";
+    if (($guests = kfsGuestLabel($b)) !== '') $msg .= "Guests: {$guests}\n";
     if (!empty($b['guest_phone'])) $msg .= "Phone: {$b['guest_phone']}\n";
     if (!empty($b['whatsapp_number']) && $b['whatsapp_number'] !== $b['guest_phone'])
         $msg .= "WhatsApp: {$b['whatsapp_number']}\n";
