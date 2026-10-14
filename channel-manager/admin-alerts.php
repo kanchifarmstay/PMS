@@ -82,15 +82,31 @@ function templateParam(mixed $value, int $max = 60): string {
     return mb_strlen($text) > $max ? mb_substr($text, 0, $max - 1) . '…' : $text;
 }
 
-/** The eight body variables of kfs_direct_booking_alert, in order. */
-function adminBookingTemplateParams(array $b): array {
+/** Admin alert templates that carry their own "Guests:" line (9 variables, guests 5th). */
+const ADMIN_ALERT_TEMPLATES_WITH_GUESTS = ['kfs_direct_booking_alert_v2'];
+
+/**
+ * The body variables of the admin booking alert, in order. The original
+ * kfs_direct_booking_alert has eight and no guests line, so there the adult and
+ * child counts ride in the Room variable instead ("Wooden Villa · 2 adults, 1 child").
+ */
+function adminBookingTemplateParams(array $b, string $template = 'kfs_direct_booking_alert'): array {
     $nights = max(1, (int)round((strtotime($b['check_out']) - strtotime($b['check_in'])) / 86400));
     $paid = (float)($b['amount_paid'] ?? 0) ?: (float)($b['amount'] ?? 0);
-    return [
+    $guests = kfsGuestLabel($b);
+    $head = [
         str_pad((string)$b['id'], 4, '0', STR_PAD_LEFT),
         templateParam($b['guest_name'] ?? ''),
         templateParam(($b['guest_phone'] ?? '') ?: ($b['whatsapp_number'] ?? '')),
-        templateParam($b['room_name'] ?? ''),
+    ];
+    if (in_array($template, ADMIN_ALERT_TEMPLATES_WITH_GUESTS, true)) {
+        $head[] = templateParam($b['room_name'] ?? '');
+        $head[] = templateParam($guests !== '' ? $guests : 'Not recorded');
+    } else {
+        $head[] = templateParam(($b['room_name'] ?? '') . ($guests !== '' ? ' · ' . $guests : ''), 90);
+    }
+    return [
+        ...$head,
         date('D, d M Y', strtotime($b['check_in'])),
         date('D, d M Y', strtotime($b['check_out'])),
         (string)$nights,
@@ -167,7 +183,7 @@ function notifyAdminsOfDirectBooking(int $bookingId, ?callable $transport = null
         }
 
         $transport ??= 'sendWhatsAppCloudRequest';
-        $params = adminBookingTemplateParams($b);
+        $params = adminBookingTemplateParams($b, $config['template']);
         foreach ($numbers as $to) {
             [$ok, $detail] = $transport($config, adminTemplatePayload($to, $config, $params));
             waLogSend($config['template'], $to, $ok ? 'sent' : 'failed', (string)$detail, $bookingId, 'automatic');

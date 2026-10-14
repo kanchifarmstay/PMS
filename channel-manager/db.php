@@ -66,6 +66,28 @@ function kfsDbTimestamp(?string $stored): ?int {
     return $parsed === false ? null : $parsed;
 }
 
+/**
+ * A guest count as stored: NULL means "not recorded" (OTA imports, bookings made
+ * before the columns existed), which is different from 0. Adults below 1 are
+ * treated as not recorded, because a stay always has at least one adult.
+ */
+function kfsGuestCount(mixed $value, int $min = 0): ?int {
+    if ($value === null || trim((string)$value) === '' || !is_numeric($value)) return null;
+    $n = (int)$value;
+    return $n < $min ? null : min($n, 99);
+}
+
+/** "2 adults, 1 child" - or '' when neither count is recorded. */
+function kfsGuestLabel(array $b): string {
+    $adults = kfsGuestCount($b['adults'] ?? null, 1);
+    $children = kfsGuestCount($b['children'] ?? null);
+    if ($adults === null && $children === null) return '';
+    $parts = [];
+    if ($adults !== null) $parts[] = $adults . ' adult' . ($adults === 1 ? '' : 's');
+    if ($children !== null) $parts[] = $children . ' ' . ($children === 1 ? 'child' : 'children');
+    return implode(', ', $parts);
+}
+
 function _initSchema(PDO $db): void {
     $db->exec("
         CREATE TABLE IF NOT EXISTS bookings (
@@ -426,9 +448,22 @@ function _initSchema(PDO $db): void {
         "ALTER TABLE bookings ADD COLUMN stay_status TEXT DEFAULT 'expected'",
         "ALTER TABLE bookings ADD COLUMN checked_in_at DATETIME",
         "ALTER TABLE bookings ADD COLUMN checked_out_at DATETIME",
+        // Guest counts. NULL = not recorded (OTA imports and older bookings), never guessed.
+        "ALTER TABLE bookings ADD COLUMN adults INTEGER",
+        "ALTER TABLE bookings ADD COLUMN children INTEGER",
     ];
     foreach ($migrations as $sql) {
-        try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
+        try {
+            $db->exec($sql);
+            // First run only: website bookings already carry the counts on their payment hold.
+            if (str_ends_with($sql, 'children INTEGER')) {
+                $db->exec("UPDATE bookings SET
+                        adults   = (SELECT h.adults   FROM payment_orders p JOIN booking_holds h ON h.token = p.hold_token WHERE p.booking_id = bookings.id),
+                        children = (SELECT h.children FROM payment_orders p JOIN booking_holds h ON h.token = p.hold_token WHERE p.booking_id = bookings.id)
+                    WHERE adults IS NULL
+                      AND EXISTS (SELECT 1 FROM payment_orders p JOIN booking_holds h ON h.token = p.hold_token WHERE p.booking_id = bookings.id)");
+            }
+        } catch (PDOException) { /* column already exists */ }
     }
 
     $rateMigrations = [
@@ -522,8 +557,8 @@ function addBooking(array $data): int|false {
             (room_id, room_name, check_in, check_out,
              guest_name, guest_email, guest_phone, whatsapp_number,
              source, booking_ref, amount, amount_paid, payment_method, payment_status,
-             status, uid, notes, is_sync_imported)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             status, uid, notes, is_sync_imported, adults, children)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ");
     $stmt->execute([
         $data['room_id'],
@@ -544,6 +579,8 @@ function addBooking(array $data): int|false {
         $uid,
         $data['notes']            ?? '',
         $isSyncImported,
+        kfsGuestCount($data['adults'] ?? null, 1),
+        kfsGuestCount($data['children'] ?? null),
     ]);
     return $stmt->rowCount() ? (int)$db->lastInsertId() : false;
 }
@@ -606,6 +643,8 @@ function updateBooking(int $id, array $data): bool {
             payment_status = ?,
             status = ?,
             notes = ?,
+            adults = ?,
+            children = ?,
             updated_at = datetime('now')
         WHERE id = ?
     ");
@@ -626,6 +665,8 @@ function updateBooking(int $id, array $data): bool {
         $data['payment_status'] ?? 'unpaid',
         $data['status'] ?? 'confirmed',
         $data['notes'] ?? '',
+        kfsGuestCount($data['adults'] ?? null, 1),
+        kfsGuestCount($data['children'] ?? null),
         $id,
     ]);
 }

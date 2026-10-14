@@ -965,6 +965,8 @@ test('verified payment atomically converts its hold into one paid booking', func
     assertSame('paid', $booking['payment_status']);
     assertSame(6000.0, (float)$booking['amount_paid']);
     assertSame('pay_paid', $booking['booking_ref']);
+    assertSame(2, (int)$booking['adults'], 'the guest counts chosen on the website survive into the booking');
+    assertSame(1, (int)$booking['children']);
     assertSame('confirmed', getDB()->query("SELECT status FROM booking_holds WHERE token=" . getDB()->quote($hold['token']))->fetchColumn());
     assertSame('paid', getDB()->query("SELECT status FROM payment_orders WHERE order_id='order_paid'")->fetchColumn());
 
@@ -1688,6 +1690,7 @@ test('bill: the admin panel links to the generator from the sidebar and from eac
 $adminAlertsPath = dirname(__DIR__) . '/channel-manager/admin-alerts.php';
 if (is_file($adminAlertsPath)) require_once $adminAlertsPath;
 require_once dirname(__DIR__) . '/channel-manager/guest-whatsapp.php';
+require_once dirname(__DIR__) . '/channel-manager/whatsapp.php';
 
 function alertConfig(array $over = []): array
 {
@@ -1739,6 +1742,42 @@ test('admin alert: a direct booking sends the approved template once to every ad
     $again = [];
     assertSame('already_sent', notifyAdminsOfDirectBooking($id, fakeTransport($again), alertConfig())['status']);
     assertSame(0, count($again));
+});
+
+test('guest counts: stored, labelled, kept by an edit that does not mention them, and never guessed', function (): void {
+    $id = directBooking(['check_in' => '2033-04-01', 'check_out' => '2033-04-02', 'adults' => '3', 'children' => '0']);
+    $b = getBookingById($id);
+    assertSame('3 adults, 0 children', kfsGuestLabel($b));
+    updateConfirmedBooking($id, ['notes' => 'late arrival']);
+    assertSame('3 adults, 0 children', kfsGuestLabel(getBookingById($id)), 'an edit that omits the counts keeps them');
+    updateConfirmedBooking($id, ['adults' => '1', 'children' => '1']);
+    assertSame('1 adult, 1 child', kfsGuestLabel(getBookingById($id)));
+    updateConfirmedBooking($id, ['adults' => '', 'children' => '']);
+    $cleared = getBookingById($id);
+    assertSame(null, $cleared['adults'], 'a blank field means not recorded, not zero');
+    assertSame('', kfsGuestLabel($cleared));
+    $ota = getBookingById(directBooking(['source' => 'airbnb', 'check_in' => '2033-04-03', 'check_out' => '2033-04-04']));
+    assertSame(null, $ota['adults']);
+    assertSame(null, kfsGuestCount('0', 1), 'a stay has at least one adult');
+});
+
+test('admin alert: guest counts reach the admins on both the old and the v2 template', function (): void {
+    $id = directBooking(['check_in' => '2033-04-05', 'check_out' => '2033-04-07', 'adults' => 2, 'children' => 1]);
+    $sent = [];
+    notifyAdminsOfDirectBooking($id, fakeTransport($sent), alertConfig());
+    $params = array_column($sent[0]['template']['components'][0]['parameters'], 'text');
+    assertSame(8, count($params), 'the approved v1 template still gets exactly eight variables');
+    assertSame('Wooden Villa · 2 adults, 1 child', $params[3]);
+
+    $v2 = adminBookingTemplateParams(getBookingById($id), 'kfs_direct_booking_alert_v2');
+    assertSame(9, count($v2));
+    assertSame('Wooden Villa', $v2[3]);
+    assertSame('2 adults, 1 child', $v2[4]);
+    assertSame('9,000', $v2[8]);
+
+    $unknown = adminBookingTemplateParams(getBookingById(directBooking(['check_in' => '2033-04-08', 'check_out' => '2033-04-09'])), 'kfs_direct_booking_alert_v2');
+    assertSame('Not recorded', $unknown[4], 'Meta rejects an empty variable');
+    assertContains('Guests: 2 adults, 1 child', buildBookingMessage(getBookingById($id)));
 });
 
 test('admin alert: only direct, confirmed, recent bookings alert', function (): void {
