@@ -71,16 +71,16 @@ define('ROOM_IDS', [
 ]);
 
 define('ROOM_PRICING', [
-    'wooden-villa'=>['weekday'=>3000,'weekend'=>3500,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
-    'white-villa'=>['weekday'=>2000,'weekend'=>2500,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
-    'white-villa-room-2'=>['weekday'=>1000,'weekend'=>1000,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
-    'white-villa-full-floor'=>['weekday'=>2500,'weekend'=>3000,'base_adults'=>4,'base_children'=>2,'max_adults'=>6,'max_children'=>3],
-    'natures-nest'=>['weekday'=>2500,'weekend'=>3000,'base_adults'=>2,'base_children'=>1,'max_adults'=>5,'max_children'=>3],
-    'tranquil-retreat'=>['weekday'=>2500,'weekend'=>3000,'base_adults'=>2,'base_children'=>1,'max_adults'=>5,'max_children'=>3],
-    'wooden-cottage'=>['weekday'=>3000,'weekend'=>3500,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
-    'kanchi-farm-stay'=>['weekday'=>8000,'weekend'=>8000,'base_adults'=>10,'base_children'=>4,'max_adults'=>15,'max_children'=>6],
-    'tent'=>['weekday'=>500,'weekend'=>500,'base_adults'=>2,'base_children'=>0,'max_adults'=>2,'max_children'=>1],
-    'tree-house'=>['weekday'=>1500,'weekend'=>1500,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
+    'wooden-villa'=>['weekday'=>3300,'weekend'=>3800,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
+    'white-villa'=>['weekday'=>2300,'weekend'=>2800,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
+    'white-villa-room-2'=>['weekday'=>1300,'weekend'=>1300,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
+    'white-villa-full-floor'=>['weekday'=>2800,'weekend'=>3300,'base_adults'=>4,'base_children'=>2,'max_adults'=>6,'max_children'=>3],
+    'natures-nest'=>['weekday'=>2800,'weekend'=>3300,'base_adults'=>4,'base_children'=>2,'max_adults'=>5,'max_children'=>3],
+    'tranquil-retreat'=>['weekday'=>2800,'weekend'=>3300,'base_adults'=>4,'base_children'=>2,'max_adults'=>5,'max_children'=>3],
+    'wooden-cottage'=>['weekday'=>3300,'weekend'=>3800,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
+    'kanchi-farm-stay'=>['weekday'=>9000,'weekend'=>10000,'base_adults'=>10,'base_children'=>4,'max_adults'=>25,'max_children'=>6],
+    'tent'=>['weekday'=>800,'weekend'=>800,'base_adults'=>2,'base_children'=>0,'max_adults'=>2,'max_children'=>1],
+    'tree-house'=>['weekday'=>1800,'weekend'=>1800,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
 ]);
 
 define('EXTRA_ADULT_RATE', 800);
