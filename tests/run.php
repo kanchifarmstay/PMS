@@ -569,6 +569,27 @@ test('an unexplained shared Airbnb block keeps every room closed', function (): 
     }
 });
 
+test('an unexplained same-day Airbnb cutoff fanned across multiple rooms is dropped as a platform cutoff', function (): void {
+    // 2026-10-24: Airbnb same-day booking notice cutoff automatically marks
+    // "Airbnb (Not available)" across all rooms when no rooms are booked.
+    // For same-day dates where the block is fanned across multiple rooms
+    // (>= GROUP_BOOKING_THRESHOLD) without any confirmed booking or genuine
+    // reservation, it is dropped so direct website bookings stay open.
+    resetAvailabilityData();
+    $db = getDB();
+    $mockToday = '2030-11-20';
+    seedSharedAirbnbEcho($db, ['natures-nest', 'tranquil-retreat', 'white-villa', 'wooden-cottage'], $mockToday, '2030-11-21');
+
+    assertSame(4, removeSharedAirbnbEchoBlocks($db, $mockToday));
+    assertSame(0, (int)$db->query('SELECT COUNT(*) FROM external_blocks')->fetchColumn());
+    foreach (['natures-nest', 'tranquil-retreat', 'white-villa', 'wooden-cottage'] as $room) {
+        assertTrue(
+            isInventoryAvailable($room, $mockToday, '2030-11-21'),
+            "expected {$room} to be available on same-day after platform cutoff is cleared"
+        );
+    }
+});
+
 test('a partly explained shared Airbnb block keeps the night we cannot account for', function (): void {
     // A two-night echo against a one-night booking. Dropping it would sell the
     // second night, which nothing is holding.
