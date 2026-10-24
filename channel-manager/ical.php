@@ -168,9 +168,10 @@ function applyIcalSnapshot(array $calendar, array $blocks, ?PDO $db = null): voi
  * booking on some unrelated room. A genuine whole-property reservation is
  * labelled `Reserved` and is never a candidate here at all.
  */
-function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
+function removeSharedAirbnbEchoBlocks(?PDO $db = null, ?string $today = null): int
 {
     $db ??= getDB();
+    $today ??= (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
     if (IGNORED_EXTERNAL_UIDS !== []) {
         $phIgnored = implode(',', array_fill(0, count(IGNORED_EXTERNAL_UIDS), '?'));
         $db->prepare("DELETE FROM external_blocks WHERE external_uid IN ({$phIgnored})")->execute(IGNORED_EXTERNAL_UIDS);
@@ -221,18 +222,20 @@ function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
         }
     }
 
+    $twinCounts = [];
+    foreach ($rows as $r) {
+        $key = $r['external_uid'] . '|' . $r['check_in'] . '|' . $r['check_out'];
+        $twinCounts[$key] = ($twinCounts[$key] ?? 0) + 1;
+    }
+
     $doomed = [];
     foreach ($rows as $row) {
         if (!icalIsAirbnbEchoSummary((string)$row['summary'])) continue;
 
-        $hasTwin = false;
-        foreach ($rows as $other) {
-            if ((int)$other['id'] === (int)$row['id']) continue;
-            if ($other['external_uid'] === $row['external_uid']
-                && $other['check_in'] === $row['check_in']
-                && $other['check_out'] === $row['check_out']
-                && $other['room_id'] !== $row['room_id']) { $hasTwin = true; break; }
-        }
+        $key = $row['external_uid'] . '|' . $row['check_in'] . '|' . $row['check_out'];
+        $twinCount = $twinCounts[$key] ?? 1;
+        $hasTwin = ($twinCount > 1);
+
         $components = INVENTORY_COMPONENTS[(string)$row['room_id']] ?? [];
         if (!$hasTwin && $components === []) continue;
 
@@ -243,6 +246,17 @@ function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
         foreach ($nights as $night) {
             if ($hasTwin) {
                 if (isset($accounted[$night])) continue;
+
+                // Same-day Airbnb cutoff safeguard:
+                // When Airbnb's same-day booking cutoff (e.g. 11 AM) passes, Airbnb
+                // automatically fans out an "Airbnb (Not available)" block across linked listings.
+                // If check-in is today (or past) and fanned across multiple rooms (>= GROUP_BOOKING_THRESHOLD)
+                // without any real reservation in PMS or Airbnb, this is an Airbnb platform cutoff,
+                // not a physical guest booking. Clear it so direct bookings stay open.
+                if ($night <= $today && $twinCount >= GROUP_BOOKING_THRESHOLD) {
+                    continue;
+                }
+
                 $covered = false;
                 break;
             }
