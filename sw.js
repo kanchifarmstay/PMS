@@ -4,7 +4,7 @@
  */
 
 const CACHE_PREFIX = 'kfs-public-';
-const CACHE = CACHE_PREFIX + 'v6';  // v6: updated food menu items & pricing
+const CACHE = CACHE_PREFIX + 'v7';  // v7: updated room rates & pricing
 const STATIC = [
   '/',
   '/index.html',
