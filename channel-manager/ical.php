@@ -63,6 +63,11 @@ function icalPropertyDate(array $property, string $propertyTimezone = 'Asia/Kolk
     }
 }
 
+const IGNORED_EXTERNAL_UIDS = [
+    // 2026-10-24: Airbnb whole-property/same-day block fanned out across all listings when none are booked
+    '7f662ec65913-fe6225c1ad164429bd7e859f969988ee@airbnb.com',
+];
+
 function normalizeIcalBlocks(string $raw, array $calendar, ?string $today = null): array
 {
     $today ??= date('Y-m-d');
@@ -81,6 +86,7 @@ function normalizeIcalBlocks(string $raw, array $calendar, ?string $today = null
                 $calendar['room_id'], $calendar['platform'], $checkIn, $checkOut, $summary,
             ]));
         }
+        if (in_array($uid, IGNORED_EXTERNAL_UIDS, true)) continue;
         $normalized[$uid] = [
             'calendar_id'=>(int)$calendar['id'],
             'room_id'=>(string)$calendar['room_id'],
@@ -165,6 +171,10 @@ function applyIcalSnapshot(array $calendar, array $blocks, ?PDO $db = null): voi
 function removeSharedAirbnbEchoBlocks(?PDO $db = null): int
 {
     $db ??= getDB();
+    if (IGNORED_EXTERNAL_UIDS !== []) {
+        $phIgnored = implode(',', array_fill(0, count(IGNORED_EXTERNAL_UIDS), '?'));
+        $db->prepare("DELETE FROM external_blocks WHERE external_uid IN ({$phIgnored})")->execute(IGNORED_EXTERNAL_UIDS);
+    }
     $rows = $db->query("SELECT id, room_id, platform, external_uid, check_in, check_out, summary
         FROM external_blocks WHERE lower(platform) = 'airbnb'")->fetchAll();
 
