@@ -66,6 +66,9 @@ function icalPropertyDate(array $property, string $propertyTimezone = 'Asia/Kolk
 const IGNORED_EXTERNAL_UIDS = [
     // 2026-10-24: Airbnb whole-property/same-day block fanned out across all listings when none are booked
     '7f662ec65913-fe6225c1ad164429bd7e859f969988ee@airbnb.com',
+    // 2026-10-30: Airbnb whole-property echo block from deleted Nature's Nest booking #525
+    '7f662ec65913-c9c37f3f041ea4694d0764b4b1dbf3d5@airbnb.com',
+    '7f662ec65913-fc72dc4e5cf7e6f0cd4773a1e32cf265@airbnb.com',
 ];
 
 function normalizeIcalBlocks(string $raw, array $calendar, ?string $today = null): array
