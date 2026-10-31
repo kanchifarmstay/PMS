@@ -438,13 +438,20 @@ function calculateQuote(string $roomId, string $checkIn, string $checkOut, int $
     $extraAdults = max(0, $adults - (int)$pricing['base_adults']);
     $extraChildren = max(0, $children - (int)$pricing['base_children']);
     $extraTotal = ($extraAdults * EXTRA_ADULT_RATE + $extraChildren * EXTRA_CHILD_RATE) * $nights;
+    $subtotal = (float)($baseTotal + $extraTotal);
+    $gstAmount = (float)round($subtotal * 0.05, 2);
+    $total = (float)round($subtotal + $gstAmount, 2);
     return [
         'room_id'=>$roomId, 'check_in'=>$checkIn, 'check_out'=>$checkOut,
         'nights'=>$nights, 'weekday_nights'=>$weekdayNights, 'weekend_nights'=>$weekendNights,
         'override_nights'=>$overrideNights,
         'adults'=>$adults, 'children'=>$children, 'base_total'=>$baseTotal,
         'extra_adults'=>$extraAdults, 'extra_children'=>$extraChildren,
-        'extra_total'=>(float)$extraTotal, 'total'=>(float)($baseTotal + $extraTotal),
+        'extra_total'=>(float)$extraTotal,
+        'subtotal'=>$subtotal,
+        'gst_rate'=>0.05,
+        'gst_amount'=>$gstAmount,
+        'total'=>$total,
     ];
 }
 

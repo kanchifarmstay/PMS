@@ -871,20 +871,26 @@ test('server quote calculates room rates and extra guests', function (): void {
     assertTrue(function_exists('calculateQuote'), 'calculateQuote is not implemented');
     $quote = calculateQuote('wooden-villa', '2030-11-04', '2030-11-06', 3, 2);
     assertSame(2, $quote['nights']);
-    assertSame(9200.0, $quote['total']);
+    assertSame(9200.0, $quote['subtotal']);
+    assertSame(460.0, $quote['gst_amount']);
+    assertSame(9660.0, $quote['total']);
     assertSame(3, $quote['adults']);
     assertSame(2, $quote['children']);
 
-    // Weekend rate test for wooden-villa (Friday 2030-11-08 to Sunday 2030-11-10: 2 weekend nights at ₹3800 = ₹7600)
+    // Weekend rate test for wooden-villa (Friday 2030-11-08 to Sunday 2030-11-10: 2 weekend nights at ₹3800 = ₹7600 + 5% GST = ₹7980)
     $weekendQuote = calculateQuote('wooden-villa', '2030-11-08', '2030-11-10', 2, 1);
     assertSame(2, $weekendQuote['nights']);
     assertSame(2, $weekendQuote['weekend_nights']);
-    assertSame(7600.0, $weekendQuote['total']);
+    assertSame(7600.0, $weekendQuote['subtotal']);
+    assertSame(380.0, $weekendQuote['gst_amount']);
+    assertSame(7980.0, $weekendQuote['total']);
 
-    // Tree house quote test (1 weekday night at ₹1800)
+    // Tree house quote test (1 weekday night at ₹1800 + 5% GST = ₹1890)
     $treeQuote = calculateQuote('tree-house', '2030-11-04', '2030-11-05', 2, 0);
     assertSame(1, $treeQuote['nights']);
-    assertSame(1800.0, $treeQuote['total']);
+    assertSame(1800.0, $treeQuote['subtotal']);
+    assertSame(90.0, $treeQuote['gst_amount']);
+    assertSame(1890.0, $treeQuote['total']);
 });
 
 test('server quote enforces guest limits', function (): void {

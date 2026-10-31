@@ -325,16 +325,30 @@ function pmLabel(string $pm): string {
 
     <!-- Payment Summary -->
     <?php if ($total > 0): ?>
+    <?php
+    $baseAmt = round($total / 1.05, 2);
+    $gstAmt  = round($total - $baseAmt, 2);
+    $cgst    = round($gstAmt / 2, 2);
+    $sgst    = round($gstAmt - $cgst, 2);
+    ?>
     <div class="card">
       <div class="card-hd"><h3>Payment Summary</h3></div>
       <div class="card-bd" style="padding:0">
         <table class="pay-table">
           <tr>
-            <td>Room charges (<?= $nights ?> night<?= $nights !== 1 ? 's' : '' ?>)</td>
-            <td><?= fmtRs($total) ?></td>
+            <td>Room tariff (<?= $nights ?> night<?= $nights !== 1 ? 's' : '' ?>)</td>
+            <td><?= fmtRs($baseAmt) ?></td>
+          </tr>
+          <tr>
+            <td>CGST (2.5%)</td>
+            <td><?= fmtRs($cgst) ?></td>
+          </tr>
+          <tr>
+            <td>SGST (2.5%)</td>
+            <td><?= fmtRs($sgst) ?></td>
           </tr>
           <tr class="pay-total">
-            <td>Total Amount</td>
+            <td>Total Amount (incl. 5% GST)</td>
             <td><?= fmtRs($total) ?></td>
           </tr>
           <?php if ($paid > 0): ?>

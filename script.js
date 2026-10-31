@@ -701,6 +701,10 @@ function loadRoomDetails() {
             const co = checkoutInput?.value;
             if (!ci || !co || co <= ci) {
                 if (totalPriceEl) totalPriceEl.innerText = 'Select dates';
+                const baseEl = document.getElementById('room-base-price');
+                const gstEl = document.getElementById('room-gst-price');
+                if (baseEl) baseEl.innerText = '—';
+                if (gstEl) gstEl.innerText = '—';
                 setBookingError('Please select valid check-in and check-out dates.');
                 days = 0; currentTotal = 0;
                 return;
@@ -709,6 +713,10 @@ function loadRoomDetails() {
             // Check overlap with blocked ranges
             if (isRangeBlocked(ci, co, blockedRanges)) {
                 if (totalPriceEl) totalPriceEl.innerText = 'Unavailable';
+                const baseEl = document.getElementById('room-base-price');
+                const gstEl = document.getElementById('room-gst-price');
+                if (baseEl) baseEl.innerText = '—';
+                if (gstEl) gstEl.innerText = '—';
                 setBookingError('These dates are not available. Please choose different dates.');
                 days = 0; currentTotal = 0;
                 return;
@@ -731,12 +739,24 @@ function loadRoomDetails() {
                 if (!response.ok || !data.available || !data.quote) throw new Error(data.error || data.message || 'These dates are unavailable.');
                 currentTotal = data.quote.total;
                 days = data.quote.nights;
-                if (totalPriceEl) totalPriceEl.innerText = `₹${currentTotal.toLocaleString()}`;
+                const subtotal = data.quote.subtotal != null ? data.quote.subtotal : (data.quote.base_total + (data.quote.extra_total || 0));
+                const gstAmount = data.quote.gst_amount != null ? data.quote.gst_amount : Math.round(subtotal * 0.05);
+                const baseEl = document.getElementById('room-base-price');
+                const gstEl = document.getElementById('room-gst-price');
+                const nightsEl = document.getElementById('stay-nights-count');
+                if (baseEl) baseEl.innerText = `₹${subtotal.toLocaleString('en-IN')}`;
+                if (gstEl) gstEl.innerText = `₹${gstAmount.toLocaleString('en-IN')}`;
+                if (totalPriceEl) totalPriceEl.innerText = `₹${currentTotal.toLocaleString('en-IN')}`;
+                if (nightsEl) nightsEl.innerText = `${days} night${days !== 1 ? 's' : ''}`;
                 if (!data.payment_configured) throw new Error('Online payment is unavailable. Please contact the property.');
                 clearBookingError();
             } catch (error) {
                 if (requestId !== quoteRequest) return;
                 currentTotal = 0;
+                const baseEl = document.getElementById('room-base-price');
+                const gstEl = document.getElementById('room-gst-price');
+                if (baseEl) baseEl.innerText = '—';
+                if (gstEl) gstEl.innerText = '—';
                 if (totalPriceEl) totalPriceEl.innerText = 'Unavailable';
                 setBookingError(error.message || 'Live availability could not be checked.');
             }
@@ -876,7 +896,7 @@ function loadRoomDetails() {
                         amount: orderData.amount,
                         currency: orderData.currency,
                         name: 'Kanchi Farm Stay',
-                        description: `${room.name} — ${days} night${days > 1 ? 's' : ''}`,
+                        description: `${room.name} — ${days} night${days > 1 ? 's' : ''} (incl. 5% GST)`,
                         image: window.location.origin + '/assets/images/logo.png',
                         order_id: orderData.id,
                         handler: async function (rzpResponse) {
@@ -1411,6 +1431,9 @@ function renderAccommodations() {
                     <span>👥 ${room.capacity}</span>
                     <span>🏷️ ${room.price}</span>
                     ${room.weekendPrice ? `<span>🗓️ Weekend ${room.weekendPrice}</span>` : ''}
+                </div>
+                <div class="room-gst-notice" style="font-size: 0.85rem; color: #666; margin-top: -1.25rem; margin-bottom: 1.25rem;">
+                    * Prices are exclusive of 5% GST (added at checkout)
                 </div>
                 <a href="room-details.html?id=${room.id}" class="btn btn-outline-dark">
                     View Details

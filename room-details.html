@@ -56,6 +56,7 @@
                         <div class="booking-card">
                             <h3>Book Your Stay</h3>
                             <div id="room-price" class="price-tag">₹0 / night</div>
+                            <div class="price-gst-notice" style="font-size: 0.85rem; color: #666; margin-top: -0.5rem; margin-bottom: 1rem;">* Prices are exclusive of 5% GST</div>
 
                             <div class="info-row">
                                 <span>Capacity:</span>
@@ -81,10 +82,20 @@
                                 </div>
                             </div>
 
-                            <div class="info-row total-price-row"
-                                style="margin-top: 1rem; font-weight: bold; font-size: 1.2rem; border-top: 1px solid #eee; padding-top: 1rem;">
-                                <span>Total Price:</span>
-                                <span id="room-total-price">₹0</span>
+                            <div class="price-breakdown" style="margin-top: 1rem; border-top: 1px solid #eee; padding-top: 0.75rem;">
+                                <div class="info-row" style="margin-bottom: 0.5rem; font-size: 0.95rem;">
+                                    <span>Room Tariff (<span id="stay-nights-count">1 night</span>):</span>
+                                    <span id="room-base-price">₹0</span>
+                                </div>
+                                <div class="info-row" style="margin-bottom: 0.5rem; font-size: 0.95rem;">
+                                    <span>GST (5%):</span>
+                                    <span id="room-gst-price">₹0</span>
+                                </div>
+                                <div class="info-row total-price-row"
+                                    style="margin-top: 0.5rem; font-weight: bold; font-size: 1.2rem; border-top: 1px solid #ddd; padding-top: 0.75rem;">
+                                    <span>Total Price (incl. GST):</span>
+                                    <span id="room-total-price">₹0</span>
+                                </div>
                             </div>
 
                             <div class="guest-details-form"
