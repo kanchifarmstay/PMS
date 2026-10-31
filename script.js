@@ -603,6 +603,19 @@ function loadRoomDetails() {
         const desc = document.getElementById('room-full-desc');
         if (desc) desc.innerText = room.fullDescription;
 
+        // Initialize price breakdown immediately with room rates
+        const baseElInit = document.getElementById('room-base-price');
+        const gstElInit = document.getElementById('room-gst-price');
+        const totalElInit = document.getElementById('room-total-price');
+        const nightsElInit = document.getElementById('stay-nights-count');
+        const initBase = room.numericPrice;
+        const initGst = Math.round(initBase * 0.05);
+        const initTotal = initBase + initGst;
+        if (baseElInit) baseElInit.innerText = `₹${initBase.toLocaleString('en-IN')}`;
+        if (gstElInit) gstElInit.innerText = `₹${initGst.toLocaleString('en-IN')}`;
+        if (totalElInit) totalElInit.innerText = `₹${initTotal.toLocaleString('en-IN')}`;
+        if (nightsElInit) nightsElInit.innerText = '1 night';
+
         // Price. The strings above are a fallback for the moment before the
         // server answers; ROOM_PRICING in channel-manager/config.php is what a
         // guest is actually charged, and prices-api.php publishes it. Typing a
@@ -724,7 +737,13 @@ function loadRoomDetails() {
 
             days = daysBetween(ci, co);
             setBookingError('Checking live price and availability…');
+            const baseEl = document.getElementById('room-base-price');
+            const gstEl = document.getElementById('room-gst-price');
+            const nightsEl = document.getElementById('stay-nights-count');
             if (totalPriceEl) totalPriceEl.innerText = 'Checking…';
+            if (baseEl) baseEl.innerText = 'Checking…';
+            if (gstEl) gstEl.innerText = 'Checking…';
+            if (nightsEl) nightsEl.innerText = `${days} night${days !== 1 ? 's' : ''}`;
             try {
                 const response = await fetch('check-availability.php', {
                     method: 'POST',
