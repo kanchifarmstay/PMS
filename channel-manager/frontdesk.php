@@ -206,6 +206,16 @@ $bookingRow = function (array $b, string $context) use ($date, $stayLabel): void
     <h2>Check in · #<?= fh(waBookingNo($b)) ?></h2>
     <p style="margin:0 0 10px"><strong><?= fh($b['guest_name']) ?></strong> · <?= fh($b['room_name']) ?> · <?= fh(waDateRange($b['check_in'], $b['check_out'])) ?> · <?= fh(waSourceLabel($b['source'])) ?>
       <?php if (waBalance($b) >= 1): ?><br><span class="due" style="color:#92400e;font-weight:700">Balance due at check-in: Rs. <?= fh(waMoney(waBalance($b))) ?></span><?php endif; ?></p>
+    <?php $existingIds = fdGuestsForBooking((int)$b['id']); if ($existingIds): ?>
+      <div style="margin:0 0 12px;padding:10px 12px;background:#e8f5ee;border:1px solid #c6e7d2;border-radius:8px;font-size:12.5px;color:#1a5c3a">
+        <strong>✓ <?= count($existingIds) ?> ID document<?= count($existingIds) > 1 ? 's' : '' ?> already uploaded:</strong><br>
+        <?php foreach ($existingIds as $eg): ?>
+          • <?= fh($eg['name']) ?> (<?= fh(FD_ID_TYPES[$eg['id_type']] ?? $eg['id_type']) ?>: <?= fh($eg['id_number']) ?>)
+          <?= $eg['id_photo'] ? '— <a href="guest-id-file.php?f=' . rawurlencode($eg['id_photo']) . '" target="_blank" rel="noopener">View file</a>' : '' ?><br>
+        <?php endforeach; ?>
+        <div style="margin-top:6px"><a class="btn btn-sm" href="booking-documents.php?id=<?= (int)$b['id'] ?>">🪪 Upload or manage documents</a></div>
+      </div>
+    <?php endif; ?>
     <p class="muted" style="margin:0 0 12px;font-size:12.5px">Record photo ID for every adult. For Aadhaar only the last 4 digits are stored. Foreign nationals also need passport and visa details — they must be reported on Form C within 24 hours.</p>
     <form method="POST" enctype="multipart/form-data" id="ciForm">
       <?= csrfField() ?>

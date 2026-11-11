@@ -11,6 +11,7 @@ require_once __DIR__ . '/demand-engine.php';
 require_once __DIR__ . '/guest-whatsapp.php';
 require_once __DIR__ . '/wa-templates.php';
 require_once __DIR__ . '/accounts-service.php';
+require_once __DIR__ . '/frontdesk-service.php';
 require_once __DIR__ . '/auth.php';
 
 startSecureSession();
@@ -96,6 +97,9 @@ if (!empty($_SESSION['admin_logged_in'])) {
                 $cid = (int)$_POST['wa_conversation_id'];
                 updateConversation($cid, ['status' => 'confirmed', 'booking_id' => $id]);
                 addWAMessage($cid, 'system', "✅ Booking #" . str_pad($id, 4, '0', STR_PAD_LEFT) . " confirmed for {$data['room_name']} · " . $data['check_in'] . " → " . $data['check_out']);
+            }
+            if ($data['source'] !== 'blocked') {
+                header('Location: booking-documents.php?id=' . $id . '&new=1&ok=' . rawurlencode('Booking #' . waBookingNo(['id' => $id]) . ' created. You can now upload the guest ID / Aadhaar card.')); exit;
             }
         }
         header('Location: admin.php?section=bookings&flash=Booking+added'); exit;
@@ -561,6 +565,7 @@ function bookingJson(array $b): string {
         'adults'          => kfsGuestCount($b['adults'] ?? null, 1),
         'children'        => kfsGuestCount($b['children'] ?? null),
         'guests_label'    => kfsGuestLabel($b),
+        'id_count'        => fdGuestCount((int)($b['id'] ?? 0)),
     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
 }
 function commissionForSource(string $src): float {
@@ -3347,6 +3352,8 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
             <?php if ($waNum): ?><a href="https://wa.me/<?= preg_replace('/\D/','',$waNum) ?>" target="_blank" class="btn btn-sm btn-grey" title="Open WhatsApp chat">💬</a><?php endif; ?>
             <a href="booking-whatsapp.php?id=<?= (int)$b['id'] ?>" class="btn btn-sm btn-grey" title="Send WhatsApp templates (cancellation, refund, reminders)">📨</a>
             <a href="booking-payments.php?id=<?= (int)$b['id'] ?>" class="btn btn-sm btn-grey" title="Payments, refunds and history">💰</a>
+            <?php $idCnt = fdGuestCount((int)$b['id']); ?>
+            <a href="booking-documents.php?id=<?= (int)$b['id'] ?>" class="btn btn-sm <?= $idCnt > 0 ? 'btn-grey' : 'btn-warn' ?>" title="<?= $idCnt > 0 ? $idCnt . ' ID document(s) uploaded' : 'Upload ID / Aadhaar card' ?>">🪪<?= $idCnt > 0 ? ' ' . $idCnt : '' ?></a>
             <?php if ($b['status']==='confirmed'): ?>
             <form method="POST" style="display:inline" onsubmit="return confirm('Cancel booking #<?= $b['id'] ?> (<?= htmlspecialchars(addslashes($b['guest_name'])) ?>)?')">
               <?= csrfField() ?>
@@ -4747,6 +4754,19 @@ function showBookingModal(b) {
         <div class="bk-lbl">Balance</div>
         <div class="bk-val">${payStatus}</div>
       </div>
+      <div class="bk-detail-full">
+        <div class="bk-lbl">Guest Documents / Aadhaar</div>
+        <div class="bk-val">
+          ${(b.id_count && b.id_count > 0)
+            ? `<span style="color:#2e7d32;font-weight:700">✓ ${b.id_count} document${b.id_count > 1 ? 's' : ''} on file</span>`
+            : `<span style="color:#e65100;font-weight:600">⚠️ No ID uploaded</span>`
+          }
+          &nbsp;&middot;&nbsp;
+          <a href="booking-documents.php?id=${b.id}" style="font-size:.78rem;color:var(--primary);text-decoration:underline">
+            ${(b.id_count && b.id_count > 0) ? 'View / Manage' : 'Upload ID'}
+          </a>
+        </div>
+      </div>
       ${b.booking_ref ? `<div class="bk-detail-full"><div class="bk-lbl">Booking Reference</div><div class="bk-val">${b.booking_ref}</div></div>` : ''}
       ${b.notes ? `<div class="bk-detail-full"><div class="bk-lbl">Notes</div><div class="bk-val" style="font-weight:400;white-space:pre-wrap">${b.notes}</div></div>` : ''}
     </div>
@@ -4758,6 +4778,7 @@ function showBookingModal(b) {
         <a href="bill.php?new=1&booking=${b.id}" target="_blank" class="btn btn-grey btn-sm">🧾 GST Bill</a>
         <a href="booking-whatsapp.php?id=${b.id}" class="btn btn-grey btn-sm">📨 WhatsApp messages</a>
         <a href="booking-payments.php?id=${b.id}" class="btn btn-grey btn-sm">💰 Payments</a>
+        <a href="booking-documents.php?id=${b.id}" class="btn btn-grey btn-sm">🪪 ID / Aadhaar (${b.id_count || 0})</a>
       </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         ${b.status === 'confirmed' ? `

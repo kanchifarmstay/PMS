@@ -145,6 +145,62 @@ function fdGuestsForBooking(int $bookingId): array {
     return $q->fetchAll();
 }
 
+/** Count of guest IDs recorded for a booking. */
+function fdGuestCount(int $bookingId, bool $refresh = false): int {
+    static $counts = null;
+    if ($counts === null || $refresh) {
+        $counts = [];
+        try {
+            $res = getDB()->query("SELECT booking_id, count(*) as c FROM guest_ids GROUP BY booking_id")->fetchAll();
+            foreach ($res as $r) {
+                $counts[(int)$r['booking_id']] = (int)$r['c'];
+            }
+        } catch (Throwable) {
+            // guest_ids table might not exist in tests or uninitialized db
+        }
+    }
+    return $counts[$bookingId] ?? 0;
+}
+
+/**
+ * Add or upload a guest ID record for a booking without changing stay status.
+ * Accepts input validated by fdGuestFromInput() and an optional uploaded file.
+ */
+function fdAddGuestId(int $bookingId, array $input, ?array $file = null): int {
+    $b = getBookingById($bookingId);
+    if (!$b) throw new InvalidArgumentException('Booking not found.');
+    $row = fdGuestFromInput($input);
+    $photo = fdStoreIdUpload($bookingId, $file);
+    $db = getDB();
+    $ins = $db->prepare("INSERT INTO guest_ids (booking_id, name, id_type, id_number, id_photo, nationality, is_foreign, phone,
+        passport_no, passport_expiry, visa_no, visa_type, visa_expiry, arrived_india_on, coming_from, next_destination)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    $ins->execute([$bookingId, $row['name'], $row['id_type'], $row['id_number'], $photo, $row['nationality'], $row['is_foreign'], $row['phone'],
+        $row['passport_no'], $row['passport_expiry'], $row['visa_no'], $row['visa_type'], $row['visa_expiry'],
+        $row['arrived_india_on'], $row['coming_from'], $row['next_destination']]);
+    $id = (int)$db->lastInsertId();
+    fdGuestCount(0, true);
+    return $id;
+}
+
+/**
+ * Delete a guest ID record and its stored photo file.
+ */
+function fdDeleteGuestId(int $guestId): void {
+    $db = getDB();
+    $q = $db->prepare('SELECT * FROM guest_ids WHERE id = ?');
+    $q->execute([$guestId]);
+    $g = $q->fetch();
+    if (!$g) throw new InvalidArgumentException('Document record not found.');
+    if (!empty($g['id_photo'])) {
+        $path = fdIdFilePath((string)$g['id_photo']);
+        if ($path && is_file($path)) @unlink($path);
+    }
+    $del = $db->prepare('DELETE FROM guest_ids WHERE id = ?');
+    $del->execute([$guestId]);
+    fdGuestCount(0, true);
+}
+
 /** The guest register: everyone recorded at check-in, filtered by stay date and a search. */
 function fdRegister(string $from, string $to, string $q = ''): array {
     $sql = "SELECT g.*, b.room_name, b.check_in, b.check_out, b.checked_in_at, b.source
@@ -175,18 +231,21 @@ function fdCheckIn(int $bookingId, array $guests, array $files = []): void {
         if (trim((string)($g['name'] ?? '')) === '' && trim((string)($g['id_number'] ?? '')) === '') continue;
         $rows[$i] = fdGuestFromInput($g);
     }
-    if (!$rows) throw new InvalidArgumentException('Record at least one guest with photo ID.');
+    $existing = fdGuestsForBooking($bookingId);
+    if (!$rows && !$existing) throw new InvalidArgumentException('Record at least one guest with photo ID.');
     $db = getDB();
     $owned = kfsBeginTransaction($db);
     try {
-        $ins = $db->prepare("INSERT INTO guest_ids (booking_id, name, id_type, id_number, id_photo, nationality, is_foreign, phone,
-            passport_no, passport_expiry, visa_no, visa_type, visa_expiry, arrived_india_on, coming_from, next_destination)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-        foreach ($rows as $i => $r) {
-            $photo = fdStoreIdUpload($bookingId, $files[$i] ?? null);
-            $ins->execute([$bookingId, $r['name'], $r['id_type'], $r['id_number'], $photo, $r['nationality'], $r['is_foreign'], $r['phone'],
-                $r['passport_no'], $r['passport_expiry'], $r['visa_no'], $r['visa_type'], $r['visa_expiry'],
-                $r['arrived_india_on'], $r['coming_from'], $r['next_destination']]);
+        if ($rows) {
+            $ins = $db->prepare("INSERT INTO guest_ids (booking_id, name, id_type, id_number, id_photo, nationality, is_foreign, phone,
+                passport_no, passport_expiry, visa_no, visa_type, visa_expiry, arrived_india_on, coming_from, next_destination)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+            foreach ($rows as $i => $r) {
+                $photo = fdStoreIdUpload($bookingId, $files[$i] ?? null);
+                $ins->execute([$bookingId, $r['name'], $r['id_type'], $r['id_number'], $photo, $r['nationality'], $r['is_foreign'], $r['phone'],
+                    $r['passport_no'], $r['passport_expiry'], $r['visa_no'], $r['visa_type'], $r['visa_expiry'],
+                    $r['arrived_india_on'], $r['coming_from'], $r['next_destination']]);
+            }
         }
         $db->prepare("UPDATE bookings SET stay_status = 'checked_in', checked_in_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
            ->execute([$bookingId]);

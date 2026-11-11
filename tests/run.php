@@ -2543,6 +2543,67 @@ test('front desk: page, check-in form and register render; the register exports 
     assertContains("'frontdesk' => ['🛎️', 'Front Desk',        'frontdesk.php', 0]", file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php'));
 });
 
+test('booking documents: admin can upload Aadhaar, mask number, count, and delete records', function (): void {
+    $b = ownBooking(['guest_name' => 'Kavitha S', 'guest_phone' => '9876543210']);
+    $bId = (int)$b['id'];
+    assertSame(0, fdGuestCount($bId));
+
+    $png = tinyPngFile();
+    $gId = fdAddGuestId($bId, [
+        'name' => 'Kavitha S',
+        'id_type' => 'aadhaar',
+        'id_number' => '9876 5432 1098',
+        'nationality' => 'Indian',
+        'phone' => '9876543210',
+    ], ['name' => 'aadhaar.png', 'tmp_name' => $png, 'error' => UPLOAD_ERR_OK, 'size' => filesize($png)]);
+
+    assertTrue($gId > 0);
+    assertSame(1, fdGuestCount($bId));
+
+    $docs = fdGuestsForBooking($bId);
+    assertSame(1, count($docs));
+    assertSame('XXXX-XXXX-1098', $docs[0]['id_number'], 'Aadhaar is masked to last 4 digits');
+    assertSame('Kavitha S', $docs[0]['name']);
+    assertSame('aadhaar', $docs[0]['id_type']);
+    assertTrue(!empty($docs[0]['id_photo']));
+    $filePath = fdIdFilePath($docs[0]['id_photo']);
+    assertTrue($filePath !== null && is_file($filePath), 'Uploaded photo exists in private guest-ids dir');
+
+    // Deleting the document
+    fdDeleteGuestId($gId);
+    assertSame(0, fdGuestCount($bId));
+    assertFalse(is_file($filePath), 'File is unlinked upon deletion');
+});
+
+test('booking documents: page renders, requires authentication, and links from admin', function (): void {
+    $db = sys_get_temp_dir() . '/kfs-docs-' . getmypid() . '.sqlite';
+    @unlink($db);
+    $run = function (array $get, bool $auth = true) use ($db): string {
+        $script = sys_get_temp_dir() . '/kfs-docs-' . getmypid() . '.php';
+        file_put_contents($script, '<?php putenv("KFS_DB_PATH=' . $db . '"); session_start();'
+            . ($auth ? '$_SESSION["admin_logged_in"]=true;' : '')
+            . '$_SERVER["REQUEST_METHOD"]="GET"; $_GET=' . var_export($get, true) . ';'
+            . 'require ' . var_export(dirname(__DIR__) . '/channel-manager/db.php', true) . ';'
+            . 'if (!getDB()->query("SELECT COUNT(*) FROM bookings")->fetchColumn()) { $id = addBooking(["room_id"=>"tent","room_name"=>"Tent","check_in"=>date("Y-m-d"),"check_out"=>date("Y-m-d", strtotime("+1 day")),"guest_name"=>"Ramesh","guest_phone"=>"9123456780","source"=>"phone","amount"=>2000,"amount_paid"=>0,"status"=>"confirmed"]); }'
+            . 'include ' . var_export(dirname(__DIR__) . '/channel-manager/booking-documents.php', true) . ';');
+        $out = (string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($script) . ' 2>&1');
+        @unlink($script);
+        return $out;
+    };
+    $unauth = $run(['id' => '1'], false);
+    assertNotContains('Upload Guest ID', $unauth, 'Unauthenticated access refused');
+
+    $html = $run(['id' => '1'], true);
+    assertContains('Guest Documents · #', $html);
+    assertContains('Upload Guest ID / Aadhaar', $html);
+    assertContains('name="action" value="upload"', $html);
+    assertContains('UIDAI &amp; Data Protection Compliance', $html);
+
+    $admin = file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php');
+    assertContains('booking-documents.php?id=', $admin, 'Admin links to booking-documents.php');
+    @unlink($db);
+});
+
 
 // ── Accounts: payment ledger, refunds, collections, GST report ──
 require_once dirname(__DIR__) . '/channel-manager/accounts-service.php';
