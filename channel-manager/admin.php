@@ -11,6 +11,7 @@ require_once __DIR__ . '/demand-engine.php';
 require_once __DIR__ . '/guest-whatsapp.php';
 require_once __DIR__ . '/wa-templates.php';
 require_once __DIR__ . '/accounts-service.php';
+require_once __DIR__ . '/admin-alerts.php';
 require_once __DIR__ . '/frontdesk-service.php';
 require_once __DIR__ . '/auth.php';
 
@@ -92,6 +93,8 @@ if (!empty($_SESSION['admin_logged_in'])) {
             // Guest confirmation: the approved kfs_booking_confirmed template, sent after
             // the redirect. Skips OTA sources, blocks and bookings with no phone.
             deferGuestBookingConfirmation((int)$id);
+            // Admin alert: WhatsApp utility template sent to all admin numbers
+            deferAdminPmsBookingAlert((int)$id);
             // If converted from a WA conversation, link it
             if (!empty($_POST['wa_conversation_id'])) {
                 $cid = (int)$_POST['wa_conversation_id'];

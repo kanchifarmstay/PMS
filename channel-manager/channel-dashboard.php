@@ -7,6 +7,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/booking-service.php';
+require_once __DIR__ . '/admin-alerts.php';
 
 startSecureSession();
 if (empty($_SESSION['admin_logged_in'])) {
@@ -20,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_m
     requireValidCsrfToken($_POST['csrf_token'] ?? null);
     $rid = trim($_POST['room_id'] ?? '');
     try {
-        createConfirmedBooking([
+        $id = createConfirmedBooking([
         'room_id'        => $rid,
         'room_name'      => ROOM_IDS[$rid] ?? $rid,
         'check_in'       => $_POST['check_in']    ?? '',
@@ -36,6 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_m
         'uid'            => 'manual-'.uniqid(),
         'booking_ref'    => '',
         ]);
+        if ($id) {
+            deferAdminPmsBookingAlert($id);
+        }
         header('Location: channel-dashboard.php?saved=1'); exit;
     } catch (Throwable $e) {
         header('Location: channel-dashboard.php?error=' . urlencode($e->getMessage())); exit;

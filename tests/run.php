@@ -1849,6 +1849,59 @@ test('admin alert: both confirmation paths call it', function (): void {
     }
 });
 
+test('admin alert: a PMS booking (phone, walk-in, manual) sends the utility template to every admin number', function (): void {
+    foreach (['phone' => 1, 'walk_in' => 4, 'whatsapp' => 7, 'manual' => 10] as $src => $day) {
+        $ci = sprintf('2035-06-%02d', $day);
+        $co = sprintf('2035-06-%02d', $day + 2);
+        $id = directBooking(['source' => $src, 'check_in' => $ci, 'check_out' => $co]);
+        $sent = [];
+        $r = notifyAdminsOfPmsBooking($id, fakeTransport($sent), alertConfig());
+        assertSame('sent', $r['status'], "alert sent for {$src}");
+        assertSame(2, count($sent));
+        assertSame('kfs_direct_booking_alert', $sent[0]['template']['name']);
+        assertSame(['917200390283', '919028001639'], array_column($sent, 'to'));
+
+        // Deduplication: sending again is skipped
+        $again = [];
+        $rAgain = notifyAdminsOfPmsBooking($id, fakeTransport($again), alertConfig());
+        assertSame('already_sent', $rAgain['status']);
+        assertSame(0, count($again));
+    }
+});
+
+test('admin alert: blocked dates and OTA sources are skipped by notifyAdminsOfPmsBooking', function (): void {
+    $sent = [];
+    $blocked = directBooking(['source' => 'blocked', 'check_in' => '2035-07-01', 'check_out' => '2035-07-02']);
+    $rBlocked = notifyAdminsOfPmsBooking($blocked, fakeTransport($sent), alertConfig());
+    assertSame('skipped', $rBlocked['status']);
+
+    $ota = directBooking(['source' => 'airbnb', 'check_in' => '2035-07-03', 'check_out' => '2035-07-04']);
+    $rOta = notifyAdminsOfPmsBooking($ota, fakeTransport($sent), alertConfig());
+    assertSame('skipped', $rOta['status']);
+    assertSame(0, count($sent));
+});
+
+test('admin alert: PMS booking alert releases claim on failure and supports custom template override', function (): void {
+    $id = directBooking(['source' => 'phone', 'check_in' => '2035-08-01', 'check_out' => '2035-08-02']);
+    $sent = [];
+    $r = notifyAdminsOfPmsBooking($id, fakeTransport($sent, false), alertConfig(['pms_template' => 'kfs_custom_pms_alert']));
+    assertSame('failed', $r['status']);
+    assertSame(2, $r['failed']);
+    assertSame('kfs_custom_pms_alert', $sent[0]['template']['name']);
+
+    // Since it failed, claim was released; retry succeeds
+    $retry = [];
+    $rRetry = notifyAdminsOfPmsBooking($id, fakeTransport($retry), alertConfig());
+    assertSame('sent', $rRetry['status']);
+    assertSame(2, count($retry));
+});
+
+test('admin alert: admin.php and channel-dashboard.php queue deferAdminPmsBookingAlert on booking creation', function (): void {
+    $root = dirname(__DIR__);
+    assertContains('deferAdminPmsBookingAlert((int)$id);', file_get_contents("{$root}/channel-manager/admin.php"));
+    assertContains('deferAdminPmsBookingAlert($id);', file_get_contents("{$root}/channel-manager/channel-dashboard.php"));
+});
+
 
 // ── Invoice "Send on WhatsApp" ────────────────────────────────
 function invoiceWaConfig(array $over = []): array

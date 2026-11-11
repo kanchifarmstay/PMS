@@ -41,6 +41,7 @@ define('ADMIN_ALERT_WA_TOKEN', kfsEnv('KFS_WA_TOKEN', META_WA_TOKEN));
 define('ADMIN_ALERT_WA_PHONE_ID', kfsEnv('KFS_WA_PHONE_ID', META_WA_PHONE_ID));
 define('ADMIN_ALERT_WA_NUMBERS', kfsEnv('KFS_ADMIN_WA_NUMBERS'));
 define('ADMIN_ALERT_TEMPLATE', kfsEnv('KFS_ADMIN_BOOKING_TEMPLATE', 'kfs_direct_booking_alert'));
+define('ADMIN_PMS_ALERT_TEMPLATE', kfsEnv('KFS_ADMIN_PMS_BOOKING_TEMPLATE', ADMIN_ALERT_TEMPLATE));
 define('ADMIN_ALERT_TEMPLATE_LANG', kfsEnv('KFS_ADMIN_BOOKING_TEMPLATE_LANG', 'en'));
 // Bill page "Send on WhatsApp": approved template sent to the guest from the same API number.
 define('INVOICE_WA_TEMPLATE', kfsEnv('KFS_INVOICE_TEMPLATE', 'kfs_invoice_ready'));

@@ -21,11 +21,12 @@ const ADMIN_ALERT_MAX_AGE_SECONDS = 86400;
 
 function adminAlertConfig(): array {
     return [
-        'token'    => ADMIN_ALERT_WA_TOKEN,
-        'phone_id' => ADMIN_ALERT_WA_PHONE_ID,
-        'numbers'  => ADMIN_ALERT_WA_NUMBERS,
-        'template' => ADMIN_ALERT_TEMPLATE,
-        'language' => ADMIN_ALERT_TEMPLATE_LANG,
+        'token'        => ADMIN_ALERT_WA_TOKEN,
+        'phone_id'     => ADMIN_ALERT_WA_PHONE_ID,
+        'numbers'      => ADMIN_ALERT_WA_NUMBERS,
+        'template'     => ADMIN_ALERT_TEMPLATE,
+        'pms_template' => defined('ADMIN_PMS_ALERT_TEMPLATE') ? ADMIN_PMS_ALERT_TEMPLATE : ADMIN_ALERT_TEMPLATE,
+        'language'     => ADMIN_ALERT_TEMPLATE_LANG,
     ];
 }
 
@@ -220,5 +221,79 @@ function deferAdminBookingAlert(int $bookingId): void {
             litespeed_finish_request();
         }
         notifyAdminsOfDirectBooking($bookingId);
+    });
+}
+
+/**
+ * Send the admin utility template alert when a booking is created in the PMS
+ * (phone, whatsapp, walk_in, direct, manual, etc. - skips blocked dates and OTA imports).
+ *
+ * @return array{status:string, sent:int, failed:int, errors:string[]}
+ */
+function notifyAdminsOfPmsBooking(int $bookingId, ?callable $transport = null, ?array $config = null): array {
+    $result = ['status' => 'skipped', 'sent' => 0, 'failed' => 0, 'errors' => []];
+    try {
+        $config ??= adminAlertConfig();
+        $numbers = adminAlertNumbers($config['numbers']);
+        if ($config['token'] === '' || $config['phone_id'] === '' || !$numbers) {
+            $result['status'] = 'not_configured';
+            return $result;
+        }
+        $b = getBookingById($bookingId);
+        if (!$b || ($b['status'] ?? '') !== 'confirmed') return $result;
+        // Never alert as a PMS booking if it is a date block or an OTA sync import
+        if (($b['source'] ?? '') === 'blocked' || isOtaSource($b['source'] ?? '')) return $result;
+
+        $created = kfsDbTimestamp($b['created_at'] ?? '');
+        if ($created === null || time() - $created > ADMIN_ALERT_MAX_AGE_SECONDS) return $result;
+
+        $db = getDB();
+        $claim = $db->prepare("UPDATE bookings SET admin_alert_sent_at = datetime('now')
+            WHERE id = ? AND (admin_alert_sent_at IS NULL OR admin_alert_sent_at = '')");
+        $claim->execute([$bookingId]);
+        if ($claim->rowCount() !== 1) {
+            $result['status'] = 'already_sent';
+            return $result;
+        }
+
+        $template = $config['pms_template'] ?? $config['template'];
+        $transport ??= 'sendWhatsAppCloudRequest';
+        $params = adminBookingTemplateParams($b, $template);
+        $payloadConfig = array_merge($config, ['template' => $template]);
+        foreach ($numbers as $to) {
+            [$ok, $detail] = $transport($payloadConfig, adminTemplatePayload($to, $payloadConfig, $params));
+            waLogSend($template, $to, $ok ? 'sent' : 'failed', (string)$detail, $bookingId, 'pms_created');
+            if ($ok) {
+                $result['sent']++;
+            } else {
+                $result['failed']++;
+                $result['errors'][] = substr($to, 0, 4) . '…' . substr($to, -2) . ': ' . $detail;
+            }
+        }
+        if ($result['sent'] === 0) {
+            $db->prepare("UPDATE bookings SET admin_alert_sent_at = '' WHERE id = ?")->execute([$bookingId]);
+        }
+        $result['status'] = $result['sent'] > 0 ? 'sent' : 'failed';
+        if ($result['errors']) error_log("Admin PMS booking alert #{$bookingId}: " . implode(' | ', $result['errors']));
+    } catch (Throwable $e) {
+        error_log("Admin PMS booking alert #{$bookingId} crashed: " . $e->getMessage());
+        $result['status'] = 'error';
+        $result['errors'][] = $e->getMessage();
+    }
+    return $result;
+}
+
+/**
+ * Deferred shutdown function to send admin PMS alert without delaying the admin UI response.
+ */
+function deferAdminPmsBookingAlert(int $bookingId): void {
+    if ($bookingId <= 0) return;
+    register_shutdown_function(static function () use ($bookingId): void {
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        } elseif (function_exists('litespeed_finish_request')) {
+            litespeed_finish_request();
+        }
+        notifyAdminsOfPmsBooking($bookingId);
     });
 }

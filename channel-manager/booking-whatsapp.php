@@ -41,6 +41,25 @@ $flash = ['ok' => (string)($_GET['ok'] ?? ''), 'err' => (string)($_GET['err'] ??
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireValidCsrfToken($_POST['csrf_token'] ?? null);
     $kind = (string)($_POST['kind'] ?? '');
+    if ($kind === 'admin_booking') {
+        $config = adminAlertConfig();
+        $numbers = adminAlertNumbers($config['numbers']);
+        if (!$numbers || empty($config['token']) || empty($config['phone_id'])) {
+            header('Location: booking-whatsapp.php?id=' . (int)$b['id'] . '&err=' . rawurlencode('WhatsApp admin alerts are not configured.')); exit;
+        }
+        $template = $config['pms_template'] ?? $config['template'];
+        $params = adminBookingTemplateParams($b, $template);
+        $payloadConfig = array_merge($config, ['template' => $template]);
+        $sentCount = 0;
+        foreach ($numbers as $toAdmin) {
+            [$ok, $detail] = sendWhatsAppCloudRequest($payloadConfig, adminTemplatePayload($toAdmin, $payloadConfig, $params));
+            waLogSend($template, $toAdmin, $ok ? 'sent' : 'failed', (string)$detail, (int)$b['id'], 'manual_admin');
+            if ($ok) $sentCount++;
+        }
+        kfsAudit('whatsapp_sent', 'booking', (int)$b['id'], "Admin booking alert ({$template}) sent to {$sentCount} admins");
+        $msg = "Admin booking alert utility template sent to {$sentCount} admin number(s).";
+        header('Location: booking-whatsapp.php?id=' . (int)$b['id'] . '&ok=' . rawurlencode($msg)); exit;
+    }
     $amount = max(0.0, (float)str_replace(',', '', (string)($_POST['amount'] ?? '0')));
     $reference = trim((string)($_POST['reference'] ?? ''));
     $method = trim((string)($_POST['method'] ?? ''));
@@ -169,6 +188,22 @@ $confirmSent = ($b['guest_confirm_sent_at'] ?? '') !== '';
     ?>
   </div>
   <?php endif; ?>
+
+  <div class="card">
+    <h2>Admin alerts</h2>
+    <div class="msg">
+      <div class="what">
+        <strong>New booking alert (Admins)</strong>
+        <span>Sends the approved utility template (<code><?= e(ADMIN_PMS_ALERT_TEMPLATE) ?></code>) to all admin numbers (<?= e(count(adminAlertNumbers((string)ADMIN_ALERT_WA_NUMBERS))) ?> configured).</span>
+      </div>
+      <form method="POST" onsubmit="return confirm('Send the admin booking alert utility template to all admin numbers?')">
+        <?= csrfField() ?>
+        <input type="hidden" name="id" value="<?= (int)$b['id'] ?>">
+        <input type="hidden" name="kind" value="admin_booking">
+        <button class="btn btn-primary" type="submit">Send to Admins</button>
+      </form>
+    </div>
+  </div>
 
   <div class="card">
     <h2>Sent for this booking</h2>
