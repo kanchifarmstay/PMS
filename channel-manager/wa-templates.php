@@ -241,19 +241,67 @@ function waDailySummaryParams(string $today): array {
     $arrivals = $departures = 0;
     $balanceToday = 0.0;
     $occupied = [];
+    $bookedArrivalRooms = [];
+    $bookedDepartureRooms = [];
+    $bookedStayRooms = [];
     foreach ($bk->fetchAll() as $b) {
-        if ($b['check_in'] === $today) { $arrivals++; $balanceToday += waBalance($b); }
-        if ($b['check_out'] === $today) $departures++;
-        if ($b['check_in'] <= $today && $b['check_out'] > $today) foreach (waExpandRoom($b['room_id']) as $r) $occupied[$r] = true;
+        $bRooms = waExpandRoom($b['room_id']);
+        if ($b['check_in'] === $today) {
+            $arrivals++;
+            $balanceToday += waBalance($b);
+            foreach ($bRooms as $r) $bookedArrivalRooms[$r] = true;
+        }
+        if ($b['check_out'] === $today) {
+            $departures++;
+            foreach ($bRooms as $r) $bookedDepartureRooms[$r] = true;
+        }
+        if ($b['check_in'] <= $today && $b['check_out'] > $today) {
+            foreach ($bRooms as $r) {
+                $occupied[$r] = true;
+                if ($b['check_in'] < $today) $bookedStayRooms[$r] = true;
+            }
+        }
     }
     $ext = $db->prepare("SELECT platform, external_uid, room_id, check_in, check_out FROM external_blocks WHERE check_in <= ? AND check_out >= ?");
     $ext->execute([$today, $today]);
     $seenIn = $seenOut = [];
     foreach ($ext->fetchAll() as $x) {
         $k = $x['platform'] . '|' . $x['external_uid'] . '|' . $x['check_in'] . '|' . $x['check_out'];
-        if ($x['check_in'] === $today && !isset($seenIn[$k])) { $seenIn[$k] = true; $arrivals++; }
-        if ($x['check_out'] === $today && !isset($seenOut[$k])) { $seenOut[$k] = true; $departures++; }
-        if ($x['check_in'] <= $today && $x['check_out'] > $today) foreach (waExpandRoom($x['room_id']) as $r) $occupied[$r] = true;
+        $xRooms = waExpandRoom($x['room_id']);
+
+        if ($x['check_in'] === $today && !isset($seenIn[$k])) {
+            $duplicate = false;
+            foreach ($xRooms as $r) {
+                if (!empty($bookedArrivalRooms[$r]) || !empty($bookedStayRooms[$r])) {
+                    $duplicate = true;
+                    break;
+                }
+            }
+            $seenIn[$k] = true;
+            if (!$duplicate) {
+                $arrivals++;
+                foreach ($xRooms as $r) $bookedArrivalRooms[$r] = true;
+            }
+        }
+
+        if ($x['check_out'] === $today && !isset($seenOut[$k])) {
+            $duplicate = false;
+            foreach ($xRooms as $r) {
+                if (!empty($bookedDepartureRooms[$r]) || !empty($bookedStayRooms[$r])) {
+                    $duplicate = true;
+                    break;
+                }
+            }
+            $seenOut[$k] = true;
+            if (!$duplicate) {
+                $departures++;
+                foreach ($xRooms as $r) $bookedDepartureRooms[$r] = true;
+            }
+        }
+
+        if ($x['check_in'] <= $today && $x['check_out'] > $today) {
+            foreach ($xRooms as $r) $occupied[$r] = true;
+        }
     }
     $rooms = waPhysicalRooms();
     $occ = count(array_intersect(array_keys($occupied), $rooms));

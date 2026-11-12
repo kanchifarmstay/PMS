@@ -2175,6 +2175,32 @@ test('wa templates: the morning summary goes once a day after 08:00 with real co
     assertFalse(in_array('kfs_admin_daily_summary', waTemplatesSent($again), true));
 });
 
+test('wa templates: the morning summary deduplicates OTA blocks against matching bookings on the same room', function (): void {
+    resetAvailabilityData();
+    ownBooking([
+        'check_in' => '2032-02-10',
+        'check_out' => '2032-02-13',
+        'room_id' => 'wooden-villa',
+        'room_name' => 'Wooden Villa',
+        'amount' => 5000,
+        'amount_paid' => 5000,
+        'source' => 'booking.com',
+    ]);
+    insertOtaBlock('wooden-villa', 'booking.com', 'bk366@booking.com', '2032-02-10', '2032-02-13');
+
+    $paramsCheckIn = waDailySummaryParams('2032-02-10');
+    // Arrivals should be 1 (deduplicated against the booking.com booking), not 2
+    assertSame('1', $paramsCheckIn[1], 'arrivals should be 1, not double-counted with external block');
+    assertSame('0', $paramsCheckIn[2], 'departures should be 0');
+    assertSame('1 of ' . count(waPhysicalRooms()), $paramsCheckIn[3], 'occupied tonight');
+
+    $paramsCheckOut = waDailySummaryParams('2032-02-13');
+    // Departures should be 1, not 2
+    assertSame('0', $paramsCheckOut[1], 'arrivals should be 0');
+    assertSame('1', $paramsCheckOut[2], 'departures should be 1, not double-counted with external block');
+    assertSame('0 of ' . count(waPhysicalRooms()), $paramsCheckOut[3], 'occupied tonight');
+});
+
 test('wa templates: OTA alerts - first run only records, then each new reservation alerts once', function (): void {
     resetAvailabilityData();
     setSetting('wa_ota_seeded', '');
