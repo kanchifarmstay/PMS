@@ -1544,6 +1544,73 @@ $weekRev = array_sum(array_column(
   </div>
 </div>
 
+<!-- Arrivals & Departures — single record per booking -->
+<div class="panel" style="margin-bottom:1rem">
+  <div class="panel-hd">
+    <div>
+      <h3>📅 Arrivals &amp; Departures — Next 7 Days</h3>
+      <div class="sub">✈️ <?= count($arrivals) ?> check-in<?= count($arrivals)!=1?'s':'' ?> &nbsp;·&nbsp; 🚪 <?= count($departures) ?> check-out<?= count($departures)!=1?'s':'' ?></div>
+    </div>
+    <?php if ($weekRev > 0): ?>
+    <div style="text-align:right;font-size:.82rem;line-height:1.4">
+      <div style="font-weight:700;color:var(--primary-dark);font-size:.95rem"><?= fmt($weekRev) ?></div>
+      <div style="color:var(--text-muted)">revenue this week</div>
+    </div>
+    <?php endif; ?>
+  </div>
+  <?php if (empty($activity)): ?>
+  <div class="panel-bd"><p style="color:var(--text-muted);font-size:.85rem">No arrivals or departures in the next 7 days.</p></div>
+  <?php else: ?>
+  <div class="tbl-wrap">
+    <table class="tbl" style="table-layout:auto">
+      <thead>
+        <tr><th>Guest</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Nts</th><th>Source</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <?php foreach ($activity as $b):
+          $today    = date('Y-m-d');
+          $isArriv  = $b['check_in']  >= $today && $b['check_in']  <= date('Y-m-d', strtotime('+7 days'));
+          $isDepart = $b['check_out'] >= $today && $b['check_out'] <= date('Y-m-d', strtotime('+7 days'));
+          $bJson    = bookingJson($b);
+        ?>
+        <tr class="clickable-row" onclick="showBookingModal(<?= $bJson ?>)" title="Click for full details">
+          <td>
+            <div style="font-weight:600"><?= htmlspecialchars($b['guest_name']) ?></div>
+            <?php if (!empty($b['guest_phone'])): ?><div class="muted" style="font-size:.74rem"><?= htmlspecialchars($b['guest_phone']) ?></div><?php endif; ?>
+          </td>
+          <td style="font-size:.82rem"><?= htmlspecialchars($b['room_name']) ?></td>
+          <td style="white-space:nowrap"><?= date('D d M', strtotime($b['check_in'])) ?></td>
+          <td style="white-space:nowrap"><?= date('D d M', strtotime($b['check_out'])) ?></td>
+          <td class="muted"><?= nights($b['check_in'], $b['check_out']) ?></td>
+          <td><?= badge($b['source']) ?></td>
+          <td style="white-space:nowrap">
+            <?php if ($isArriv && $isDepart): ?>
+              <span style="background:#fff3e0;color:#e65100;padding:.2rem .5rem;border-radius:5px;font-size:.72rem;font-weight:700">✈️ In · 🚪 Out</span>
+            <?php elseif ($isArriv): ?>
+              <span style="background:#e8f5e9;color:#2e7d32;padding:.2rem .5rem;border-radius:5px;font-size:.72rem;font-weight:700">✈️ Check-in</span>
+            <?php else: ?>
+              <span style="background:#fce4ec;color:#880e4f;padding:.2rem .5rem;border-radius:5px;font-size:.72rem;font-weight:700">🚪 Check-out</span>
+            <?php endif; ?>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+  <?php endif; ?>
+</div>
+
+<!-- Pricing alert -->
+<?php if ($pendingCount > 0): ?>
+<div class="panel" style="border-color:var(--gold);margin-bottom:1rem">
+  <div class="panel-hd" style="background:#fffbeb"><h3>💡 <?= $pendingCount ?> Pricing Suggestions Pending</h3></div>
+  <div class="panel-bd" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+    <p style="font-size:.85rem;color:var(--text-muted);margin:0;flex:1">Review AI-generated pricing recommendations based on Muhurathams, festivals &amp; holidays.</p>
+<?php if (userCan('settings')): ?><a href="admin.php?section=pricing" class="btn btn-gold">Review Suggestions →</a><?php endif; ?>
+  </div>
+</div>
+<?php endif; ?>
+
 <!-- ── Property Status Board ──────────────────────────────── -->
 <?php
 $today    = date('Y-m-d');
@@ -1640,73 +1707,6 @@ $totalOccupied = count($propStatus) - $totalFree;
       <?php endforeach; ?>
     </div>
   </div>
-</div>
-
-<!-- Pricing alert -->
-<?php if ($pendingCount > 0): ?>
-<div class="panel" style="border-color:var(--gold);margin-bottom:1rem">
-  <div class="panel-hd" style="background:#fffbeb"><h3>💡 <?= $pendingCount ?> Pricing Suggestions Pending</h3></div>
-  <div class="panel-bd" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
-    <p style="font-size:.85rem;color:var(--text-muted);margin:0;flex:1">Review AI-generated pricing recommendations based on Muhurathams, festivals &amp; holidays.</p>
-<?php if (userCan('settings')): ?><a href="admin.php?section=pricing" class="btn btn-gold">Review Suggestions →</a><?php endif; ?>
-  </div>
-</div>
-<?php endif; ?>
-
-<!-- Arrivals & Departures — single record per booking -->
-<div class="panel">
-  <div class="panel-hd">
-    <div>
-      <h3>📅 Arrivals &amp; Departures — Next 7 Days</h3>
-      <div class="sub">✈️ <?= count($arrivals) ?> check-in<?= count($arrivals)!=1?'s':'' ?> &nbsp;·&nbsp; 🚪 <?= count($departures) ?> check-out<?= count($departures)!=1?'s':'' ?></div>
-    </div>
-    <?php if ($weekRev > 0): ?>
-    <div style="text-align:right;font-size:.82rem;line-height:1.4">
-      <div style="font-weight:700;color:var(--primary-dark);font-size:.95rem"><?= fmt($weekRev) ?></div>
-      <div style="color:var(--text-muted)">revenue this week</div>
-    </div>
-    <?php endif; ?>
-  </div>
-  <?php if (empty($activity)): ?>
-  <div class="panel-bd"><p style="color:var(--text-muted);font-size:.85rem">No arrivals or departures in the next 7 days.</p></div>
-  <?php else: ?>
-  <div class="tbl-wrap">
-    <table class="tbl" style="table-layout:auto">
-      <thead>
-        <tr><th>Guest</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Nts</th><th>Source</th><th>Status</th></tr>
-      </thead>
-      <tbody>
-        <?php foreach ($activity as $b):
-          $today    = date('Y-m-d');
-          $isArriv  = $b['check_in']  >= $today && $b['check_in']  <= date('Y-m-d', strtotime('+7 days'));
-          $isDepart = $b['check_out'] >= $today && $b['check_out'] <= date('Y-m-d', strtotime('+7 days'));
-          $bJson    = bookingJson($b);
-        ?>
-        <tr class="clickable-row" onclick="showBookingModal(<?= $bJson ?>)" title="Click for full details">
-          <td>
-            <div style="font-weight:600"><?= htmlspecialchars($b['guest_name']) ?></div>
-            <?php if (!empty($b['guest_phone'])): ?><div class="muted" style="font-size:.74rem"><?= htmlspecialchars($b['guest_phone']) ?></div><?php endif; ?>
-          </td>
-          <td style="font-size:.82rem"><?= htmlspecialchars($b['room_name']) ?></td>
-          <td style="white-space:nowrap"><?= date('D d M', strtotime($b['check_in'])) ?></td>
-          <td style="white-space:nowrap"><?= date('D d M', strtotime($b['check_out'])) ?></td>
-          <td class="muted"><?= nights($b['check_in'], $b['check_out']) ?></td>
-          <td><?= badge($b['source']) ?></td>
-          <td style="white-space:nowrap">
-            <?php if ($isArriv && $isDepart): ?>
-              <span style="background:#fff3e0;color:#e65100;padding:.2rem .5rem;border-radius:5px;font-size:.72rem;font-weight:700">✈️ In · 🚪 Out</span>
-            <?php elseif ($isArriv): ?>
-              <span style="background:#e8f5e9;color:#2e7d32;padding:.2rem .5rem;border-radius:5px;font-size:.72rem;font-weight:700">✈️ Check-in</span>
-            <?php else: ?>
-              <span style="background:#fce4ec;color:#880e4f;padding:.2rem .5rem;border-radius:5px;font-size:.72rem;font-weight:700">🚪 Check-out</span>
-            <?php endif; ?>
-          </td>
-        </tr>
-        <?php endforeach; ?>
-      </tbody>
-    </table>
-  </div>
-  <?php endif; ?>
 </div>
 
 <!-- Recent Bookings -->
