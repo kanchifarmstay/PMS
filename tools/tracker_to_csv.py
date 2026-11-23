@@ -45,6 +45,7 @@ ROOM_ALIASES = [
     (r"^white(villa)?$", "white-villa"),
     (r"^tranquil(retreat)?$", "tranquil-retreat"),
     (r"^natures?nest$", "natures-nest"),
+    (r"^fishpond(retreat)?$", "fishpond-retreat"),
     (r"^farm(stay|booking)$", "kanchi-farm-stay"),
 ]
 # White Villa has three rooms; before R1/R2 was written down the sheet just said "white villa".
