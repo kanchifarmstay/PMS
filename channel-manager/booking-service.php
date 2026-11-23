@@ -29,6 +29,14 @@ function relatedInventoryIds(string $roomId): array
         }
         if (in_array($roomId, $components, true)) $related[$parent] = true;
     }
+    if (isset(INVENTORY_COMPONENTS[$roomId])) {
+        $myComponents = INVENTORY_COMPONENTS[$roomId];
+        foreach (INVENTORY_COMPONENTS as $otherParent => $otherComponents) {
+            if ($otherParent !== $roomId && array_intersect($myComponents, $otherComponents) !== []) {
+                $related[$otherParent] = true;
+            }
+        }
+    }
     ksort($related);
     return array_keys($related);
 }

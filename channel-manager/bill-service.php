@@ -125,7 +125,7 @@ function defaultRoomGstRate(int $perNightPaise, bool $inclusive): int {
  * per unit - so its combined tariff never decides the rate (owner, 2026-10-08).
  */
 function bookingRoomGstRate(array $b, int $perNightPaise, bool $inclusive): int {
-    if (($b['room_id'] ?? '') === GROUP_INVENTORY_ID) return 5;
+    if (in_array($b['room_id'] ?? '', [GROUP_INVENTORY_ID, 'group-package-a', 'group-package-b', 'group-package-c'], true)) return 5;
     return defaultRoomGstRate($perNightPaise, $inclusive);
 }
 

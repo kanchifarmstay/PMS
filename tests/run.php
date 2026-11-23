@@ -264,11 +264,11 @@ test('availability schema separates external blocks and payment holds', function
 test('inventory dependencies are bidirectional', function (): void {
     assertTrue(function_exists('relatedInventoryIds'), 'relatedInventoryIds is not implemented');
     assertSame(
-        ['kanchi-farm-stay', 'white-villa', 'white-villa-full-floor'],
+        ['group-package-a', 'group-package-c', 'kanchi-farm-stay', 'white-villa', 'white-villa-full-floor'],
         relatedInventoryIds('white-villa')
     );
     assertSame(
-        ['kanchi-farm-stay', 'white-villa', 'white-villa-full-floor', 'white-villa-room-2'],
+        ['group-package-a', 'group-package-c', 'kanchi-farm-stay', 'white-villa', 'white-villa-full-floor', 'white-villa-room-2'],
         relatedInventoryIds('white-villa-full-floor')
     );
     assertSame(count(ROOM_IDS), count(relatedInventoryIds('kanchi-farm-stay')));
@@ -907,6 +907,27 @@ test('server quote calculates room rates and extra guests', function (): void {
     assertSame(6000.0, $fishWeekend['subtotal']);
     assertSame(300.0, $fishWeekend['gst_amount']);
     assertSame(6300.0, $fishWeekend['total']);
+
+    // Group Package A quote test (1 night at ₹13000 + 5% GST = ₹13650)
+    $pkgA = calculateQuote('group-package-a', '2030-11-04', '2030-11-05', 10, 0);
+    assertSame(1, $pkgA['nights']);
+    assertSame(13000.0, $pkgA['subtotal']);
+    assertSame(650.0, $pkgA['gst_amount']);
+    assertSame(13650.0, $pkgA['total']);
+
+    // Group Package B quote test (1 night at ₹6000 + 5% GST = ₹6300)
+    $pkgB = calculateQuote('group-package-b', '2030-11-04', '2030-11-05', 8, 0);
+    assertSame(1, $pkgB['nights']);
+    assertSame(6000.0, $pkgB['subtotal']);
+    assertSame(300.0, $pkgB['gst_amount']);
+    assertSame(6300.0, $pkgB['total']);
+
+    // Group Package C quote test (1 night at ₹12000 + 5% GST = ₹12600)
+    $pkgC = calculateQuote('group-package-c', '2030-11-04', '2030-11-05', 14, 0);
+    assertSame(1, $pkgC['nights']);
+    assertSame(12000.0, $pkgC['subtotal']);
+    assertSame(600.0, $pkgC['gst_amount']);
+    assertSame(12600.0, $pkgC['total']);
 });
 
 test('server quote enforces guest limits', function (): void {
@@ -942,7 +963,7 @@ test('external blocks are normalized for privacy-safe operational calendar views
     assertFalse(str_contains(json_encode($entries), 'private-provider-uid'));
     $expanded = expandCalendarEntriesToRelatedInventory($entries);
     assertSame(
-        ['wooden-villa'],
+        ['group-package-a', 'wooden-villa'],
         array_column($expanded, 'room_id')
     );
 });

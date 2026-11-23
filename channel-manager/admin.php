@@ -510,6 +510,9 @@ function roomShort(string $roomId): string {
         'tent'                   => 'Tent',
         'tree-house'             => 'Tree House',
         'pondside-retreat'       => 'Pondside Retreat',
+        'group-package-a'        => 'Package A',
+        'group-package-b'        => 'Package B',
+        'group-package-c'        => 'Package C',
         default                  => ROOM_IDS[$roomId] ?? $roomId,
     };
 }

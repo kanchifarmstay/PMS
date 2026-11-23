@@ -70,6 +70,9 @@ define('ROOM_IDS', [
     'tent'=>'Tent',
     'tree-house'=>'Tree House',
     'pondside-retreat'=>'Pondside Retreat',
+    'group-package-a'=>'Group Package A (4 Villas, 10–18 Guests)',
+    'group-package-b'=>'Group Package B (2 Suites, 8–14 Guests)',
+    'group-package-c'=>'Group Package C (4 Villas, 14–24 Guests)',
 ]);
 
 define('ROOM_PRICING', [
@@ -84,6 +87,9 @@ define('ROOM_PRICING', [
     'tent'=>['weekday'=>800,'weekend'=>800,'base_adults'=>2,'base_children'=>0,'max_adults'=>2,'max_children'=>1],
     'tree-house'=>['weekday'=>1800,'weekend'=>1800,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
     'pondside-retreat'=>['weekday'=>2500,'weekend'=>3000,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
+    'group-package-a'=>['weekday'=>13000,'weekend'=>13000,'base_adults'=>10,'base_children'=>4,'max_adults'=>18,'max_children'=>6],
+    'group-package-b'=>['weekday'=>6000,'weekend'=>6000,'base_adults'=>8,'base_children'=>4,'max_adults'=>14,'max_children'=>6],
+    'group-package-c'=>['weekday'=>12000,'weekend'=>12000,'base_adults'=>14,'base_children'=>4,'max_adults'=>24,'max_children'=>6],
 ]);
 
 define('EXTRA_ADULT_RATE', 800);
@@ -92,6 +98,9 @@ define('WEEKEND_ISO_DAYS', [5, 6]);
 define('PAYMENT_HOLD_MINUTES', 15);
 define('INVENTORY_COMPONENTS', [
     'white-villa-full-floor'=>['white-villa', 'white-villa-room-2'],
+    'group-package-a'=>['wooden-villa', 'white-villa', 'white-villa-room-2', 'white-villa-full-floor', 'wooden-cottage', 'pondside-retreat'],
+    'group-package-b'=>['tranquil-retreat', 'natures-nest'],
+    'group-package-c'=>['white-villa', 'white-villa-room-2', 'white-villa-full-floor', 'pondside-retreat', 'tranquil-retreat', 'natures-nest'],
     'kanchi-farm-stay'=>array_values(array_filter(array_keys(ROOM_IDS), static fn(string $id): bool => $id !== 'kanchi-farm-stay')),
 ]);
 define('GROUP_INVENTORY_ID', 'kanchi-farm-stay');

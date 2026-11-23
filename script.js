@@ -296,6 +296,69 @@ const rooms = [
         size: "400 sqft",
         airbnbUrl: "contact.html",
         bookingUrl: "contact.html"
+    },
+    {
+        id: 'group-package-a',
+        name: "Group Package A (4 Villas, 10–18 Guests)",
+        shortDescription: "Exclusive booking of 4 private villas: Wooden Villa, White Villa (Full Floor), Wooden Cottage, and Pondside Retreat.",
+        fullDescription: "Ideal for large family gatherings, retreats, and celebrations of 10 to 18 guests. Group Package A brings together 4 of our most popular accommodations: the rooftop Wooden Villa, the private White Villa (Full 1st Floor including 2 rooms, hall, balcony, and terrace), the cozy Wooden Cottage, and the serene Pondside Retreat. Enjoy multiple private bedrooms, plunge pool access, attached bathrooms, private kitchenette, and full 5-acre farm immersion.",
+        amenities: ["4 Private Accommodations", "Wooden Villa", "White Villa (Full 1st Floor)", "Wooden Cottage", "Pondside Retreat", "Plunge Pool Access", "Private Kitchenette", "Air Conditioning in all units", "Attached Bathrooms", "WiFi", "Pump Set Play", "Barbecue & Campfire", "Pets Allowed", "Garden & Pond Views", "Farm Animals Interaction", "Availability"],
+        image: "assets/images/gallery-room-swing.jpg",
+        images: [
+            "assets/images/gallery-room-swing.jpg",
+            "assets/images/white-villa-main-hero.jpg",
+            "assets/images/wooden-cottage-1.jpg",
+            "assets/images/pondside-retreat-p01.jpg",
+            "assets/images/farm-hero.jpg"
+        ],
+        price: "₹13,000 / night",
+        numericPrice: 13000,
+        capacity: "10-18 Guests (4 Villas)",
+        size: "4 Private Villas (Combined)",
+        airbnbUrl: "contact.html",
+        bookingUrl: "contact.html"
+    },
+    {
+        id: 'group-package-b',
+        name: "Group Package B (2 Suites, 8–14 Guests)",
+        shortDescription: "Exclusive booking of 2 spacious suites: Tranquil Retreat and Nature's Nest.",
+        fullDescription: "Designed for medium-sized family gatherings or friends traveling together. Group Package B pairs our two most peaceful and spacious farmhouse accommodations: Tranquil Retreat (with premium king bedding, expansive breezy verandas, and living room) and Nature's Nest (with lush garden views and tranquil sit-outs). Comfortably accommodates 8 to 14 guests with modern comforts, air conditioning, and full farm access.",
+        amenities: ["2 Spacious Suites", "Tranquil Retreat", "Nature's Nest", "Expansive Veranda Access", "Garden Views", "Air Conditioning", "Attached Bathrooms", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue & Campfire", "Pets Allowed", "Farm Animals Interaction", "Availability"],
+        image: "assets/images/tranquil-retreat-main.jpg",
+        images: [
+            "assets/images/tranquil-retreat-main.jpg",
+            "assets/images/natures-nest-hero.jpg",
+            "assets/images/tranquil-retreat-1.jpg",
+            "assets/images/natures-nest-sitout-1.jpg",
+            "assets/images/farm-exterior.jpg"
+        ],
+        price: "₹6,000 / night",
+        numericPrice: 6000,
+        capacity: "8-14 Guests (2 Suites)",
+        size: "2 Spacious Suites (Combined)",
+        airbnbUrl: "contact.html",
+        bookingUrl: "contact.html"
+    },
+    {
+        id: 'group-package-c',
+        name: "Group Package C (4 Villas, 14–24 Guests)",
+        shortDescription: "Exclusive booking of 4 countryside villas: White Villa (Full Floor), Pondside Retreat, Tranquil Retreat, and Nature's Nest.",
+        fullDescription: "A sprawling group getaway accommodating 14 to 24 guests across 4 premium farm accommodations: White Villa (Full 1st Floor featuring 2 bedrooms, hall, balcony, and terrace), Pondside Retreat (with private kitchenette and serene pond views), Tranquil Retreat (luxurious farmhouse suite with veranda), and Nature's Nest. Enjoy privacy, communal spaces, farm immersion, plunge pool, and farm animals.",
+        amenities: ["4 Countryside Accommodations", "White Villa (Full 1st Floor)", "Pondside Retreat", "Tranquil Retreat", "Nature's Nest", "Private Kitchenette", "Spacious Verandas & Balcony", "Air Conditioning in all units", "Multiple Bathrooms", "WiFi", "Plunge Pool", "Pump Set Play", "Barbecue & Campfire", "Pets Allowed", "Farm Animals Interaction", "Availability"],
+        image: "assets/images/white-villa-main-hero.jpg",
+        images: [
+            "assets/images/white-villa-main-hero.jpg",
+            "assets/images/pondside-retreat-p01.jpg",
+            "assets/images/tranquil-retreat-main.jpg",
+            "assets/images/natures-nest-hero.jpg",
+            "assets/images/farm-hero.jpg"
+        ],
+        price: "₹12,000 / night",
+        numericPrice: 12000,
+        capacity: "14-24 Guests (4 Villas)",
+        size: "4 Countryside Accommodations (Combined)",
+        airbnbUrl: "contact.html",
+        bookingUrl: "contact.html"
     }
 ];
 

@@ -4,7 +4,7 @@
  */
 
 const CACHE_PREFIX = 'kfs-public-';
-const CACHE = CACHE_PREFIX + 'v9';  // v9: renamed to Pondside Retreat
+const CACHE = CACHE_PREFIX + 'v10'; // v10: added Group Packages A, B, C
 const STATIC = [
   '/',
   '/index.html',
