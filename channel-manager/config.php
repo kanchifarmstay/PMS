@@ -69,7 +69,7 @@ define('ROOM_IDS', [
     'kanchi-farm-stay'=>'KanchiFarmStay (Group Booking)',
     'tent'=>'Tent',
     'tree-house'=>'Tree House',
-    'fishpond-retreat'=>'Fishpond Retreat',
+    'pondside-retreat'=>'Pondside Retreat',
 ]);
 
 define('ROOM_PRICING', [
@@ -83,7 +83,7 @@ define('ROOM_PRICING', [
     'kanchi-farm-stay'=>['weekday'=>9000,'weekend'=>10000,'base_adults'=>10,'base_children'=>4,'max_adults'=>25,'max_children'=>6],
     'tent'=>['weekday'=>800,'weekend'=>800,'base_adults'=>2,'base_children'=>0,'max_adults'=>2,'max_children'=>1],
     'tree-house'=>['weekday'=>1800,'weekend'=>1800,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
-    'fishpond-retreat'=>['weekday'=>2500,'weekend'=>3000,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
+    'pondside-retreat'=>['weekday'=>2500,'weekend'=>3000,'base_adults'=>2,'base_children'=>1,'max_adults'=>4,'max_children'=>2],
 ]);
 
 define('EXTRA_ADULT_RATE', 800);

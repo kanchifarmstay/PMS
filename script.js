@@ -276,18 +276,18 @@ const rooms = [
         bookingUrl: "contact.html"
     },
     {
-        id: 'fishpond-retreat',
-        name: "Fishpond Retreat",
-        shortDescription: "Serene studio retreat overlooking the farm fish pond with kitchenette, AC, and attached bathroom.",
-        fullDescription: "Nestled right beside the farm's peaceful fish pond, Fishpond Retreat offers a serene and comfortable nature getaway. This spacious 400 sqft studio features a queen/double bed plus an additional single diwan bed, air conditioning, an attached bathroom with geyser, and a private kitchenette equipped with an RO drinking water purifier, full-size refrigerator, and dining area. Ideal for couples, families, and travelers seeking tranquility amidst nature.",
-        amenities: ["Double Bed", "Single Bed (Diwan)", "Air Conditioning", "Attached Bathroom", "Kitchenette with Sink", "RO Drinking Water", "Refrigerator", "Dining Table", "Fish Pond View", "Outdoor Seating", "WiFi", "Plunge Pool", "Animal Feeding", "Egg Collection", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
-        image: "assets/images/fishpond-retreat-p01.jpg",
+        id: 'pondside-retreat',
+        name: "Pondside Retreat",
+        shortDescription: "Serene studio retreat overlooking the farm pond with kitchenette, AC, and attached bathroom.",
+        fullDescription: "Nestled right beside the farm's peaceful pond, Pondside Retreat offers a serene and comfortable nature getaway. This spacious 400 sqft studio features a queen/double bed plus an additional single diwan bed, air conditioning, an attached bathroom with geyser, and a private kitchenette equipped with an RO drinking water purifier, full-size refrigerator, and dining area. Ideal for couples, families, and travelers seeking tranquility amidst nature.",
+        amenities: ["Double Bed", "Single Bed (Diwan)", "Air Conditioning", "Attached Bathroom", "Kitchenette with Sink", "RO Drinking Water", "Refrigerator", "Dining Table", "Pond View", "Outdoor Seating", "WiFi", "Plunge Pool", "Animal Feeding", "Egg Collection", "Barbecue", "Pets Allowed", "Garden", "Fish Pond", "Farm Animals (Rabbits, Dogs, Goats, Cow, Turkey, Chicken, Ducks & more for Kids)", "Availability"],
+        image: "assets/images/pondside-retreat-p01.jpg",
         images: [
-            "assets/images/fishpond-retreat-p01.jpg",
-            "assets/images/fishpond-retreat-p02.jpg",
-            "assets/images/fishpond-retreat-p03.jpg",
-            "assets/images/fishpond-retreat-p04.jpg",
-            "assets/images/fishpond-retreat-p05.jpg"
+            "assets/images/pondside-retreat-p01.jpg",
+            "assets/images/pondside-retreat-p02.jpg",
+            "assets/images/pondside-retreat-p03.jpg",
+            "assets/images/pondside-retreat-p04.jpg",
+            "assets/images/pondside-retreat-p05.jpg"
         ],
         price: "₹2,500 / night",
         weekendPrice: "₹3,000 / night",
@@ -609,7 +609,8 @@ function isActive(page) {
 // LOGIC: Room Details Page
 function loadRoomDetails() {
     const params = new URLSearchParams(window.location.search);
-    const roomId = params.get('id');
+    let roomId = params.get('id');
+    if (roomId === 'fishpond-retreat') roomId = 'pondside-retreat';
     const room = rooms.find(r => r.id === roomId);
 
     if (room) {
@@ -1120,12 +1121,12 @@ const galleryImages = [
     { src: 'assets/images/tent-new-6.jpg',         caption: 'Tent — Campsite', category: 'accommodations' },
     { src: 'assets/images/gallery-tent-camping.jpg', caption: 'Camping Tent', category: 'accommodations' },
 
-    // --- Fishpond Retreat ---
-    { src: 'assets/images/fishpond-retreat-p01.jpg', caption: 'Fishpond Retreat — Studio Layout', category: 'accommodations' },
-    { src: 'assets/images/fishpond-retreat-p02.jpg', caption: 'Fishpond Retreat — Bedroom', category: 'accommodations' },
-    { src: 'assets/images/fishpond-retreat-p03.jpg', caption: 'Fishpond Retreat — Dining & Kitchenette', category: 'accommodations' },
-    { src: 'assets/images/fishpond-retreat-p04.jpg', caption: 'Fishpond Retreat — Diwan & Amenities', category: 'accommodations' },
-    { src: 'assets/images/fishpond-retreat-p05.jpg', caption: 'Fishpond Retreat — Room View', category: 'accommodations' },
+    // --- Pondside Retreat ---
+    { src: 'assets/images/pondside-retreat-p01.jpg', caption: 'Pondside Retreat — Studio Layout', category: 'accommodations' },
+    { src: 'assets/images/pondside-retreat-p02.jpg', caption: 'Pondside Retreat — Bedroom', category: 'accommodations' },
+    { src: 'assets/images/pondside-retreat-p03.jpg', caption: 'Pondside Retreat — Dining & Kitchenette', category: 'accommodations' },
+    { src: 'assets/images/pondside-retreat-p04.jpg', caption: 'Pondside Retreat — Diwan & Amenities', category: 'accommodations' },
+    { src: 'assets/images/pondside-retreat-p05.jpg', caption: 'Pondside Retreat — Room View', category: 'accommodations' },
 
     // --- Facilities ---
     { src: 'assets/images/farm-swing.jpg',          caption: 'Swing and Play Area', category: 'facilities' },

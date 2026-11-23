@@ -4,7 +4,7 @@
  */
 
 const CACHE_PREFIX = 'kfs-public-';
-const CACHE = CACHE_PREFIX + 'v8';  // v8: added Fishpond Retreat
+const CACHE = CACHE_PREFIX + 'v9';  // v9: renamed to Pondside Retreat
 const STATIC = [
   '/',
   '/index.html',

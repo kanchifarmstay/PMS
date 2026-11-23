@@ -509,7 +509,7 @@ function roomShort(string $roomId): string {
         'kanchi-farm-stay'       => 'Whole Property',
         'tent'                   => 'Tent',
         'tree-house'             => 'Tree House',
-        'fishpond-retreat'       => 'Fishpond Retreat',
+        'pondside-retreat'       => 'Pondside Retreat',
         default                  => ROOM_IDS[$roomId] ?? $roomId,
     };
 }

@@ -216,7 +216,7 @@ test('admin password uses the configured hash', function (): void {
 test('room identifiers are restricted to configured inventory', function (): void {
     assertTrue(function_exists('isValidRoomId'), 'isValidRoomId is not implemented');
     assertTrue(isValidRoomId('wooden-villa'));
-    assertTrue(isValidRoomId('fishpond-retreat'));
+    assertTrue(isValidRoomId('pondside-retreat'));
     assertFalse(isValidRoomId('unknown-room'));
 });
 
@@ -893,15 +893,15 @@ test('server quote calculates room rates and extra guests', function (): void {
     assertSame(90.0, $treeQuote['gst_amount']);
     assertSame(1890.0, $treeQuote['total']);
 
-    // Fishpond retreat quote test (1 weekday night at ₹2500 + 5% GST = ₹2625)
-    $fishQuote = calculateQuote('fishpond-retreat', '2030-11-04', '2030-11-05', 2, 0);
+    // Pondside retreat quote test (1 weekday night at ₹2500 + 5% GST = ₹2625)
+    $fishQuote = calculateQuote('pondside-retreat', '2030-11-04', '2030-11-05', 2, 0);
     assertSame(1, $fishQuote['nights']);
     assertSame(2500.0, $fishQuote['subtotal']);
     assertSame(125.0, $fishQuote['gst_amount']);
     assertSame(2625.0, $fishQuote['total']);
 
-    // Fishpond retreat weekend quote test (2 weekend nights at ₹3000 = ₹6000 + 5% GST = ₹6300)
-    $fishWeekend = calculateQuote('fishpond-retreat', '2030-11-08', '2030-11-10', 2, 1);
+    // Pondside retreat weekend quote test (2 weekend nights at ₹3000 = ₹6000 + 5% GST = ₹6300)
+    $fishWeekend = calculateQuote('pondside-retreat', '2030-11-08', '2030-11-10', 2, 1);
     assertSame(2, $fishWeekend['nights']);
     assertSame(2, $fishWeekend['weekend_nights']);
     assertSame(6000.0, $fishWeekend['subtotal']);
