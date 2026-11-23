@@ -4,7 +4,7 @@
  */
 
 const CACHE_PREFIX = 'kfs-public-';
-const CACHE = CACHE_PREFIX + 'v7';  // v7: updated room rates & pricing
+const CACHE = CACHE_PREFIX + 'v8';  // v8: added Fishpond Retreat
 const STATIC = [
   '/',
   '/index.html',
