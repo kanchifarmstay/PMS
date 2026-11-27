@@ -1601,12 +1601,13 @@ test('bill: room GST default follows the ₹7,500 pre-tax ceiling', function ():
     assertSame(18, defaultRoomGstRate(900000, true));
 });
 
-test('bill: financial year and invoice number follow the April-March year and fit GST\'s 16 characters', function (): void {
+test('bill: financial year and invoice number follow KFS-001 format and fit GST\'s 16 characters', function (): void {
     assertSame('2026-27', financialYear('2026-09-23'));
     assertSame('2026-27', financialYear('2027-03-31'));
     assertSame('2027-28', financialYear('2027-04-01'));
     $no = formatInvoiceNumber('KFSTAY', '2026-27', 12);
-    assertSame('KFSTAY/26-27/0012', $no);
+    assertSame('KFSTAY-012', $no);
+    assertSame('KFS-001', formatInvoiceNumber('KFS', '2026-27', 1));
     assertTrue(strlen(formatInvoiceNumber('KFS', '2026-27', 9999)) <= 16);
 });
 
@@ -1647,17 +1648,25 @@ test('bill: a draft from a booking bills exactly the booking amount', function (
     assertSame(1000000, computeBill($odd['items'], true)['grand']);
 });
 
-test('bill: numbers run in sequence per financial year, and an edit keeps its number', function (): void {
-    getDB()->exec('DELETE FROM bills');
+test('bill: numbers run continuously from KFS-001 across financial years, and legacy FY bills keep theirs', function (): void {
+    $db = getDB();
+    $db->exec('DELETE FROM bills');
+    // Seed a legacy bill from FY 2030-31 (as production has KFS/26-27/0001..0024)
+    $db->prepare("INSERT INTO bills (invoice_no, fy, series, seq, invoice_date, guest_name, total_paise, data) VALUES (?,?,?,?,?,?,?,?)")
+       ->execute(['KFS/30-31/0024', '2030-31', '2030-31', 24, '2030-09-19', 'Legacy Guest', 900000, json_encode(sampleBill())]);
+
     $a = saveBill(sampleBill());
     $b = saveBill(sampleBill());
     $c = saveBill(sampleBill(['invoice_date' => '2031-04-02']));
-    assertSame('KFS/30-31/0001', getBill($a)['invoice_no']);
-    assertSame('KFS/30-31/0002', getBill($b)['invoice_no']);
-    assertSame('KFS/31-32/0001', getBill($c)['invoice_no']);
+    assertSame('KFS-001', getBill($a)['invoice_no']);
+    assertSame('KFS-002', getBill($b)['invoice_no']);
+    assertSame('KFS-003', getBill($c)['invoice_no'], 'does not reset on April 1');
+
+    // listBills puts newest issued bills first
+    assertSame(['KFS-003', 'KFS-002', 'KFS-001', 'KFS/30-31/0024'], array_column(listBills(10), 'invoice_no'));
 
     saveBill(sampleBill(['guest' => ['name' => 'Renamed']]), $a);
-    assertSame('KFS/30-31/0001', getBill($a)['invoice_no']);
+    assertSame('KFS-001', getBill($a)['invoice_no']);
     assertSame('Renamed', getBill($a)['guest_name']);
 
     $moved = false;
@@ -1670,7 +1679,60 @@ test('bill: numbers run in sequence per financial year, and an edit keeps its nu
     try { saveBill(sampleBill(), $b); } catch (InvalidArgumentException) { $edited = true; }
     assertTrue($edited, 'a cancelled invoice cannot be edited');
     // Cancelling never frees the number.
-    assertSame('KFS/30-31/0003', getBill(saveBill(sampleBill()))['invoice_no']);
+    assertSame('KFS-004', getBill(saveBill(sampleBill()))['invoice_no']);
+});
+
+test('bill: migrating a legacy UNIQUE(fy, seq) bills table preserves old bills and starts KFS-001', function (): void {
+    $db = getDB();
+    $db->exec('DROP TABLE bills');
+    $db->exec("
+        CREATE TABLE bills (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_no    TEXT    NOT NULL UNIQUE,
+            fy            TEXT    NOT NULL,
+            seq           INTEGER NOT NULL,
+            booking_id    INTEGER,
+            invoice_date  DATE    NOT NULL,
+            guest_name    TEXT    DEFAULT '',
+            total_paise   INTEGER DEFAULT 0,
+            data          TEXT    NOT NULL,
+            status        TEXT    DEFAULT 'issued',
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            wa_sent_at    TEXT DEFAULT '',
+            wa_sent_to    TEXT DEFAULT '',
+            wa_last_error TEXT DEFAULT '',
+            UNIQUE(fy, seq)
+        )
+    ");
+    $db->prepare("INSERT INTO bills (id, invoice_no, fy, seq, invoice_date, guest_name, total_paise, data, wa_sent_at) VALUES (?,?,?,?,?,?,?,?,?)")
+       ->execute([24, 'KFS/26-27/0024', '2026-27', 24, '2026-11-09', 'Legacy Guest 24', 900000, json_encode(sampleBill(['invoice_date' => '2026-11-09'])), '2026-11-09 12:41:00']);
+    $db->prepare("INSERT INTO bills (id, invoice_no, fy, seq, invoice_date, guest_name, total_paise, data) VALUES (?,?,?,?,?,?,?,?)")
+       ->execute([1, 'KFS/26-27/0001', '2026-27', 1, '2026-09-23', 'Legacy Guest 1', 900000, json_encode(sampleBill(['invoice_date' => '2026-09-23']))]);
+
+    _initSchema($db);
+
+    $ddl = (string)$db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='bills'")->fetchColumn();
+    assertContains('series', $ddl);
+    assertNotContains('UNIQUE(fy, seq)', $ddl);
+
+    $legacy = getBill(24);
+    assertSame('KFS/26-27/0024', $legacy['invoice_no']);
+    assertSame('2026-27', $legacy['series']);
+    assertSame('2026-11-09 12:41:00', $legacy['wa_sent_at']);
+
+    // Issuing a new bill in FY 2026-27 (same FY where seq=1 already exists as legacy) starts at KFS-001
+    $newId = saveBill(sampleBill(['invoice_date' => '2026-11-27']));
+    assertTrue($newId > 24, 'autoincrement sequence preserved after migration');
+    $newBill = getBill($newId);
+    assertSame('KFS-001', $newBill['invoice_no']);
+    assertSame('continuous', $newBill['series']);
+    assertSame('2026-27', $newBill['fy']);
+
+    // Document summary in GST return preserves issuance order from legacy -> KFS-001
+    $r = gstReturn('2026-10:3');
+    assertSame('KFS/26-27/0024', $r['docs']['from']);
+    assertSame('KFS-001', $r['docs']['to']);
 });
 
 test('bill: an issued invoice keeps the business details it was issued with', function (): void {
@@ -1698,7 +1760,7 @@ test('bill: the printed invoice carries the logo, GSTIN, phone numbers, and tota
     $id = saveBill(sampleBill());
     $html = renderBillPage(['id' => (string)$id]);
     foreach (['assets/images/logo.png', 'TAX INVOICE', '33BFYPP2186L1ZM', '+91 6383726094', '+91 8825775747',
-              'KFS/30-31/0001', 'Test Guest', 'Chithathur Village', 'Tiruvannamalai District', 'Rupees Nine Thousand Only', '9,000.00', '2.5% + 2.5%'] as $needle) {
+              'KFS-001', 'Test Guest', 'Chithathur Village', 'Tiruvannamalai District', 'Rupees Nine Thousand Only', '9,000.00', '2.5% + 2.5%'] as $needle) {
         assertContains($needle, $html, "invoice should show {$needle}");
     }
     assertNotContains('Place of supply', $html, 'place of supply is not printed on the invoice');
@@ -1967,7 +2029,7 @@ test('invoice whatsapp: the template carries name, invoice no, stay, total and t
     assertSame('kfs_invoice_ready', $payload['template']['name']);
     assertSame('919876543210', $payload['to']);
     [$bodyC, $btnC] = $payload['template']['components'];
-    assertSame(['Test Guest', 'KFS/30-31/0001', 'Wooden Villa, 20-22 Sep 2030', '9,000'], array_column($bodyC['parameters'], 'text'));
+    assertSame(['Test Guest', 'KFS-001', 'Wooden Villa, 20-22 Sep 2030', '9,000'], array_column($bodyC['parameters'], 'text'));
     assertSame(['button', 'url', '0'], [$btnC['type'], $btnC['sub_type'], $btnC['index']]);
     assertSame('id=' . $id . '&token=' . billToken($id), $btnC['parameters'][0]['text']);
 });

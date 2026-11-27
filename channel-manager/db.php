@@ -285,12 +285,13 @@ function _initSchema(PDO $db): void {
         );
 
         -- GST tax invoices. data is the full bill as JSON, including a snapshot
-        -- of the business profile at issue; UNIQUE(fy, seq) is the legal
-        -- requirement that a number is used once per financial year.
+        -- of the business profile at issue; UNIQUE(series, seq) guarantees a
+        -- serial number is never reused within a series.
         CREATE TABLE IF NOT EXISTS bills (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             invoice_no    TEXT    NOT NULL UNIQUE,
             fy            TEXT    NOT NULL,
+            series        TEXT    NOT NULL DEFAULT '',
             seq           INTEGER NOT NULL,
             booking_id    INTEGER,
             invoice_date  DATE    NOT NULL,
@@ -300,7 +301,7 @@ function _initSchema(PDO $db): void {
             status        TEXT    DEFAULT 'issued',
             created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(fy, seq)
+            UNIQUE(series, seq)
         );
 
         -- Guest register: photo ID for every guest checked in (see frontdesk-service.php).
@@ -509,6 +510,50 @@ function _initSchema(PDO $db): void {
     ];
     foreach ($billMigrations as $sql) {
         try { $db->exec($sql); } catch (PDOException) { /* column already exists */ }
+    }
+
+    // Move legacy FY-based bills (UNIQUE(fy, seq)) to UNIQUE(series, seq) so the new
+    // continuous KFS-001 series can start at 1 without touching previously issued bills.
+    $billsDdl = (string)$db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='bills'")->fetchColumn();
+    if ($billsDdl !== '' && (!str_contains($billsDdl, 'series') || str_contains($billsDdl, 'UNIQUE(fy, seq)'))) {
+        $owned = kfsBeginTransaction($db);
+        try {
+            $db->exec("
+                CREATE TABLE bills_new (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    invoice_no    TEXT    NOT NULL UNIQUE,
+                    fy            TEXT    NOT NULL,
+                    series        TEXT    NOT NULL DEFAULT '',
+                    seq           INTEGER NOT NULL,
+                    booking_id    INTEGER,
+                    invoice_date  DATE    NOT NULL,
+                    guest_name    TEXT    DEFAULT '',
+                    total_paise   INTEGER DEFAULT 0,
+                    data          TEXT    NOT NULL,
+                    status        TEXT    DEFAULT 'issued',
+                    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    wa_sent_at    TEXT DEFAULT '',
+                    wa_sent_to    TEXT DEFAULT '',
+                    wa_last_error TEXT DEFAULT '',
+                    UNIQUE(series, seq)
+                )
+            ");
+            $db->exec("
+                INSERT INTO bills_new
+                    (id, invoice_no, fy, series, seq, booking_id, invoice_date, guest_name, total_paise, data, status, created_at, updated_at, wa_sent_at, wa_sent_to, wa_last_error)
+                SELECT
+                    id, invoice_no, fy, fy, seq, booking_id, invoice_date, guest_name, total_paise, data, status, created_at, updated_at,
+                    COALESCE(wa_sent_at, ''), COALESCE(wa_sent_to, ''), COALESCE(wa_last_error, '')
+                FROM bills
+            ");
+            $db->exec("DROP TABLE bills");
+            $db->exec("ALTER TABLE bills_new RENAME TO bills");
+            kfsCommitTransaction($db, $owned);
+        } catch (Throwable $e) {
+            kfsRollbackTransaction($db, $owned);
+            throw $e;
+        }
     }
 
     $paymentMigrations = [

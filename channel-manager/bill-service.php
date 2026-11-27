@@ -105,9 +105,11 @@ function financialYear(string $date): string {
     return $start . '-' . substr((string)($start + 1), -2);
 }
 
-/** "KFS/26-27/0001" — 14 characters; GST allows at most 16, unique per financial year. */
+const BILL_SERIAL_SERIES = 'continuous';
+
+/** "KFS-001" — continuous serial number starting at 001 (GST allows up to 16 chars). */
 function formatInvoiceNumber(string $prefix, string $fy, int $seq): string {
-    return $prefix . '/' . substr($fy, 2) . '/' . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
+    return $prefix . '-' . str_pad((string)$seq, 3, '0', STR_PAD_LEFT);
 }
 
 /**
@@ -351,12 +353,13 @@ function saveBill(array $bill, ?int $id = null): int {
                ->execute([$bill['booking_id'], $bill['invoice_date'], $bill['guest']['name'], $totals['grand'], json_encode($bill, JSON_UNESCAPED_UNICODE), $id]);
         } else {
             $bill['business'] = billProfile();
-            $seqStmt = $db->prepare("SELECT COALESCE(MAX(seq), 0) + 1 FROM bills WHERE fy = ?");
-            $seqStmt->execute([$fy]);
+            $series = BILL_SERIAL_SERIES;
+            $seqStmt = $db->prepare("SELECT COALESCE(MAX(seq), 0) + 1 FROM bills WHERE series = ?");
+            $seqStmt->execute([$series]);
             $seq = (int)$seqStmt->fetchColumn();
             $number = formatInvoiceNumber($bill['business']['prefix'] ?: 'KFS', $fy, $seq);
-            $db->prepare("INSERT INTO bills (invoice_no, fy, seq, booking_id, invoice_date, guest_name, total_paise, data) VALUES (?,?,?,?,?,?,?,?)")
-               ->execute([$number, $fy, $seq, $bill['booking_id'], $bill['invoice_date'], $bill['guest']['name'], $totals['grand'], json_encode($bill, JSON_UNESCAPED_UNICODE)]);
+            $db->prepare("INSERT INTO bills (invoice_no, fy, series, seq, booking_id, invoice_date, guest_name, total_paise, data) VALUES (?,?,?,?,?,?,?,?,?)")
+               ->execute([$number, $fy, $series, $seq, $bill['booking_id'], $bill['invoice_date'], $bill['guest']['name'], $totals['grand'], json_encode($bill, JSON_UNESCAPED_UNICODE)]);
             $id = (int)$db->lastInsertId();
         }
         kfsCommitTransaction($db, $owned);
@@ -382,7 +385,7 @@ function getBill(int $id): ?array {
 }
 
 function listBills(int $limit = 200): array {
-    $stmt = getDB()->prepare("SELECT id, invoice_no, booking_id, invoice_date, guest_name, total_paise, status FROM bills ORDER BY fy DESC, seq DESC LIMIT ?");
+    $stmt = getDB()->prepare("SELECT id, invoice_no, booking_id, invoice_date, guest_name, total_paise, status FROM bills ORDER BY id DESC LIMIT ?");
     $stmt->execute([$limit]);
     return $stmt->fetchAll();
 }

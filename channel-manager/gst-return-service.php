@@ -107,7 +107,7 @@ function gstReturn(string $spec, bool $inclusive = true): array {
     foreach ($db->query("SELECT booking_id FROM bills WHERE status = 'issued' AND booking_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN) as $bid) {
         $billed[(int)$bid] = true;
     }
-    $q = $db->prepare("SELECT * FROM bills WHERE invoice_date BETWEEN ? AND ? ORDER BY fy, seq");
+    $q = $db->prepare("SELECT * FROM bills WHERE invoice_date BETWEEN ? AND ? ORDER BY id");
     $q->execute([$p['from'], $to]);   // from the period start, so pre-registration bills can be flagged
     $bills = $q->fetchAll();
 

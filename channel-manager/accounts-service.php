@@ -169,7 +169,7 @@ function acctCollections(string $from, string $to): array {
  */
 function acctGstReport(string $month): array {
     if (!preg_match('/^\d{4}-\d{2}$/', $month)) throw new InvalidArgumentException('Month must be YYYY-MM.');
-    $q = getDB()->prepare("SELECT * FROM bills WHERE substr(invoice_date, 1, 7) = ? ORDER BY fy, seq");
+    $q = getDB()->prepare("SELECT * FROM bills WHERE substr(invoice_date, 1, 7) = ? ORDER BY id");
     $q->execute([$month]);
     $invoices = [];
     $byRate = [];
