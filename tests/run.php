@@ -3337,4 +3337,73 @@ test('gst: a group booking is several villas each under Rs 7,500, so 5% however 
     assertSame(1, substr_count($why, 'Taxed at 18%'), 'only the single-unit booking is flagged');
 });
 
+test('edit booking: direct and in-house bookings can switch rooms cleanly and respect conflicts', function (): void {
+    resetAvailabilityData();
+    $yesterday = date('Y-m-d', strtotime('-1 day'));
+    $tomorrow = date('Y-m-d', strtotime('+1 day'));
+    $cottage = pastBooking([
+        'room_id' => 'wooden-cottage',
+        'room_name' => 'Wooden Cottage',
+        'check_in' => $yesterday,
+        'check_out' => $tomorrow,
+        'guest_name' => 'Switch Guest',
+        'source' => 'whatsapp',
+        'amount' => 7000,
+    ]);
+    $tent = pastBooking([
+        'room_id' => 'tent',
+        'room_name' => 'Tent',
+        'check_in' => $yesterday,
+        'check_out' => $tomorrow,
+        'guest_name' => 'Other Guest',
+        'source' => 'phone',
+    ]);
+
+    // Live options check excludes the booking itself and works for in-house (past check-in) stays
+    $opts = array_column(bookingAvailabilityOptions((int)$cottage['id'], $yesterday, $tomorrow, 2, 0), null, 'room_id');
+    assertTrue($opts['wooden-cottage']['available'], 'own room stays available when editing');
+    assertTrue($opts['wooden-villa']['available'], 'free target room wooden-villa is available');
+    assertTrue($opts['wooden-villa']['quote'] > 0, 'tariff estimate is computed for target room');
+    assertFalse($opts['tent']['available'], 'occupied tent is unavailable');
+
+    // Switch wooden-cottage -> wooden-villa (even with empty source submitted, keeps whatsapp)
+    updateConfirmedBooking((int)$cottage['id'], [
+        'room_id' => 'wooden-villa',
+        'check_in' => $yesterday,
+        'check_out' => $tomorrow,
+        'status' => 'confirmed',
+        'source' => '',
+    ]);
+    $updated = getBookingById((int)$cottage['id']);
+    assertSame('wooden-villa', $updated['room_id']);
+    assertSame('Wooden Villa', $updated['room_name']);
+    assertSame('whatsapp', $updated['source']);
+
+    // Old room is now free while new room is occupied
+    assertTrue(isInventoryAvailable('wooden-cottage', $yesterday, $tomorrow, null, null, null, true));
+    assertFalse(isInventoryAvailable('wooden-villa', $yesterday, $tomorrow, null, null, null, true));
+
+    // Trying to switch to an occupied room (tent) is refused
+    $blocked = false;
+    try {
+        updateConfirmedBooking((int)$cottage['id'], [
+            'room_id' => 'tent',
+            'check_in' => $yesterday,
+            'check_out' => $tomorrow,
+            'status' => 'confirmed',
+        ]);
+    } catch (DomainException) {
+        $blocked = true;
+    }
+    assertTrue($blocked, 'cannot move booking onto an already occupied room');
+
+    // UI wiring checks in admin.php
+    $adminPhp = file_get_contents(dirname(__DIR__) . '/channel-manager/admin.php');
+    assertContains('<option value="whatsapp">', $adminPhp);
+    assertContains('<option value="phone">', $adminPhp);
+    assertContains('<option value="walk_in">', $adminPhp);
+    assertContains('edit_room_availability', $adminPhp);
+    assertContains('Change Room', $adminPhp);
+});
+
 runTests();

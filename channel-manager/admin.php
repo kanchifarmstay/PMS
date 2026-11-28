@@ -28,6 +28,29 @@ if (($_POST['action'] ?? '') === 'login') {
     }
     $loginError = $login;
 }
+// ── Authenticated AJAX helpers ──────────────────────────────
+if (($_GET['ajax'] ?? '') === 'edit_room_availability') {
+    header('Content-Type: application/json; charset=UTF-8');
+    if (empty($_SESSION['admin_logged_in']) || !userCan('bookings.edit')) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Not authorised.']);
+        exit;
+    }
+    $bkId = (int)($_GET['id'] ?? 0);
+    $ci   = trim((string)($_GET['check_in'] ?? ''));
+    $co   = trim((string)($_GET['check_out'] ?? ''));
+    $ad   = kfsGuestCount($_GET['adults'] ?? null, 1);
+    $ch   = kfsGuestCount($_GET['children'] ?? null);
+    try {
+        echo json_encode([
+            'ok'    => true,
+            'rooms' => bookingAvailabilityOptions($bkId, $ci, $co, $ad, $ch),
+        ]);
+    } catch (Throwable $e) {
+        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
 // ── POST handlers (authenticated) ────────────────────────────
 if (!empty($_SESSION['admin_logged_in'])) {
     $act = $_POST['action'] ?? '';
@@ -156,19 +179,21 @@ if (!empty($_SESSION['admin_logged_in'])) {
     if ($act === 'edit_booking') {
         $id = (int)($_POST['id'] ?? 0);
         $returnSec = trim((string)($_POST['return_section'] ?? 'bookings'));
-        if (!in_array($returnSec, ['bookings', 'calendar', 'overview', 'day', 'week', 'month', 'blocked'], true)) {
+        if (!in_array($returnSec, ['dashboard', 'bookings', 'calendar', 'overview', 'day', 'week', 'month', 'blocked'], true)) {
             $returnSec = 'bookings';
         }
         if (!$id) {
             header('Location: admin.php?section=' . $returnSec . '&flash=' . urlencode('Invalid booking ID.'));
             exit;
         }
+        $beforeEdit = getBookingById($id);
         $rid = trim((string)($_POST['room_id'] ?? ''));
         $total = max(0.0, (float)($_POST['amount'] ?? 0));
         $paid = max(0.0, (float)($_POST['amount_paid'] ?? 0));
         $pmeth = trim((string)($_POST['payment_method'] ?? 'cash'));
         $pstatus = $paid >= $total && $total > 0 ? 'paid' : ($paid > 0 ? 'partial' : 'unpaid');
         $status = trim((string)($_POST['status'] ?? 'confirmed'));
+        $postedSource = trim((string)($_POST['source'] ?? ''));
         $data = [
             'room_id'         => $rid,
             'room_name'       => ROOM_IDS[$rid] ?? $rid,
@@ -178,7 +203,7 @@ if (!empty($_SESSION['admin_logged_in'])) {
             'guest_email'     => trim((string)($_POST['guest_email'] ?? '')),
             'guest_phone'     => trim((string)($_POST['guest_phone'] ?? '')),
             'whatsapp_number' => trim((string)($_POST['whatsapp_number'] ?? $_POST['guest_phone'] ?? '')),
-            'source'          => trim((string)($_POST['source'] ?? 'direct')),
+            'source'          => $postedSource !== '' ? $postedSource : ($beforeEdit['source'] ?? 'direct'),
             'booking_ref'     => trim((string)($_POST['booking_ref'] ?? '')),
             'amount'          => $total,
             'amount_paid'     => $paid,
@@ -189,7 +214,6 @@ if (!empty($_SESSION['admin_logged_in'])) {
             'adults'          => kfsGuestCount($_POST['adults'] ?? null, 1),
             'children'        => kfsGuestCount($_POST['children'] ?? null),
         ];
-        $beforeEdit = getBookingById($id);
         // An older booking gets its opening ledger entry BEFORE the edit, so a change
         // to amount paid is recorded as the difference, not the whole old balance.
         acctBackfillOpeningBalances($id);
@@ -208,7 +232,10 @@ if (!empty($_SESSION['admin_logged_in'])) {
         $afterEdit = getBookingById($id);
         // WhatsApp: booking updated / payment received / cancelled, after the redirect.
         if ($beforeEdit && $afterEdit) waDefer(fn() => waOnBookingEdited($beforeEdit, $afterEdit));
-        header('Location: admin.php?section=' . $returnSec . '&flash=Booking+updated+successfully');
+        $flashMsg = ($beforeEdit && (string)$beforeEdit['room_id'] !== $rid)
+            ? 'Booking #' . $id . ' updated (' . ($beforeEdit['room_name'] ?: $beforeEdit['room_id']) . ' → ' . $data['room_name'] . ')'
+            : 'Booking updated successfully';
+        header('Location: admin.php?section=' . $returnSec . '&flash=' . urlencode($flashMsg));
         exit;
     }
 
@@ -551,10 +578,13 @@ function bookingJson(array $b): string {
     $bPaid    = (float)($b['amount_paid'] ?? 0);
     $bBalance = max(0, $bTotal - $bPaid);
     $pstatus  = $bBalance <= 0 && $bTotal > 0 ? 'paid' : ($bPaid > 0 ? 'partial' : 'unpaid');
+    $originId = (string)($b['inventory_origin_room_id'] ?? '');
+    $realRoomId = ($originId !== '' && isset(ROOM_IDS[$originId])) ? $originId : (string)($b['room_id'] ?? '');
+    $realRoomName = ROOM_IDS[$realRoomId] ?? (string)($b['room_name'] ?? $realRoomId);
     return htmlspecialchars(json_encode([
         'id'              => (int)($b['id'] ?? 0),
-        'room_id'         => (string)($b['room_id'] ?? ''),
-        'room_name'       => (string)($b['room_name'] ?? (ROOM_IDS[$b['room_id'] ?? ''] ?? '')),
+        'room_id'         => $realRoomId,
+        'room_name'       => $realRoomName,
         'check_in'        => (string)($b['check_in'] ?? ''),
         'check_out'       => (string)($b['check_out'] ?? ''),
         'guest_name'      => (string)($b['guest_name'] ?? 'Guest'),
@@ -573,6 +603,7 @@ function bookingJson(array $b): string {
         'children'        => kfsGuestCount($b['children'] ?? null),
         'guests_label'    => kfsGuestLabel($b),
         'id_count'        => fdGuestCount((int)($b['id'] ?? 0)),
+        'is_external_block' => !empty($b['is_external_block']),
     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
 }
 function commissionForSource(string $src): float {
@@ -3353,7 +3384,7 @@ $allDemand = getDemandEvents(date('Y-m-d'), date('Y-m-d', strtotime('+365 days')
           </td>
           <td><span class="status-<?= $b['status'] ?>"><?= ucfirst($b['status']) ?></span></td>
           <td style="white-space:nowrap">
-            <button type="button" class="btn btn-sm btn-primary" onclick="openEditBookingModal(<?= $bJson ?>)" title="Edit Booking / Change Dates">✏️ Edit</button>
+            <button type="button" class="btn btn-sm btn-primary" onclick="openEditBookingModal(<?= $bJson ?>)" title="Edit Booking / Change Room / Dates">✏️ Edit</button>
             <a href="<?= $pdfUrl ?>" target="_blank" class="btn btn-sm btn-grey" title="View / Download PDF">📄 PDF</a>
             <a href="bill.php?new=1&amp;booking=<?= (int)$b['id'] ?>" target="_blank" class="btn btn-sm btn-grey" title="Create a GST bill for this booking">🧾 Bill</a>
             <?php if ($waNum): ?><a href="https://wa.me/<?= preg_replace('/\D/','',$waNum) ?>" target="_blank" class="btn btn-sm btn-grey" title="Open WhatsApp chat">💬</a><?php endif; ?>
@@ -4779,14 +4810,20 @@ function showBookingModal(b) {
     </div>
     <div style="display:flex;gap:.6rem;margin-top:1.25rem;flex-wrap:wrap;align-items:center;justify-content:space-between;border-top:1px solid #eef2ee;padding-top:1rem">
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <button type="button" class="btn btn-primary btn-sm" onclick="openEditBookingModal(window._activeBookingData)">✏️ Edit Booking &amp; Dates</button>
+        ${!b.is_external_block && Number(b.id) > 0 ? `
+        <button type="button" class="btn btn-primary btn-sm" onclick="openEditBookingModal(window._activeBookingData)">✏️ Edit Booking</button>
+        <button type="button" class="btn btn-sm" style="background:#0f766e;color:#fff" onclick="openEditBookingModal(window._activeBookingData, true)">🔄 Change Room</button>
+        ` : ''}
         ${b.guest_phone ? `<a href="https://wa.me/${b.guest_phone.replace(/\D/g,'')}" target="_blank" class="btn btn-grey btn-sm">💬 WhatsApp</a>` : ''}
+        ${!b.is_external_block && Number(b.id) > 0 ? `
         <a href="booking-pdf.php?id=${b.id}" target="_blank" class="btn btn-grey btn-sm">📄 PDF Receipt</a>
         <a href="bill.php?new=1&booking=${b.id}" target="_blank" class="btn btn-grey btn-sm">🧾 GST Bill</a>
         <a href="booking-whatsapp.php?id=${b.id}" class="btn btn-grey btn-sm">📨 WhatsApp messages</a>
         <a href="booking-payments.php?id=${b.id}" class="btn btn-grey btn-sm">💰 Payments</a>
         <a href="booking-documents.php?id=${b.id}" class="btn btn-grey btn-sm">🪪 ID / Aadhaar (${b.id_count || 0})</a>
+        ` : ''}
       </div>
+      ${!b.is_external_block && Number(b.id) > 0 ? `
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         ${b.status === 'confirmed' ? `
         <form method="POST" action="admin.php?section=${currentSection}" style="display:inline" onsubmit="return confirm('Cancel booking #${b.id}?')">
@@ -4804,21 +4841,43 @@ function showBookingModal(b) {
           <button type="submit" class="btn btn-danger btn-sm">🗑️ Delete</button>
         </form>
       </div>
+      ` : ''}
     </div>`;
 
   const detailModal = document.getElementById('bkDetailModal');
   if (detailModal) detailModal.style.display = 'flex';
 }
 
-function openEditBookingModal(b) {
+window._editRoomOptions = {};
+
+function openEditBookingModal(b, focusRoom = false) {
   if (!b) return;
   document.getElementById('editBkId').value = b.id || '';
-  document.getElementById('editModalTitle').textContent = '✏️ Edit Booking #' + (b.id || '');
-  if (document.getElementById('editBkRoom')) document.getElementById('editBkRoom').value = b.room_id || '';
+  document.getElementById('editModalTitle').textContent = (focusRoom ? '🔄 Change Room — Booking #' : '✏️ Edit Booking #') + (b.id || '');
+  const roomSel = document.getElementById('editBkRoom');
+  if (roomSel) {
+    // Restore base room labels before fresh availability annotations arrive
+    Array.from(roomSel.options).forEach(opt => {
+      if (opt.dataset.baseLabel) opt.textContent = opt.dataset.baseLabel;
+      else opt.dataset.baseLabel = opt.textContent;
+      opt.disabled = false;
+    });
+    roomSel.value = b.room_id || '';
+  }
   if (document.getElementById('editBkCheckIn')) document.getElementById('editBkCheckIn').value = b.check_in || '';
   if (document.getElementById('editBkCheckOut')) document.getElementById('editBkCheckOut').value = b.check_out || '';
   if (document.getElementById('editBkStatus')) document.getElementById('editBkStatus').value = b.status || 'confirmed';
-  if (document.getElementById('editBkSource')) document.getElementById('editBkSource').value = b.source || 'direct';
+  const srcSel = document.getElementById('editBkSource');
+  if (srcSel) {
+    const srcVal = b.source || 'direct';
+    if (!Array.from(srcSel.options).some(o => o.value === srcVal)) {
+      const opt = document.createElement('option');
+      opt.value = srcVal;
+      opt.textContent = srcVal;
+      srcSel.appendChild(opt);
+    }
+    srcSel.value = srcVal;
+  }
   if (document.getElementById('editBkGuestName')) document.getElementById('editBkGuestName').value = b.guest_name || '';
   if (document.getElementById('editBkPhone')) document.getElementById('editBkPhone').value = b.guest_phone || '';
   if (document.getElementById('editBkWa')) document.getElementById('editBkWa').value = b.whatsapp_number || b.guest_phone || '';
@@ -4839,6 +4898,108 @@ function openEditBookingModal(b) {
 
   const editModal = document.getElementById('editBookingModal');
   if (editModal) editModal.style.display = 'flex';
+
+  refreshEditRoomAvailability();
+  if (focusRoom && roomSel) {
+    setTimeout(() => roomSel.focus(), 50);
+  }
+}
+
+let _editAvailReqSeq = 0;
+async function refreshEditRoomAvailability() {
+  const box = document.getElementById('editRoomAvailBox');
+  const roomSel = document.getElementById('editBkRoom');
+  const ci = document.getElementById('editBkCheckIn')?.value || '';
+  const co = document.getElementById('editBkCheckOut')?.value || '';
+  const id = document.getElementById('editBkId')?.value || '';
+  const statusVal = document.getElementById('editBkStatus')?.value || 'confirmed';
+  const adults = document.getElementById('editBkAdults')?.value || '';
+  const children = document.getElementById('editBkChildren')?.value || '';
+  const saveBtn = document.getElementById('editSaveBtn');
+  if (!box || !roomSel) return;
+
+  if (!ci || !co || co <= ci) {
+    box.style.display = 'block';
+    box.style.background = '#fef2f2';
+    box.style.borderColor = '#fecaca';
+    box.style.color = '#991b1b';
+    box.textContent = '⚠️ Check-out date must be after check-in date.';
+    return;
+  }
+
+  const reqSeq = ++_editAvailReqSeq;
+  box.style.display = 'block';
+  box.style.background = '#f8fafc';
+  box.style.borderColor = '#cbd5e1';
+  box.style.color = '#475569';
+  box.textContent = 'Checking live availability across properties…';
+
+  try {
+    const qs = new URLSearchParams({ ajax: 'edit_room_availability', id, check_in: ci, check_out: co, adults, children });
+    const res = await fetch('admin.php?' + qs.toString(), { credentials: 'same-origin' });
+    const json = await res.json();
+    if (reqSeq !== _editAvailReqSeq) return;
+    if (!json.ok || !Array.isArray(json.rooms)) {
+      box.style.display = 'none';
+      return;
+    }
+
+    const byId = {};
+    json.rooms.forEach(r => { byId[r.room_id] = r; });
+    window._editRoomOptions = byId;
+
+    Array.from(roomSel.options).forEach(opt => {
+      if (!opt.dataset.baseLabel) opt.dataset.baseLabel = opt.textContent;
+      const info = byId[opt.value];
+      if (!info) return;
+      const quoteStr = info.quote !== null ? ' · ₹' + Number(info.quote).toLocaleString('en-IN') : '';
+      opt.textContent = opt.dataset.baseLabel + (info.available ? ' (Available' + quoteStr + ')' : ' (Unavailable)');
+      opt.disabled = (statusVal === 'confirmed' && !info.available && opt.value !== roomSel.value);
+    });
+
+    renderSelectedEditRoomStatus();
+  } catch (_) {
+    if (reqSeq === _editAvailReqSeq) box.style.display = 'none';
+  }
+}
+
+function renderSelectedEditRoomStatus() {
+  const box = document.getElementById('editRoomAvailBox');
+  const roomSel = document.getElementById('editBkRoom');
+  const statusVal = document.getElementById('editBkStatus')?.value || 'confirmed';
+  const saveBtn = document.getElementById('editSaveBtn');
+  if (!box || !roomSel) return;
+  const info = (window._editRoomOptions || {})[roomSel.value];
+  if (!info) {
+    box.style.display = 'none';
+    if (saveBtn) saveBtn.disabled = false;
+    return;
+  }
+  box.style.display = 'block';
+  if (statusVal !== 'confirmed' || info.available) {
+    box.style.background = '#f0fdf4';
+    box.style.borderColor = '#bbf7d0';
+    box.style.color = '#166534';
+    const quoteBtn = info.quote !== null
+      ? ` <button type="button" class="btn btn-sm" style="margin-left:.5rem;padding:.15rem .5rem;font-size:.74rem;background:#16a34a;color:#fff" onclick="applySuggestedEditAmount(${Number(info.quote)})">Apply suggested tariff ₹${Number(info.quote).toLocaleString('en-IN')}</button>`
+      : '';
+    box.innerHTML = `<strong>✓ ${info.room_name}</strong> is available for these dates.` + quoteBtn;
+    if (saveBtn) saveBtn.disabled = false;
+  } else {
+    box.style.background = '#fef2f2';
+    box.style.borderColor = '#fecaca';
+    box.style.color = '#991b1b';
+    box.innerHTML = `<strong>⚠️ ${info.room_name} is NOT available</strong> on these dates (conflicts with another booking, OTA block, or active hold). Choose an available property or adjust the dates.`;
+    if (saveBtn) saveBtn.disabled = true;
+  }
+}
+
+function applySuggestedEditAmount(val) {
+  const el = document.getElementById('editBkAmount');
+  if (el) {
+    el.value = Math.round(val);
+    updateEditBalance();
+  }
 }
 
 function closeEditBookingModal() {
@@ -5195,10 +5356,10 @@ if ('serviceWorker' in navigator) {
       <input type="hidden" name="return_section" value="<?= htmlspecialchars($section ?? 'bookings') ?>">
 
       <div style="font-size:.8rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.5rem">Stay Details</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem;margin-bottom:1rem">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem;margin-bottom:.65rem">
         <div class="fld">
-          <label>Property</label>
-          <select name="room_id" id="editBkRoom" required>
+          <label>Property (Switch Room)</label>
+          <select name="room_id" id="editBkRoom" required onchange="renderSelectedEditRoomStatus()">
             <?php foreach ($rooms as $rid => $rname): ?>
             <option value="<?= htmlspecialchars($rid) ?>"><?= htmlspecialchars($rname) ?></option>
             <?php endforeach; ?>
@@ -5206,15 +5367,15 @@ if ('serviceWorker' in navigator) {
         </div>
         <div class="fld">
           <label>Check-in Date</label>
-          <input type="date" name="check_in" id="editBkCheckIn" required onchange="calcEditNights()">
+          <input type="date" name="check_in" id="editBkCheckIn" required onchange="calcEditNights();refreshEditRoomAvailability()">
         </div>
         <div class="fld">
           <label>Check-out Date <span id="editNightsDisplay" style="color:var(--primary);font-weight:700;margin-left:.25rem"></span></label>
-          <input type="date" name="check_out" id="editBkCheckOut" required onchange="calcEditNights()">
+          <input type="date" name="check_out" id="editBkCheckOut" required onchange="calcEditNights();refreshEditRoomAvailability()">
         </div>
         <div class="fld">
           <label>Status</label>
-          <select name="status" id="editBkStatus">
+          <select name="status" id="editBkStatus" onchange="refreshEditRoomAvailability()">
             <option value="confirmed">Confirmed</option>
             <option value="cancelled">Cancelled</option>
           </select>
@@ -5222,17 +5383,21 @@ if ('serviceWorker' in navigator) {
         <div class="fld">
           <label>Booking Source</label>
           <select name="source" id="editBkSource">
-            <option value="direct">Direct (Website)</option>
-            <option value="razorpay">Direct (Razorpay)</option>
-            <option value="manual">Manual / Phone</option>
+            <option value="phone">📞 Phone</option>
+            <option value="whatsapp">💬 WhatsApp</option>
+            <option value="walk_in">🚶 Walk-in</option>
+            <option value="direct">🌐 Direct (Website)</option>
+            <option value="razorpay">💳 Direct (Razorpay)</option>
+            <option value="manual">✍️ Manual</option>
             <option value="airbnb">Airbnb</option>
             <option value="booking.com">Booking.com</option>
             <option value="agoda">Agoda</option>
             <option value="makemytrip">MakeMyTrip</option>
-            <option value="blocked">Blocked Date</option>
+            <option value="blocked">🚫 Blocked Date</option>
           </select>
         </div>
       </div>
+      <div id="editRoomAvailBox" style="display:none;margin-bottom:1rem;padding:.6rem .85rem;border:1px solid #cbd5e1;border-radius:8px;font-size:.8rem;line-height:1.45"></div>
 
       <div style="font-size:.8rem;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.5rem">Guest Details</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem;margin-bottom:1rem">
@@ -5258,11 +5423,11 @@ if ('serviceWorker' in navigator) {
         </div>
         <div class="fld">
           <label>Adults</label>
-          <input type="number" name="adults" id="editBkAdults" min="1" max="99" step="1" placeholder="Not recorded">
+          <input type="number" name="adults" id="editBkAdults" min="1" max="99" step="1" placeholder="Not recorded" onchange="refreshEditRoomAvailability()">
         </div>
         <div class="fld">
           <label>Children</label>
-          <input type="number" name="children" id="editBkChildren" min="0" max="99" step="1" placeholder="Not recorded">
+          <input type="number" name="children" id="editBkChildren" min="0" max="99" step="1" placeholder="Not recorded" onchange="refreshEditRoomAvailability()">
         </div>
       </div>
 
@@ -5298,11 +5463,19 @@ if ('serviceWorker' in navigator) {
 
       <div style="display:flex;gap:.75rem;justify-content:flex-end;border-top:1px solid var(--border);padding-top:1rem;flex-wrap:wrap">
         <button type="button" class="btn btn-grey" onclick="closeEditBookingModal()">Cancel</button>
-        <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+        <button type="submit" id="editSaveBtn" class="btn btn-primary">💾 Save Changes</button>
       </div>
     </form>
   </div>
 </div>
+<?php
+if (!empty($_GET['edit']) && userCan('bookings.edit')) {
+    $autoEditBk = getBookingById((int)$_GET['edit']);
+    if ($autoEditBk) {
+        echo '<script>document.addEventListener("DOMContentLoaded",function(){openEditBookingModal(' . json_encode(json_decode(htmlspecialchars_decode(bookingJson($autoEditBk), ENT_QUOTES), true), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) . ', true);});</script>';
+    }
+}
+?>
 
 <!-- Mobile hamburger + overlay (only when logged in) -->
 <button class="mob-menu-btn" id="mobMenuBtn" aria-label="Open menu">☰</button>

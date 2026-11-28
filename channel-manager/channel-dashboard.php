@@ -480,6 +480,7 @@ if ($missing):
                 <th>Source</th>
                 <th>Amount</th>
                 <th>Notes / Ref</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -516,6 +517,9 @@ if ($missing):
                 if ($ref)   echo '<div>Ref: '.htmlspecialchars(substr($ref,0,30)).'</div>';
                 if ($notes) echo '<div>'.htmlspecialchars(substr($notes,0,60)).'</div>';
                 ?>
+            </td>
+            <td style="white-space:nowrap">
+                <a href="admin.php?section=bookings&amp;edit=<?= (int)$b['id'] ?>" style="display:inline-block;padding:4px 9px;background:#edf2ff;color:#364fc7;border-radius:6px;font-size:.73rem;font-weight:600;text-decoration:none">✏️ Edit / Room</a>
             </td>
         </tr>
         <?php endforeach; ?>

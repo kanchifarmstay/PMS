@@ -169,9 +169,10 @@ function isInventoryAvailable(
     string $checkOut,
     ?int $excludeBookingId = null,
     ?string $excludeHoldToken = null,
-    ?PDO $db = null
+    ?PDO $db = null,
+    bool $allowPast = false
 ): bool {
-    validateStay($roomId, $checkIn, $checkOut);
+    validateStay($roomId, $checkIn, $checkOut, $allowPast);
     $db ??= getDB();
     if ($roomId === GROUP_INVENTORY_ID) {
         return groupBlockedRanges($checkIn, $checkOut, $excludeBookingId, $excludeHoldToken, null, $db) === [];
@@ -359,7 +360,7 @@ function updateConfirmedBooking(int $id, array $data): void
     $owned = kfsBeginTransaction($db);
     try {
         cleanupExpiredHolds($db);
-        if ($status === 'confirmed' && !isInventoryAvailable($roomId, $checkIn, $checkOut, $id, null, $db)) {
+        if ($status === 'confirmed' && !isInventoryAvailable($roomId, $checkIn, $checkOut, $id, null, $db, true)) {
             throw new DomainException('Those dates conflict with another booking, OTA block, or payment hold.');
         }
         $data['room_id'] = $roomId;
@@ -372,7 +373,8 @@ function updateConfirmedBooking(int $id, array $data): void
         $data['guest_email'] = trim((string)($data['guest_email'] ?? $existing['guest_email']));
         $data['guest_phone'] = trim((string)($data['guest_phone'] ?? $existing['guest_phone']));
         $data['whatsapp_number'] = trim((string)($data['whatsapp_number'] ?? $existing['whatsapp_number']));
-        $data['source'] = trim((string)($data['source'] ?? $existing['source']));
+        $source = trim((string)($data['source'] ?? ''));
+        $data['source'] = $source !== '' ? $source : $existing['source'];
         $data['booking_ref'] = trim((string)($data['booking_ref'] ?? $existing['booking_ref']));
         $data['amount'] = max(0.0, (float)($data['amount'] ?? $existing['amount']));
         $data['amount_paid'] = max(0.0, (float)($data['amount_paid'] ?? $existing['amount_paid']));
@@ -413,9 +415,9 @@ function roomPricing(string $roomId, ?PDO $db = null): array
     return $pricing;
 }
 
-function calculateQuote(string $roomId, string $checkIn, string $checkOut, int $adults, int $children, ?PDO $db = null): array
+function calculateQuote(string $roomId, string $checkIn, string $checkOut, int $adults, int $children, ?PDO $db = null, bool $allowPast = false): array
 {
-    validateStay($roomId, $checkIn, $checkOut);
+    validateStay($roomId, $checkIn, $checkOut, $allowPast);
     $pricing = roomPricing($roomId, $db);
     if ($adults < 1 || $adults > $pricing['max_adults']) throw new InvalidArgumentException('Invalid number of adults.');
     if ($children < 0 || $children > $pricing['max_children']) throw new InvalidArgumentException('Invalid number of children.');
@@ -461,6 +463,47 @@ function calculateQuote(string $roomId, string $checkIn, string $checkOut, int $
         'gst_amount'=>$gstAmount,
         'total'=>$total,
     ];
+}
+
+/**
+ * List every property with live availability and a tariff estimate for switching
+ * an existing booking (excluding $excludeBookingId itself from conflict checks).
+ *
+ * @return list<array{room_id:string, room_name:string, available:bool, quote:?float}>
+ */
+function bookingAvailabilityOptions(
+    int $excludeBookingId,
+    string $checkIn,
+    string $checkOut,
+    ?int $adults = null,
+    ?int $children = null,
+    ?PDO $db = null
+): array {
+    if (!validYmd($checkIn) || !validYmd($checkOut) || $checkOut <= $checkIn) {
+        throw new InvalidArgumentException('Check-out must be after check-in.');
+    }
+    $db ??= getDB();
+    cleanupExpiredHolds($db);
+    $out = [];
+    foreach (ROOM_IDS as $roomId => $roomName) {
+        $available = isInventoryAvailable($roomId, $checkIn, $checkOut, $excludeBookingId > 0 ? $excludeBookingId : null, null, $db, true);
+        $pricing = roomPricing($roomId, $db);
+        $a = $adults !== null && $adults >= 1 ? min($adults, (int)$pricing['max_adults']) : (int)$pricing['base_adults'];
+        $c = $children !== null && $children >= 0 ? min($children, (int)$pricing['max_children']) : 0;
+        $quote = null;
+        try {
+            $quote = calculateQuote($roomId, $checkIn, $checkOut, max(1, $a), $c, $db, true)['total'];
+        } catch (Throwable) {
+            $quote = null;
+        }
+        $out[] = [
+            'room_id'   => $roomId,
+            'room_name' => $roomName,
+            'available' => $available,
+            'quote'     => $quote,
+        ];
+    }
+    return $out;
 }
 
 function getBlockedRangesForRoom(string $roomId, ?string $fromDate = null, ?PDO $db = null): array
